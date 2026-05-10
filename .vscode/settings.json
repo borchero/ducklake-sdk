@@ -1,0 +1,6 @@
+{
+  "comment-divider.length": 99,
+  "python.languageServer": "None",
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "rust-analyzer.cargo.features": "all"
+}

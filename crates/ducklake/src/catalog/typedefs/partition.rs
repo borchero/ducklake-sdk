@@ -1,0 +1,91 @@
+use std::ops::Deref;
+
+use itertools::Itertools;
+
+use super::*;
+use crate::DucklakeResult;
+use crate::spec::*;
+
+#[derive(Debug, Clone)]
+pub(in crate::catalog) struct CatalogTablePartition {
+    pub state: CatalogState,
+    pub columns: Vec<CatalogPartitionColumn>,
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::catalog) struct CatalogPartitionColumn {
+    pub column: ArenaIdx,
+    transform: crate::PartitionTransform,
+}
+
+impl Deref for CatalogTablePartition {
+    type Target = CatalogState;
+
+    fn deref(&self) -> &CatalogState {
+        &self.state
+    }
+}
+
+/* ----------------------------------------- TRANSFORM ----------------------------------------- */
+
+impl CatalogTablePartition {
+    /// Transforms DuckLake partition info and columns into a catalog table partition.
+    pub fn from_ducklake(
+        partition_info: DucklakePartitionInfo,
+        partition_columns: Vec<DucklakePartitionColumn>,
+        columns: &CatalogColumns,
+    ) -> DucklakeResult<CatalogTablePartition> {
+        let columns: Vec<_> = partition_columns
+            .into_iter()
+            .sorted_by_key(|col| col.partition_key_index)
+            .map(|col| {
+                col.transform
+                    .parse()
+                    .map(|transform| CatalogPartitionColumn {
+                        column: columns.arena_idx_by_id(col.column_id).unwrap(),
+                        transform,
+                    })
+            })
+            .collect::<DucklakeResult<_>>()?;
+        let partition = CatalogTablePartition {
+            state: CatalogState::Existing {
+                id: partition_info.partition_id,
+            },
+            columns,
+        };
+        Ok(partition)
+    }
+
+    pub fn from_partition(
+        partition: crate::Partition,
+        columns: &CatalogColumns,
+    ) -> DucklakeResult<Self> {
+        let catalog_columns = partition
+            .0
+            .into_iter()
+            .map(|col| {
+                Ok(CatalogPartitionColumn {
+                    column: columns.try_column_by_name(&col.column)?.1,
+                    transform: col.transform,
+                })
+            })
+            .collect::<DucklakeResult<_>>()?;
+        Ok(CatalogTablePartition {
+            state: CatalogState::Pending,
+            columns: catalog_columns,
+        })
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_partition(&self, columns: &CatalogColumns) -> crate::Partition {
+        let columns = self
+            .columns
+            .iter()
+            .map(|col| crate::PartitionColumn {
+                column: columns.column_by_arena_idx(col.column).name.clone(),
+                transform: col.transform,
+            })
+            .collect();
+        crate::Partition(columns)
+    }
+}

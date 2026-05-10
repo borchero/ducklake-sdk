@@ -1,0 +1,163 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+      - name: Install Rust
+        run: rustup show
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install Python package
+        run: pixi run install-py
+      - name: Run linting
+        run: pixi run lint
+
+  # -------------------------------------------- RUST ------------------------------------------- #
+
+  unit-tests-rs:
+    name: Unit Tests (Rust)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+        with:
+          environments: test-rs
+          activate-environment: true
+      - name: Install Rust
+        run: rustup show
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Run tests
+        run: pixi run test-rs-coverage --locked --output-path coverage-rs.lcov
+      - name: Upload coverage
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        with:
+          files: coverage-rs.lcov
+          use_oidc: true
+
+  # ------------------------------------------- PYTHON ------------------------------------------ #
+
+  unit-tests-py:
+    name: |
+      Unit Tests (${{ matrix.python-version }} - ${{ matrix.database }} - ${{ matrix.storage }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [py314]
+        database: [sqlite, postgres, mysql]
+        storage: [local, s3]
+        include:
+          - python-version: py313
+            database: sqlite
+            storage: local
+          - python-version: py312
+            database: sqlite
+            storage: local
+          - python-version: py311
+            database: sqlite
+            storage: local
+          - python-version: py310
+            database: sqlite
+            storage: local
+    services:
+      postgres:
+        image: ${{ case(matrix.database == 'postgres', 'postgres:latest', '') }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - "5432:5432"
+      mysql:
+        image: ${{ case(matrix.database == 'mysql', 'mysql:latest', '') }}
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: mysql
+        ports:
+          - "3306:3306"
+      rustfs:
+        image: ${{ case(matrix.storage == 's3', 'rustfs/rustfs:latest', '') }}
+        env:
+          RUSTFS_ADDRESS: ":9000"
+          RUSTFS_ACCESS_KEY: rustfsadmin
+          RUSTFS_SECRET_KEY: rustfsadmin
+        ports:
+          - "9000:9000"
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+        with:
+          environments: test-${{ matrix.python-version }}
+          activate-environment: true
+      - name: Install Rust
+        run: rustup show
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Set env variables for Rust coverage
+        run: echo "$(cargo llvm-cov show-env | tr -d "'")" >> $GITHUB_ENV
+      - name: Set up workspace for Rust coverage
+        run: cargo llvm-cov clean --workspace
+      - name: Install Python package
+        run: pixi run install-py
+      - name: Run tests with coverage
+        run: pixi run test-py-coverage -v --catalog ${{ matrix.database }} --storage ${{ matrix.storage }}
+        env:
+          AWS_ENDPOINT_URL: http://localhost:9000
+          AWS_ACCESS_KEY_ID: rustfsadmin
+          AWS_SECRET_ACCESS_KEY: rustfsadmin
+      - name: Collect Rust coverage
+        run: cargo llvm-cov report -p ducklake -p ducklake-python --lcov --output-path coverage-rs.lcov
+      - name: Upload coverage
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        with:
+          files: coverage-py.xml, coverage-rs.lcov
+          use_oidc: true
+
+  unit-tests-py-release:
+    name: Unit Tests (py314 - sqlite - local - Release Build)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+        with:
+          environments: test-py314
+          activate-environment: true
+      - name: Install Rust
+        run: rustup show
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install Python package
+        run: pixi run install-py --release
+      - name: Run tests
+        run: pixi run test-py -v

@@ -1,0 +1,171 @@
+use ducklake::{AuthorInfo, ConnectOptions, CreateOptions, Ducklake, SnapshotMetadata};
+use pyo3::prelude::*;
+
+use crate::conversion::Wrap;
+use crate::utils::runtime::block_on;
+use crate::{PyTable, PyTransaction, error};
+
+#[pyclass]
+pub struct PyDucklake(Ducklake);
+
+/* ------------------------------------------ CONNECT ------------------------------------------ */
+
+#[pyfunction]
+pub fn create(
+    py: Python,
+    url: &str,
+    data_path: &str,
+    storage_options: Vec<(String, String)>,
+) -> PyResult<PyDucklake> {
+    let options = CreateOptions::new(url, data_path).with_storage_options(storage_options);
+    let ducklake = block_on(py, Ducklake::create(options)).map_err(error::into_pyerr)?;
+    Ok(PyDucklake(ducklake))
+}
+
+#[pyfunction]
+pub fn connect(
+    py: Python,
+    url: &str,
+    snapshot_id: Option<i64>,
+    snapshot_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    migrate: bool,
+    storage_options: Vec<(String, String)>,
+) -> PyResult<PyDucklake> {
+    let mut options = ConnectOptions::new(url)
+        .with_migrate(migrate)
+        .with_storage_options(storage_options);
+    if let Some(id) = snapshot_id {
+        options = options.with_snapshot_id(id);
+    } else if let Some(timestamp) = snapshot_timestamp {
+        options = options.with_snapshot_timestamp(timestamp);
+    }
+    let ducklake = block_on(py, Ducklake::connect(options)).map_err(error::into_pyerr)?;
+    Ok(PyDucklake(ducklake))
+}
+
+/* --------------------------------------- PYTHON METHODS -------------------------------------- */
+
+#[pymethods]
+impl PyDucklake {
+    pub fn at_snapshot_id(&self, py: Python, snapshot_id: i64) -> PyResult<PyDucklake> {
+        block_on(py, self.0.at_snapshot_id(snapshot_id))
+            .map(PyDucklake)
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn at_snapshot_timestamp(
+        &self,
+        py: Python,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) -> PyResult<PyDucklake> {
+        block_on(py, self.0.at_snapshot_timestamp(timestamp))
+            .map(PyDucklake)
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn get_latest_snapshot(&self, py: Python) -> PyResult<Wrap<SnapshotMetadata>> {
+        block_on(py, self.0.latest_snapshot())
+            .map(Wrap)
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn list_snapshots(&self, py: Python) -> PyResult<Vec<Wrap<SnapshotMetadata>>> {
+        block_on(py, self.0.list_snapshots())
+            .map(|snapshots| snapshots.into_iter().map(Wrap).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn create_schema(
+        &self,
+        py: Python,
+        name: String,
+        data_path: Option<String>,
+    ) -> PyResult<()> {
+        block_on(py, self.0.create_schema(&name, data_path)).map_err(error::into_pyerr)
+    }
+
+    pub fn delete_schema(&self, py: Python, name: String) -> PyResult<()> {
+        block_on(py, self.0.delete_schema(&name)).map_err(error::into_pyerr)
+    }
+
+    pub fn create_table(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::TableName>,
+        schema: Vec<Wrap<ducklake::Column>>,
+        partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
+        data_path: Option<String>,
+        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+    ) -> PyResult<PyTable> {
+        block_on(py, async {
+            self.0
+                .create_table(
+                    name.0.clone(),
+                    schema.into_iter().map(|c| c.0).collect(),
+                    partition.map(|v| v.into_iter().map(|p| p.0).collect()),
+                    data_path,
+                    tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                )
+                .await?;
+            self.0.table(name.0).await.map(PyTable::new)
+        })
+        .map_err(error::into_pyerr)
+    }
+
+    pub fn transaction(
+        &self,
+        py: Python,
+        author: Option<String>,
+        message: Option<String>,
+        extra_info: Option<String>,
+    ) -> PyResult<PyTransaction> {
+        let tx = if author.is_none() && message.is_none() && extra_info.is_none() {
+            block_on(py, self.0.transaction())
+        } else {
+            let author_info = AuthorInfo {
+                author,
+                message,
+                extra_info,
+            };
+            block_on(py, self.0.transaction_with_author(author_info))
+        }
+        .map_err(error::into_pyerr)?
+        .into_owned();
+        Ok(PyTransaction::new(tx))
+    }
+
+    pub fn table(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<PyTable> {
+        block_on(py, self.0.table(name.0))
+            .map(PyTable::new)
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn list_tables(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyTable>> {
+        block_on(py, self.0.list_tables(schema.as_deref()))
+            .map(|tables| tables.into_iter().map(PyTable::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn list_schemas(&self, py: Python) -> PyResult<Vec<String>> {
+        block_on(py, self.0.list_schemas()).map_err(error::into_pyerr)
+    }
+
+    pub fn set_metadata(
+        &self,
+        py: Python,
+        key: String,
+        value: Option<String>,
+        schema: Option<String>,
+    ) -> PyResult<()> {
+        if let Some(v) = value {
+            block_on(py, self.0.set_metadata(&key, &v, schema.as_deref()))
+                .map_err(error::into_pyerr)
+        } else {
+            block_on(py, self.0.unset_metadata(&key, schema.as_deref())).map_err(error::into_pyerr)
+        }
+    }
+
+    pub fn disconnect(&mut self, py: Python) {
+        block_on(py, self.0.disconnect());
+    }
+}

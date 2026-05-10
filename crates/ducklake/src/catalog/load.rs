@@ -1,0 +1,227 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
+
+use sea_query::{Asterisk, Query};
+
+use super::*;
+use crate::spec::*;
+use crate::{db, io};
+
+macro_rules! snapshot_query {
+    ($entity:ident, $snapshot_id:expr) => {
+        Query::select()
+            .column(Asterisk)
+            .from($entity::Table)
+            .filter_for_snapshot(
+                $entity::Column::BeginSnapshot.col(),
+                $entity::Column::EndSnapshot.col(),
+                $snapshot_id,
+            )
+            .to_owned()
+    };
+}
+
+macro_rules! group_by {
+    ($vec:expr, $field:ident) => {
+        $vec.into_iter().fold(HashMap::new(), |mut map, item| {
+            map.entry(item.$field).or_insert_with(Vec::new).push(item);
+            map
+        })
+    };
+}
+
+impl Catalog {
+    /// Create a new, empty catalog.
+    ///
+    /// This is reserved for unit testing. Consumers should always use `Catalog::load`.
+    pub(super) fn new() -> Self {
+        Self {
+            arena: Vec::new(),
+            by_id: HashMap::new(),
+            schemas: HashMap::new(),
+        }
+    }
+
+    /// Load the current catalog from the DuckLake catalog database referenced by the pool, at the
+    /// given snapshot.
+    pub async fn load(pool: &db::Pool, snapshot_id: i64) -> DucklakeResult<Self> {
+        // Fetch all relevant data in parallel. Since we're using snapshot filtering,
+        // we don't need a transaction for consistency - each query filters by the same
+        // snapshot_id which ensures we get a consistent view of the data.
+        let schemas_query = snapshot_query!(ducklake_schema, snapshot_id);
+        let tables_query = snapshot_query!(ducklake_table, snapshot_id);
+        let columns_query = snapshot_query!(ducklake_column, snapshot_id);
+        let tags_query = snapshot_query!(ducklake_tag, snapshot_id);
+        let column_tags_query = snapshot_query!(ducklake_column_tag, snapshot_id);
+        let partition_infos_query = snapshot_query!(ducklake_partition_info, snapshot_id);
+        let partition_columns_query = Query::select()
+            .column(Asterisk)
+            .from(ducklake_partition_column::Table)
+            .to_owned();
+
+        #[allow(clippy::type_complexity)]
+        let (
+            fetched_schemas,
+            fetched_tables,
+            fetched_columns,
+            fetched_tags,
+            fetched_column_tags,
+            fetched_partition_infos,
+            fetched_partition_columns,
+        ): (
+            Vec<DucklakeSchema>,
+            Vec<DucklakeTable>,
+            Vec<DucklakeColumn>,
+            Vec<DucklakeTag>,
+            Vec<DucklakeColumnTag>,
+            Vec<DucklakePartitionInfo>,
+            Vec<DucklakePartitionColumn>,
+        ) = tokio::try_join!(
+            pool.fetch_all(&schemas_query),
+            pool.fetch_all(&tables_query),
+            pool.fetch_all(&columns_query),
+            pool.fetch_all(&tags_query),
+            pool.fetch_all(&column_tags_query),
+            pool.fetch_all(&partition_infos_query),
+            pool.fetch_all(&partition_columns_query),
+        )?;
+
+        // Group all relevant data by the keys we need to filter by below. This avoids a bunch
+        // of linear searches and memcopies later on.
+        let mut grouped_columns = group_by!(fetched_columns, table_id);
+        let mut grouped_tags = group_by!(fetched_tags, object_id);
+        let mut grouped_column_tags = group_by!(fetched_column_tags, table_id);
+        let mut grouped_partition_infos = group_by!(fetched_partition_infos, table_id);
+        let mut grouped_partition_columns = group_by!(fetched_partition_columns, table_id);
+
+        // Initialize a new catalog and populate it with the fetched data
+        let mut catalog = Catalog::new();
+        catalog.set_schemas(fetched_schemas);
+        catalog.set_tables(
+            fetched_tables,
+            &mut grouped_columns,
+            &mut grouped_column_tags,
+            &mut grouped_partition_infos,
+            &mut grouped_partition_columns,
+            &mut grouped_tags,
+        )?;
+
+        Ok(catalog)
+    }
+
+    fn set_schemas(&mut self, schemas: Vec<DucklakeSchema>) {
+        for schema in schemas {
+            let schema_name = schema.schema_name;
+
+            // 1) Create the catalog schema
+            let catalog_schema = CatalogSchema {
+                state: CatalogState::Existing {
+                    id: schema.schema_id,
+                },
+                name: schema_name.clone(),
+                tables: HashMap::new(),
+                path: io::DucklakePath::new(
+                    &default_empty_string(&schema.path, || format!("{}/", schema_name)),
+                    schema.path_is_relative,
+                ),
+            };
+
+            // 2) Add the schema to the catalog
+            let idx = self.push_schema(catalog_schema);
+            self.by_id.insert(schema.schema_id, idx);
+            self.schemas.insert(schema_name, idx);
+        }
+    }
+
+    fn set_tables(
+        &mut self,
+        tables: Vec<DucklakeTable>,
+        columns: &mut HashMap<i64, Vec<DucklakeColumn>>,
+        column_tags: &mut HashMap<i64, Vec<DucklakeColumnTag>>,
+        partition_infos: &mut HashMap<i64, Vec<DucklakePartitionInfo>>,
+        partition_columns: &mut HashMap<i64, Vec<DucklakePartitionColumn>>,
+        tags: &mut HashMap<i64, Vec<DucklakeTag>>,
+    ) -> DucklakeResult<()> {
+        for table in tables {
+            let table_name = table.table_name;
+
+            // 1) Get the schema this table belongs to
+            let schema = self
+                .schema_by_id(table.schema_id)
+                .expect("table references the ID of non-existent schema");
+
+            // 2) Collect the columns for this table along with their tags
+            let table_columns = columns.remove(&table.table_id).unwrap_or_default();
+            let table_column_tags = column_tags.remove(&table.table_id).unwrap_or_default();
+            let table_columns = CatalogColumns::from_ducklake(table_columns, table_column_tags)?;
+
+            // 3) Collect the partition info for this table
+            let mut table_partition_info =
+                partition_infos.remove(&table.table_id).unwrap_or_default();
+            if table_partition_info.len() > 1 {
+                return Err(DucklakeError::InvalidPartitions(format!(
+                    "expected at most one partition for table {table_name} but found {}",
+                    table_partition_info.len()
+                )));
+            }
+            let table_partition = if let Some(partition_info) = table_partition_info.pop() {
+                let table_partition_columns: Vec<_> = partition_columns
+                    .remove(&table.table_id)
+                    .map(|cols| {
+                        cols.into_iter()
+                            .filter(|col| col.partition_id == partition_info.partition_id)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if table_partition_columns.is_empty() {
+                    return Err(DucklakeError::InvalidPartitions(format!(
+                        "partition info exists for table {table_name} but no partition columns found"
+                    )));
+                }
+                Some(CatalogTablePartition::from_ducklake(
+                    partition_info,
+                    table_partition_columns,
+                    &table_columns,
+                )?)
+            } else {
+                None
+            };
+
+            // 4) Construct the full table catalog object
+            let catalog_table = CatalogTable {
+                name: crate::TableName {
+                    schema: schema.name.clone(),
+                    name: table_name.clone(),
+                },
+                state: CatalogState::Existing { id: table.table_id },
+                columns: table_columns,
+                partition: table_partition,
+                tags: tags
+                    .remove(&table.table_id)
+                    .map(|v| v.into_iter().map(|tag| tag.into()).collect())
+                    .unwrap_or_default(),
+                path: io::DucklakePath::new(
+                    &default_empty_string(&table.path, || format!("{}/", table_name)),
+                    table.path_is_relative,
+                ),
+            };
+
+            // 5) Add the table to the catalog
+            let arena_idx = self.push_table(catalog_table);
+            self.by_id.insert(table.table_id, arena_idx);
+            self.schema_by_id_mut(table.schema_id)
+                .unwrap() // SAFETY: we already verified existence above
+                .tables
+                .insert(table_name, arena_idx);
+        }
+        Ok(())
+    }
+}
+
+fn default_empty_string(s: &str, on_empty: impl FnOnce() -> String) -> Cow<'_, str> {
+    if s.is_empty() {
+        Cow::Owned(on_empty())
+    } else {
+        Cow::Borrowed(s)
+    }
+}

@@ -1,0 +1,51 @@
+[package]
+authors = ["Oliver Borchert <me@borchero.com>"]
+description = "Rust SDK for DuckLake."
+edition = "2024"
+license = "MIT"
+name = "ducklake"
+version = "0.0.0"
+
+[dependencies]
+arrow-arith = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true, features = ["canonical_extension_types"] }
+chrono = { workspace = true }
+ducklake-macros = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+indexmap = { workspace = true }
+itertools = { workspace = true }
+object_store = { workspace = true }
+parquet = { workspace = true, features = ["async", "object_store"] }
+percent-encoding = { workspace = true }
+regex = { workspace = true }
+rust_decimal = { workspace = true }
+sea-query = { workspace = true, features = ["derive", "with-chrono", "with-uuid"] }
+sea-query-sqlx = { workspace = true, features = ["with-chrono", "with-uuid"] }
+sqlx = { workspace = true, features = ["chrono", "runtime-tokio", "rust_decimal", "tls-rustls"] }
+strum = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
+url = { workspace = true }
+uuid = { workspace = true, features = ["v4", "v7"] }
+
+[dev-dependencies]
+rstest = { workspace = true }
+
+[features]
+default = []
+
+# Databases
+mysql = ["sea-query-sqlx/sqlx-mysql", "sqlx/mysql"]
+postgres = ["sea-query-sqlx/sqlx-postgres", "sqlx/postgres"]
+sqlite = ["sea-query-sqlx/sqlx-sqlite", "sqlx/sqlite"]
+
+# IO Backends
+aws = ["object_store/aws"]
+
+# High-level SDKs
+python = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
