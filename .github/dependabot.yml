@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      gh-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: quarterly
+    cooldown:
+      default-days: 7
+    groups:
+      rust-toolchain:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      cargo:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: build

@@ -1,0 +1,41 @@
+[workspace]
+members = ["crates/ducklake", "crates/ducklake-macros", "ducklake-python"]
+resolver = "2"
+
+[workspace.dependencies]
+arrow-arith = "58.2"
+arrow-array = "58.2"
+arrow-schema = "58.2"
+chrono = "0.4"
+futures = "0.3"
+heck = "0.5"
+hex = "0.4"
+indexmap = "2.14"
+itertools = "0.14"
+object_store = "0.13"
+parquet = "58.2"
+percent-encoding = "2.3"
+proc-macro2 = "1.0"
+pyo3 = "0.28"
+pyo3-arrow = { version = "0.17", default-features = false }
+quote = "1.0"
+regex = "1.12"
+rstest = "0.26"
+rust_decimal = "1.41"
+sea-query = "1.0.0-rc.33"
+sea-query-sqlx = "0.8.0-rc.15"
+sqlx = "0.8"
+strum = "0.28"
+syn = "2.0"
+thiserror = "2.0"
+tokio = "1.50"
+url = "2.5"
+uuid = "1.23"
+
+ducklake = { path = "crates/ducklake", version = "0.0.0" }
+ducklake-macros = { path = "crates/ducklake-macros", version = "0.0.0" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = "symbols"

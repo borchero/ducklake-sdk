@@ -1,0 +1,186 @@
+[workspace]
+authors = ["Oliver Borchert <me@borchero.com>"]
+channels = ["conda-forge"]
+name = "ducklake-sdk"
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"]
+
+# ------------------------------------- DEFAULT DEPENDENCIES ------------------------------------ #
+
+[dependencies]
+duckdb = "*"
+duckdb-engine = "*"
+polars = ">=1.40,<2"
+pyarrow = "*"
+python-dateutil = "*"
+
+# ------------------------------------ DEVELOPMENT UTILITIES ------------------------------------ #
+
+[feature.dev.dependencies]
+jupyter = "*"
+
+# --------------------------------------------- LINT -------------------------------------------- #
+
+[feature.lint.dependencies]
+docformatter = "*"
+lefthook = "*"
+pre-commit-hooks = "*"
+prettier = "*"
+ruff = "*"
+sqlfluff = "*"
+taplo = "*"
+ty = "*"
+typos = "*"
+
+[feature.lint.tasks]
+lefthook-install-py = "lefthook install-py pre-commit"
+lint = "lefthook run pre-commit --all-files"
+lint-staged = "lefthook run pre-commit"
+
+# ----------------------------------------------------------------------------------------------- #
+#                                               TEST                                              #
+# ----------------------------------------------------------------------------------------------- #
+
+# -------------------------------------------- PYTHON ------------------------------------------- #
+
+[feature.test-py.dependencies]
+boto3 = ">=1.43"
+mysql-client = "*"
+mysqlclient = "*"
+postgresql = "*"
+psycopg2 = "*"
+pytest = ">=9"
+pytest-cov = "*"
+sqlalchemy = ">=2"
+sqlalchemy-utils = ">=0.42"
+sqlite = "*"
+
+[feature.test-py.tasks]
+test-py = "pytest"
+test-py-coverage = "pytest --cov=ducklake --cov-report=xml --cov-report=term-missing"
+test-py-make-snapshot = "bash tests/_snapshots/make_snapshot.sh"
+
+# --------------------------------------------- RUST -------------------------------------------- #
+
+[feature.test-rs.dependencies]
+cargo-llvm-cov = "*"
+
+[feature.test-rs.tasks]
+test-rs = "cargo test --all-features -p ducklake"
+test-rs-coverage = "cargo llvm-cov --all-features -p ducklake --lcov"
+test-rs-coverage-html = "cargo llvm-cov --all-features -p ducklake --html --open"
+
+# ----------------------------------------------------------------------------------------------- #
+#                                              BUILD                                              #
+# ----------------------------------------------------------------------------------------------- #
+
+[feature.install-py.dependencies]
+maturin = "*"
+pip = "*"
+
+[feature.install-py.tasks]
+install-py = "maturin develop -m ducklake-python/Cargo.toml"
+
+[feature.build-py.dependencies]
+python-build = "*"
+twine = "*"
+wheel = "*"
+[feature.build-py.target.unix.dependencies]
+sed = "*"
+
+[feature.build-py.tasks]
+build-py-sdist = "python -m build --sdist --no-isolation ducklake-python"
+build-py-wheel = "python -m build --wheel --no-isolation ducklake-python"
+get-version = "(git describe --tags --long 2>/dev/null || echo \"v0.0.1-$(git rev-list --count HEAD)-g$(git rev-parse --short HEAD)\") | sed -E 's/^v//; s/-0-g[a-f0-9]+$//; s/-([0-9]+)-g([a-f0-9]+)/-post.\\1+\\2/'"
+
+# ----------------------------------------------------------------------------------------------- #
+#                                               DOCS                                              #
+# ----------------------------------------------------------------------------------------------- #
+
+# -------------------------------------------- PYTHON ------------------------------------------- #
+
+[feature.docs-py.dependencies]
+autodocsumm = "*"
+ipython = "*"
+myst-parser = "*"
+nbsphinx = "*"
+numpydoc = "*"
+pydata-sphinx-theme = "*"
+sphinx = ">=8.2,<9"
+sphinx-copybutton = "*"
+sphinx-design = "*"
+sphinx-toolbox = "*"
+
+[feature.docs-py.tasks]
+build-docs = { cmd = "rm -rf _build && find . -name _gen -type d -exec rm -rf \"{}\" + && sphinx-build -M html . _build --fail-on-warning", cwd = "ducklake-python/docs", depends-on = "install-py" }
+readthedocs = { cmd = "rm -rf $READTHEDOCS_OUTPUT/html && cp -r ducklake-python/docs/_build/html $READTHEDOCS_OUTPUT/html", depends-on = "build-docs" }
+
+# ----------------------------------------------------------------------------------------------- #
+#                                         VERSION MATRICES                                        #
+# ----------------------------------------------------------------------------------------------- #
+
+# -------------------------------------------- PYTHON ------------------------------------------- #
+
+[feature.py310.dependencies]
+python = "=3.10"
+
+[feature.py311.dependencies]
+python = "=3.11"
+
+[feature.py312.dependencies]
+python = "=3.12"
+
+[feature.py313.dependencies]
+python = "=3.13"
+
+[feature.py314.dependencies]
+python = "=3.14"
+
+# ------------------------------------------- DUCKLAKE ------------------------------------------ #
+
+[feature.ducklake]
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
+[feature.ducklake.dependencies]
+duckdb-cli = "*"
+sqlite = "*"
+
+[feature.ducklake-v0-1.dependencies]
+duckdb = "=1.3.0"
+duckdb-cli = "=1.3.0"
+
+[feature.ducklake-v0-2.dependencies]
+duckdb = "=1.3.1"
+duckdb-cli = "=1.3.1"
+
+[feature.ducklake-v0-3.dependencies]
+duckdb = "=1.4.0"
+duckdb-cli = "=1.4.0"
+
+[feature.ducklake-v0-4.dependencies]
+duckdb = "=1.5.1"
+duckdb-cli = "=1.5.1"
+
+[feature.ducklake-v1-0.dependencies]
+duckdb = "=1.5.2"
+duckdb-cli = "=1.5.2"
+
+# ----------------------------------------------------------------------------------------------- #
+#                                           ENVIRONMENTS                                          #
+# ----------------------------------------------------------------------------------------------- #
+
+[environments]
+default = ["build-py", "dev", "ducklake", "ducklake-v1-0", "install-py", "lint", "test-py", "test-rs"]
+
+build = { features = ["build-py", "install-py"], no-default-feature = true }
+docs = { features = ["docs-py", "install-py"] }
+test-py310 = ["install-py", "py310", "test-py", "test-rs"]
+test-py311 = ["install-py", "py311", "test-py", "test-rs"]
+test-py312 = ["install-py", "py312", "test-py", "test-rs"]
+test-py313 = ["install-py", "py313", "test-py", "test-rs"]
+test-py314 = ["install-py", "py314", "test-py", "test-rs"]
+test-rs = { features = ["test-rs"], no-default-feature = true }
+
+ducklake-v0-1 = { features = ["ducklake", "ducklake-v0-1"], no-default-feature = true }
+ducklake-v0-2 = { features = ["ducklake", "ducklake-v0-2"], no-default-feature = true }
+ducklake-v0-3 = { features = ["ducklake", "ducklake-v0-3"], no-default-feature = true }
+ducklake-v0-4 = { features = ["ducklake", "ducklake-v0-4"], no-default-feature = true }
+ducklake-v1-0 = { features = ["ducklake", "ducklake-v1-0"], no-default-feature = true }

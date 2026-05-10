@@ -1,0 +1,65 @@
+[tool.ruff]
+line-length = 99
+
+[tool.ruff.lint]
+ignore = [
+  "E501", # https://docs.astral.sh/ruff/faq/#is-the-ruff-linter-compatible-with-black
+  "N803", # https://docs.astral.sh/ruff/rules/invalid-argument-name
+  "N806", # https://docs.astral.sh/ruff/rules/non-lowercase-variable-in-function
+]
+select = [
+  # flake8-annotations
+  "ANN",
+  # pyflakes
+  "F",
+  # pycodestyle
+  "E",
+  "W",
+  # isort
+  "I",
+  # pep8-naming
+  "N",
+  # pyupgrade
+  "UP",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ducklake"]
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "double"
+
+[tool.docformatter]
+line-length = 99
+wrap-descriptions = 99
+wrap-summaries = 99
+
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ty.src]
+exclude = ["docs/"]
+
+[tool.ty.analysis]
+allowed-unresolved-imports = ["duckdb.**", "pyarrow.**", "sqlalchemy_utils.**"]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib --strict-markers"
+filterwarnings = [
+  # By default, all warnings should yield errors
+  "error",
+  # We don't want to be notified of recommendations against MySQL
+  "ignore:Using the DuckDB DuckLake extension with MySQL is currently not recommended:UserWarning",
+  # sqlalchemy-utils uses passlib which causes warnings: https://github.com/kvesteri/sqlalchemy-utils/issues/646
+  "ignore:'crypt' is deprecated and slated for removal:DeprecationWarning",
+]
+markers = [
+  "differential: mark a test as differential test run again the DuckDB DuckLake reference implementation",
+  "skip_config: mark a test to be skipped for specific combinations of catalog database and/or storage",
+]
+pythonpath = ["tests"]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = ["ducklake/testing/**"]

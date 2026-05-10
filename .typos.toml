@@ -1,0 +1,10 @@
+[files]
+extend-exclude = ["**/*.sqlite", "tests/snapshots/*/*.sql"]
+
+[default]
+extend-ignore-re = [
+  # Disable spell-checking for an individual line.
+  "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+  # Disable spell-checking for a code block.
+  "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on",
+]

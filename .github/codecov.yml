@@ -1,0 +1,26 @@
+codecov:
+  notify:
+    after_n_builds: 11
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 0%
+        base: auto
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+  individual_components:
+    - name: Rust
+      component_id: rust
+      paths:
+        - crates/ducklake/**
+    - name: Python
+      component_id: python
+      paths:
+        - ducklake-python/**

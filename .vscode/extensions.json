@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "rust-lang.rust-analyzer",
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "astral-sh.ty",
+    "tekumara.typos-vscode",
+    "tamasfe.even-better-toml"
+  ],
+  "unwantedRecommendations": ["ms-python.mypy-type-checker"]
+}
