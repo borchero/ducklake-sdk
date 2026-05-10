@@ -1,13 +1,8 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Literal, overload
 
-from ._compat import DEFAULT_QUERY_OPT_FLAGS, duckdb, pyarrow
-from ._compat import polars as pl
-from ._native import PyDataFilePathGenerator, PyTable
-from ._storage import StorageOptionSet
 from .typedefs import (
     ArrowStreamExportable,
     Column,
@@ -31,7 +26,15 @@ else:
     from typing_extensions import Unpack
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, Sequence
+
+    import duckdb
+    import polars as pl
+    import pyarrow as pa
     from polars._typing import EngineType
+
+    from ._native import PyDataFilePathGenerator, PyTable
+    from ._storage import StorageOptionSet
 
 
 class Table:
@@ -132,7 +135,7 @@ class Table:
         lf: pl.LazyFrame,
         *,
         engine: EngineType = "auto",
-        optimizations: pl.QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        optimizations: pl.QueryOptFlags | None = None,
         lazy: bool = False,
     ) -> None: ...
 
@@ -142,7 +145,7 @@ class Table:
         df: pl.DataFrame,
         *,
         engine: EngineType = "auto",
-        optimizations: pl.QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        optimizations: pl.QueryOptFlags | None = None,
         lazy: Literal[True],
     ) -> pl.LazyFrame: ...
 
@@ -151,7 +154,7 @@ class Table:
         lf: pl.LazyFrame,
         *,
         engine: EngineType = "auto",
-        optimizations: pl.QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        optimizations: pl.QueryOptFlags | None = None,
         lazy: bool = False,
     ) -> pl.LazyFrame | None:
         from .polars.sink import sink_ducklake
@@ -184,7 +187,7 @@ class Table:
 
     # ------------------------------------------ ARROW ------------------------------------------ #
 
-    def write_arrow(self, data: pyarrow.Table) -> None:
+    def write_arrow(self, data: pa.Table) -> None:
         """Append the provided data to the table.
 
         Args:
@@ -201,7 +204,7 @@ class Table:
             f"SELECT {joined_column_names} FROM data"
         )
 
-    def read_arrow(self) -> pyarrow.Table:
+    def read_arrow(self) -> pa.Table:
         """Read the full contents of the table as a PyArrow table.
 
         Returns:

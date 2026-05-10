@@ -21,7 +21,7 @@ def sink_ducklake(
     table: Table | TransactionTable,
     *,
     engine: EngineType = "auto",
-    optimizations: pl.QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    optimizations: pl.QueryOptFlags | None = None,
     lazy: Literal[False] = False,
 ) -> None: ...
 
@@ -32,7 +32,7 @@ def sink_ducklake(
     table: Table | TransactionTable,
     *,
     engine: EngineType = "auto",
-    optimizations: pl.QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    optimizations: pl.QueryOptFlags | None = None,
     lazy: Literal[True],
 ) -> pl.LazyFrame: ...
 
@@ -42,7 +42,7 @@ def sink_ducklake(
     table: Table | TransactionTable,
     *,
     engine: EngineType = "auto",
-    optimizations: pl.QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    optimizations: pl.QueryOptFlags | None = None,
     lazy: bool = False,
 ) -> pl.LazyFrame | None:
     # 1) First, we need to read metadata information about the table to know how to write it. This
@@ -86,7 +86,7 @@ def sink_ducklake(
         row_group_size=table_metadata["parquet_row_group_size"],
         statistics=True,
         engine=engine,
-        optimizations=optimizations,
+        optimizations=optimizations or DEFAULT_QUERY_OPT_FLAGS,
         lazy=lazy,
         arrow_schema=table.schema,
         _sinked_paths_callback=partial(

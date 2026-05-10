@@ -4,14 +4,16 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
-
-from ._compat import duckdb
 
 if sys.version_info >= (3, 11):
     from typing import Self
 else:
     from typing_extensions import Self
+
+if TYPE_CHECKING:
+    import duckdb
 
 
 # -------------------------------------- STORAGE OPTION SET ------------------------------------- #

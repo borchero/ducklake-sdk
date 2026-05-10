@@ -140,6 +140,28 @@ jobs:
           files: coverage-py.xml, coverage-rs.lcov
           use_oidc: true
 
+  unit-tests-py-minimal:
+    name: Unit Tests (py314 - sqlite - local - Minimal Dependencies)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+        with:
+          environments: test-py314-minimal
+          activate-environment: true
+      - name: Install Rust
+        run: rustup show
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install Python package
+        run: pixi run install-py
+      - name: Run tests
+        run: pixi run pytest -v tests/unit/test_minimal.py
+
   unit-tests-py-release:
     name: Unit Tests (py314 - sqlite - local - Release Build)
     runs-on: ubuntu-latest

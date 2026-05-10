@@ -7,6 +7,8 @@ platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"]
 # ------------------------------------- DEFAULT DEPENDENCIES ------------------------------------ #
 
 [dependencies]
+
+[feature.optionals.dependencies]
 duckdb = "*"
 duckdb-engine = "*"
 polars = ">=1.40,<2"
@@ -58,6 +60,12 @@ sqlite = "*"
 test-py = "pytest"
 test-py-coverage = "pytest --cov=ducklake --cov-report=xml --cov-report=term-missing"
 test-py-make-snapshot = "bash tests/_snapshots/make_snapshot.sh"
+
+# --------------------------------------- PYTHON - MINIMAL -------------------------------------- #
+
+[feature.test-py-minimal.dependencies]
+polars = "*"
+pytest = ">=9"
 
 # --------------------------------------------- RUST -------------------------------------------- #
 
@@ -123,6 +131,7 @@ readthedocs = { cmd = "rm -rf $READTHEDOCS_OUTPUT/html && cp -r ducklake-python/
 
 [feature.py310.dependencies]
 python = "=3.10"
+typing-extensions = "*"
 
 [feature.py311.dependencies]
 python = "=3.11"
@@ -169,15 +178,16 @@ duckdb-cli = "=1.5.2"
 # ----------------------------------------------------------------------------------------------- #
 
 [environments]
-default = ["build-py", "dev", "ducklake", "ducklake-v1-0", "install-py", "lint", "test-py", "test-rs"]
+default = ["build-py", "dev", "ducklake", "ducklake-v1-0", "install-py", "lint", "optionals", "test-py", "test-rs"]
 
 build = { features = ["build-py", "install-py"], no-default-feature = true }
-docs = { features = ["docs-py", "install-py"] }
-test-py310 = ["install-py", "py310", "test-py", "test-rs"]
-test-py311 = ["install-py", "py311", "test-py", "test-rs"]
-test-py312 = ["install-py", "py312", "test-py", "test-rs"]
-test-py313 = ["install-py", "py313", "test-py", "test-rs"]
-test-py314 = ["install-py", "py314", "test-py", "test-rs"]
+docs = { features = ["docs-py", "install-py", "optionals"] }
+test-py310 = ["install-py", "optionals", "py310", "test-py", "test-rs"]
+test-py311 = ["install-py", "optionals", "py311", "test-py", "test-rs"]
+test-py312 = ["install-py", "optionals", "py312", "test-py", "test-rs"]
+test-py313 = ["install-py", "optionals", "py313", "test-py", "test-rs"]
+test-py314 = ["install-py", "optionals", "py314", "test-py", "test-rs"]
+test-py314-minimal = ["install-py", "py314", "test-py-minimal"]
 test-rs = { features = ["test-rs"], no-default-feature = true }
 
 ducklake-v0-1 = { features = ["ducklake", "ducklake-v0-1"], no-default-feature = true }

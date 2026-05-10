@@ -52,7 +52,7 @@ def test_read_write_arrow(shared_ducklake: dl.Ducklake, random_table_name: str) 
 
     # Act
     table.write_arrow(df.to_arrow())
-    roundtrip_df = cast(pl.DataFrame, pl.from_arrow(table.read_arrow()))
+    roundtrip_df = cast("pl.DataFrame", pl.from_arrow(table.read_arrow()))
 
     # Assert
     assert_frame_equal(df, roundtrip_df)

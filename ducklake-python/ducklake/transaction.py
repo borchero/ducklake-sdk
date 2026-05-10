@@ -1,14 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from types import TracebackType
 from typing import TYPE_CHECKING, Literal, overload
 
-from ._compat import DEFAULT_QUERY_OPT_FLAGS
-from ._compat import polars as pl
-from ._native import PyTransaction, PyTransactionTable
-from ._storage import StorageOptionSet
-from .table import TableName
 from .typedefs import (
     Column,
     DataType,
@@ -21,9 +14,15 @@ from .typedefs import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from types import TracebackType
+
+    import polars as pl
     from polars._typing import EngineType
 
-    from ._native import PyDataFilePathGenerator
+    from ._native import PyDataFilePathGenerator, PyTransaction, PyTransactionTable
+    from ._storage import StorageOptionSet
+    from .table import TableName
     from .typedefs import ArrowStreamExportable
 
 
@@ -175,7 +174,7 @@ class TransactionTable:
         lf: pl.LazyFrame,
         *,
         engine: EngineType = "auto",
-        optimizations: pl.QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        optimizations: pl.QueryOptFlags | None = None,
         lazy: bool = False,
     ) -> None: ...
 
@@ -185,7 +184,7 @@ class TransactionTable:
         df: pl.DataFrame,
         *,
         engine: EngineType = "auto",
-        optimizations: pl.QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        optimizations: pl.QueryOptFlags | None = None,
         lazy: Literal[True],
     ) -> pl.LazyFrame: ...
 
@@ -194,7 +193,7 @@ class TransactionTable:
         lf: pl.LazyFrame,
         *,
         engine: EngineType = "auto",
-        optimizations: pl.QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        optimizations: pl.QueryOptFlags | None = None,
         lazy: bool = False,
     ) -> pl.LazyFrame | None:
         from .polars.sink import sink_ducklake

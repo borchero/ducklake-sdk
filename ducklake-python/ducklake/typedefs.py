@@ -5,14 +5,23 @@ import decimal
 import uuid
 from abc import ABC
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal, NamedTuple, Protocol, TypeAlias, TypedDict, overload
-
-import dateutil.relativedelta as rd
+from typing import (
+    TYPE_CHECKING,
+    Literal,
+    NamedTuple,
+    Protocol,
+    TypeAlias,
+    TypedDict,
+    Union,
+    overload,
+)
 
 from ._native import schema_to_arrow
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    import dateutil.relativedelta as rd
 
 # ------------------------------------------ TABLE NAME ----------------------------------------- #
 
@@ -474,23 +483,25 @@ class PartitionColumn:
 
 # -------------------------------------------- VALUE -------------------------------------------- #
 
-Value: TypeAlias = (
-    bool
-    | int
-    | float
-    | str
-    | bytes
-    | decimal.Decimal
-    | uuid.UUID
-    | dt.date
-    | dt.time
-    | dt.datetime
-    | dt.timedelta
-    | rd.relativedelta
-    | list["Value"]
-    | dict[str, "Value"]
-    | list[tuple["Value", "Value"]]  # this is the `Map` type
-)
+# NOTE: This must be a union s.t. `dateutil` can be an optional dependency. With Python 3.12+, we
+#  can switch to a lazy type here.
+Value: TypeAlias = Union[
+    bool,
+    int,
+    float,
+    str,
+    bytes,
+    decimal.Decimal,
+    uuid.UUID,
+    dt.date,
+    dt.time,
+    dt.datetime,
+    dt.timedelta,
+    "rd.relativedelta",
+    list["Value"],
+    dict[str, "Value"],
+    list[tuple["Value", "Value"]],  # this is the `Map` type
+]
 
 # ----------------------------------------- DATA FILES ----------------------------------------- #
 

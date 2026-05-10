@@ -3,13 +3,15 @@ from __future__ import annotations
 import datetime as dt
 import re
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 from urllib.parse import quote, unquote
 
 from . import _native as native
-from ._compat import sqlalchemy as sa
 from ._storage import StorageOptionSet
 from .ducklake import Ducklake
+
+if TYPE_CHECKING:
+    import sqlalchemy as sa
 
 
 def create(
@@ -95,10 +97,10 @@ def connect(
 
 
 def _sanitize_url(url: str | sa.URL) -> ConnectionArgs:
-    if isinstance(url, sa.URL):
-        str_url = url.render_as_string(hide_password=False)
-    else:
+    if isinstance(url, str):
         str_url = url
+    else:
+        str_url = url.render_as_string(hide_password=False)
     return ConnectionArgs.parse(str_url)
 
 
