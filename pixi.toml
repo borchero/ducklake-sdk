@@ -82,6 +82,7 @@ install-py = "maturin develop -m ducklake-python/Cargo.toml"
 
 [feature.build-py.dependencies]
 python-build = "*"
+setuptools-scm = "*"
 twine = "*"
 wheel = "*"
 [feature.build-py.target.unix.dependencies]
@@ -90,7 +91,7 @@ sed = "*"
 [feature.build-py.tasks]
 build-py-sdist = "python -m build --sdist --no-isolation ducklake-python"
 build-py-wheel = "python -m build --wheel --no-isolation ducklake-python"
-get-version = "(git describe --tags --long 2>/dev/null || echo \"v0.0.1-$(git rev-list --count HEAD)-g$(git rev-parse --short HEAD)\") | sed -E 's/^v//; s/-0-g[a-f0-9]+$//; s/-([0-9]+)-g([a-f0-9]+)/-post.\\1+\\2/'"
+get-version = "python -m setuptools_scm | sed -E 's/\\.dev([0-9]+)/-dev.\\1/; s/(\\+g[^.]+)\\.d[0-9]+$/\\1/'"
 
 # ----------------------------------------------------------------------------------------------- #
 #                                               DOCS                                              #

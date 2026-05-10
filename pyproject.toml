@@ -1,3 +1,5 @@
+[tool.setuptools_scm]
+
 [tool.ruff]
 line-length = 99
 
