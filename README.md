@@ -11,7 +11,6 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/borchero/ducklake-sdk/ci.yml?style=flat-square&branch=main&label=CI)](https://github.com/borchero/ducklake-sdk/actions/workflows/ci.yml)
 [![Build](https://img.shields.io/github/actions/workflow/status/borchero/ducklake-sdk/build.yml?style=flat-square&branch=main&label=Build)](https://github.com/borchero/ducklake-sdk/actions/workflows/build.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/borchero/ducklake-sdk?style=flat-square&label=Release)](https://github.com/borchero/ducklake-sdk/releases)
-[![License](https://img.shields.io/github/license/borchero/ducklake-sdk?style=flat-square&label=License)](LICENSE)
 
 </div>
 
