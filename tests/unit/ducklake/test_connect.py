@@ -236,4 +236,4 @@ def _load_snapshot(catalog: str, url: str, *, version: str) -> None:
 
     snapshot_path = SNAPSHOTS_PATH / version / "catalogs" / f"{catalog}.sql"
     with snapshot_path.open() as f:
-        subprocess.run(cast(list[str], cmd), stdin=f, check=True, env={**os.environ, **env})
+        subprocess.run(cast("list[str]", cmd), stdin=f, check=True, env={**os.environ, **env})

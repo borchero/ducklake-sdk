@@ -3,7 +3,6 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from _testutils import make_catalog_url, make_storage_path
 
 import ducklake as dl
 
@@ -55,6 +54,8 @@ def catalog(request: pytest.FixtureRequest) -> str:
 
 @pytest.fixture()
 def catalog_url(catalog: str, tmp_path: Path) -> Iterator[str]:
+    from _testutils import make_catalog_url
+
     with make_catalog_url(catalog, tmp_path) as url:
         yield url
 
@@ -69,6 +70,8 @@ def storage(request: pytest.FixtureRequest) -> str:
 
 @pytest.fixture()
 def storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
+    from _testutils import make_storage_path
+
     with make_storage_path(storage, tmp_path) as path:
         yield path
 
@@ -84,6 +87,8 @@ def ducklake(catalog_url: str, storage_path: str) -> Iterator[dl.Ducklake]:
 
 @pytest.fixture(scope="session")
 def shared_ducklake(catalog: str, storage: str) -> Iterator[dl.Ducklake]:
+    from _testutils import make_catalog_url, make_storage_path
+
     with (
         tempfile.TemporaryDirectory() as tmpdir,
         make_catalog_url(catalog, Path(tmpdir)) as catalog_url,

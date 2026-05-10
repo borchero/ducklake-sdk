@@ -5,13 +5,17 @@ line-length = 99
 
 [tool.ruff.lint]
 ignore = [
-  "E501", # https://docs.astral.sh/ruff/faq/#is-the-ruff-linter-compatible-with-black
-  "N803", # https://docs.astral.sh/ruff/rules/invalid-argument-name
-  "N806", # https://docs.astral.sh/ruff/rules/non-lowercase-variable-in-function
+  "E501",  # https://docs.astral.sh/ruff/faq/#is-the-ruff-linter-compatible-with-black
+  "N803",  # https://docs.astral.sh/ruff/rules/invalid-argument-name
+  "N806",  # https://docs.astral.sh/ruff/rules/non-lowercase-variable-in-function
+  "TC006", # https://docs.astral.sh/ruff/rules/runtime-cast-value/
+  "TC007", # https://docs.astral.sh/ruff/rules/unquoted-type-alias/
 ]
 select = [
   # flake8-annotations
   "ANN",
+  # flake8-type-checking
+  "TC",
   # pyflakes
   "F",
   # pycodestyle

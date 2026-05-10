@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import boto3
 import sqlalchemy as sa
 from sqlalchemy_utils import create_database, database_exists, drop_database
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
 
 # ----------------------------------------------------------------------------------------------- #
 #                                              SETUP                                              #

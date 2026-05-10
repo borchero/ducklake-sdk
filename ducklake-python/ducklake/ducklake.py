@@ -1,16 +1,10 @@
 from __future__ import annotations
 
-import datetime as dt
 import sys
 import warnings
-from collections.abc import Mapping, Sequence
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, overload
 
-from ._compat import duckdb
-from ._compat import sqlalchemy as sa
-from ._native import PyDucklake
-from ._storage import StorageOptionSet
 from .table import Table
 from .transaction import Transaction
 from .typedefs import (
@@ -33,6 +27,14 @@ else:
     from typing_extensions import Unpack
 
 if TYPE_CHECKING:
+    import datetime as dt
+    from collections.abc import Mapping, Sequence
+
+    import duckdb
+    import sqlalchemy as sa
+
+    from ._native import PyDucklake
+    from ._storage import StorageOptionSet
     from .connect import ConnectionArgs
 
 
@@ -536,6 +538,8 @@ def _make_duckdb_connection(
     data_path: str | None = None,
     storage_options: StorageOptionSet | None = None,
 ) -> duckdb.DuckDBPyConnection:
+    import duckdb
+
     con = duckdb.connect()
     con.execute("INSTALL ducklake;")
 
