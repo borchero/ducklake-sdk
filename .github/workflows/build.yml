@@ -64,8 +64,9 @@ jobs:
           activate-environment: true
       - name: Set version
         run: |
-          sed -i "s/0.0.0/$(pixi run get-version)/" ducklake-python/pyproject.toml
-          git ls-files '**Cargo.toml' | xargs sed -i "s/0.0.0/$(pixi run get-version)/"
+          VERSION=$(pixi run get-version)
+          sed -i "s/0.0.0/$VERSION/" ducklake-python/pyproject.toml
+          git ls-files '**Cargo.toml' | xargs sed -i "s/0.0.0/$VERSION/"
       - name: Build project
         run: pixi run build-py-sdist
       - name: Upload package
@@ -105,8 +106,9 @@ jobs:
           activate-environment: true
       - name: Set version
         run: |
-          sed -i "s/0.0.0/$(pixi run get-version)/" ducklake-python/pyproject.toml
-          git ls-files '**Cargo.toml' | xargs sed -i "s/0.0.0/$(pixi run get-version)/"
+          VERSION=$(pixi run get-version)
+          sed -i "s/0.0.0/$VERSION/" ducklake-python/pyproject.toml
+          git ls-files '**Cargo.toml' | xargs sed -i "s/0.0.0/$VERSION/"
       - name: Build wheel
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
