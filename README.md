@@ -25,6 +25,7 @@ All language SDKs are built on the same Rust core, which bundles the implementat
 **Python ([`ducklake-sdk`](https://pypi.org/project/ducklake-sdk))**
 
 [![pypi-version](https://img.shields.io/pypi/v/ducklake-sdk.svg?logoColor=white&logo=pypi&style=flat-square&label=pypi)](https://pypi.org/project/ducklake-sdk)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/ducklake-sdk?logoColor=white&logo=conda-forge&style=flat-square)](https://prefix.dev/channels/conda-forge/packages/ducklake-sdk)
 [![python-version](https://img.shields.io/pypi/pyversions/ducklake-sdk?logoColor=white&logo=python&style=flat-square)](https://pypi.org/project/ducklake-sdk)
 [![readthedocs](https://img.shields.io/readthedocs/ducklake-sdk?logo=readthedocs&logoColor=white&style=flat-square&label=docs)](https://ducklake-sdk.readthedocs.io)
 [![codecov](https://codecov.io/gh/borchero/ducklake-sdk/graph/badge.svg?component=python&token=A2h8NFb4Bx)](https://codecov.io/gh/borchero/ducklake-sdk/tree/main?components%5B0%5D=Python)
