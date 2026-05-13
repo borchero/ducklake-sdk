@@ -177,3 +177,25 @@ def test_checkpoint(ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Assert: files were merged and data is intact
     assert len(table.scan().data_files) == 1
     assert table.read_arrow().num_rows == 3
+
+
+def test_scan_after_expire_with_orphan_schema_versions(
+    catalog_url: str, storage_path: str, random_table_name: str
+) -> None:
+    # Arrange: write at two distinct schema_versions and expire, leaving the older one
+    # referenced only by ducklake_schema_versions / ducklake_inlined_data_tables.
+    with dl.create(catalog_url, data_path=storage_path) as setup:
+        con = setup._duckdb_connection
+        con.execute("CALL ducklake_set_option('my_ducklake', 'data_inlining_row_limit', '100')")
+        con.execute(f'CREATE TABLE main."{random_table_name}" (a INTEGER)')
+        con.execute(f'INSERT INTO main."{random_table_name}" VALUES (1)')
+        con.execute(f'ALTER TABLE main."{random_table_name}" ADD COLUMN b VARCHAR')
+        con.execute(f"INSERT INTO main.\"{random_table_name}\" VALUES (2, 'two')")
+        setup.expire_snapshots(older_than=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1))
+
+    # Act
+    with dl.connect(catalog_url) as fresh:
+        result = fresh.get_table(f"main.{random_table_name}").scan()
+
+    # Assert
+    assert isinstance(result, dl.ScanResult)
