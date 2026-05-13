@@ -19,8 +19,9 @@ This design allows the same code to work with any supported database without run
 
 The module exposes two primary types:
 
-- `Pool`: A single-connection pool to the metadata database. Provides methods for querying (`fetch_one`, `fetch_all`),
-  executing statements (`execute`), checking table existence (`table_exists`), and beginning transactions (`begin`).
+- `Pool`: A single-connection pool to the metadata database. Provides methods for querying (`fetch_one`,
+  `fetch_optional`, `fetch_all`), executing statements (`execute`), checking table existence (`table_exists`), and
+  beginning transactions (`begin`).
 - `Transaction`: A database transaction with `REPEATABLE READ` isolation level. Provides methods for executing
   statements and fetching results within the transaction context.
 

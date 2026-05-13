@@ -166,6 +166,36 @@ impl Pool {
         Ok(result)
     }
 
+    pub async fn fetch_optional<O, Q>(&self, query: &Q) -> DucklakeResult<Option<O>>
+    where
+        O: RowType,
+        Q: SqlConvertible,
+    {
+        let (sql, values) = query.to_sql(self.dialect());
+        log_sql(&sql, Some(&values));
+        let result = match &self.0 {
+            #[cfg(feature = "postgres")]
+            AnyPool::Postgres(pool) => {
+                sqlx::query_as_with(&sql, values)
+                    .fetch_optional(pool)
+                    .await?
+            }
+            #[cfg(feature = "mysql")]
+            AnyPool::MySql(pool) => {
+                sqlx::query_as_with(&sql, values)
+                    .fetch_optional(pool)
+                    .await?
+            }
+            #[cfg(feature = "sqlite")]
+            AnyPool::Sqlite(pool) => {
+                sqlx::query_as_with(&sql, values)
+                    .fetch_optional(pool)
+                    .await?
+            }
+        };
+        Ok(result)
+    }
+
     pub async fn fetch_all_arrow<Q>(
         &self,
         query: &Q,
