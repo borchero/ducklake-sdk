@@ -182,20 +182,21 @@ def test_checkpoint(ducklake: dl.Ducklake, random_table_name: str) -> None:
 
 def test_scan_after_expire_with_orphan_schema_versions(
     ducklake: dl.Ducklake,
+    catalog_url: str,
     random_table_name: str,
 ) -> None:
-    # Arrange: write at two distinct schema_versions and expire, leaving the older one
-    # referenced only by ducklake_schema_versions / ducklake_inlined_data_tables.
-
+    # Arrange
     table = ducklake.create_table(random_table_name, {"a": dl.Int64()})
     table.write_polars(pl.DataFrame({"a": [1]}))
     table.add_column(dl.Column("b", dl.Varchar()))
     table.write_polars(pl.DataFrame({"a": [2], "b": "two"}))
     ducklake.expire_snapshots(older_than=dt.datetime.now(dt.timezone.utc))
 
-    result = ducklake.get_table(f"{random_table_name}").scan()
-    # We expect one inlined array for each insert
-    assert len(result.inline_data) == 2
+    # Act: re-connect on same catalog to go around the cache
+    with dl.connect(catalog_url) as reader:
+        result = reader.get_table(random_table_name).scan()
 
-    row_counts = [pl.DataFrame(arr).height for arr in result.inline_data]
+    # Assert
+    assert len(result.inline_data) == 2
+    row_counts = sorted(pl.DataFrame(arr).height for arr in result.inline_data)
     assert row_counts == [1, 1]
