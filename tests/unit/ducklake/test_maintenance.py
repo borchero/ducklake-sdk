@@ -6,7 +6,6 @@ import pytest
 
 import ducklake as dl
 
-
 pytestmark = pytest.mark.skip_config(
     catalog="mysql", reason="The DuckDB MySQL connector is unreliable."
 )

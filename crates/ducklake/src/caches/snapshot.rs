@@ -266,7 +266,7 @@ impl SnapshotInfo {
         // Negative next_catalog_id and next_file_id to be abundantly clear these are fake
         Ok(Self {
             id: begin_snapshot,
-            schema_version: schema_version,
+            schema_version,
             next_catalog_id: -1,
             next_file_id: -1,
             snapshot_time: chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap(),
