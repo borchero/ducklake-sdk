@@ -190,7 +190,7 @@ def test_scan_after_expire_with_orphan_schema_versions(
     table = ducklake.create_table(random_table_name, {"a": dl.Int64()})
     table.write_polars(pl.DataFrame({"a": [1]}))
     table.add_column(dl.Column("b", dl.Varchar()))
-    table.write_polars(pl.DataFrame({"a": [2], "b" : "two"}))
+    table.write_polars(pl.DataFrame({"a": [2], "b": "two"}))
     ducklake.expire_snapshots(older_than=dt.datetime.now(dt.timezone.utc))
 
     result = ducklake.get_table(f"{random_table_name}").scan()
@@ -198,4 +198,4 @@ def test_scan_after_expire_with_orphan_schema_versions(
     assert len(result.inline_data) == 2
 
     row_counts = [pl.DataFrame(arr).height for arr in result.inline_data]
-    assert row_counts == [1,1]
+    assert row_counts == [1, 1]
