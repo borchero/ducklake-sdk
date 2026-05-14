@@ -9,7 +9,7 @@ use crate::caches::TableStats;
 use crate::catalog::Catalog;
 use crate::primitives::AsyncLazy;
 use crate::spec::*;
-use crate::{DucklakeError, DucklakeResult, db};
+use crate::{DucklakeResult, db};
 
 #[derive(Clone)]
 pub struct SnapshotCache {
@@ -69,7 +69,7 @@ impl SnapshotCache {
 
         // Try to find a live snapshot at this schema_version.
         if let Some(info) =
-            SnapshotInfo::try_load_for_schema_version(&self.pool, schema_version).await?
+            SnapshotInfo::load_for_schema_version(&self.pool, schema_version).await?
         {
             return Ok(self.insert_snapshot(info));
         }
@@ -216,7 +216,7 @@ impl SnapshotInfo {
         Ok(snapshot.into())
     }
 
-    async fn try_load_for_schema_version(
+    async fn load_for_schema_version(
         pool: &db::Pool,
         schema_version: i64,
     ) -> DucklakeResult<Option<Self>> {
@@ -261,21 +261,15 @@ impl SnapshotInfo {
             )
             .limit(1)
             .to_owned();
-        let row: Option<(i64,)> = pool.fetch_optional(&query).await?;
-        let begin_snapshot = row
-            .ok_or_else(|| DucklakeError::NotFound {
-                entity: "schema_version",
-                name: schema_version.to_string(),
-            })?
-            .0;
+        let (begin_snapshot,): (i64,) = pool.fetch_one(&query).await?;
 
+        // Negative next_catalog_id and next_file_id to be abundantly clear these are fake
         Ok(Self {
             id: begin_snapshot,
-            schema_version,
-            next_catalog_id: 0,
-            next_file_id: 0,
-            snapshot_time: chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0)
-                .expect("unix epoch is a valid timestamp"),
+            schema_version: schema_version,
+            next_catalog_id: -1,
+            next_file_id: -1,
+            snapshot_time: chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap(),
         })
     }
 }
