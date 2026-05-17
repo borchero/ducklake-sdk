@@ -67,11 +67,26 @@ impl SnapshotCache {
             return Ok(snapshot.clone());
         }
 
-        // If not, we need to fetch it
-        let snapshot_info =
-            SnapshotInfo::load_for_schema_version(&self.pool, schema_version).await?;
-        let snapshot = self.insert_snapshot(snapshot_info);
-        Ok(snapshot)
+        // Try to find a live snapshot at this schema_version.
+        if let Some(info) =
+            SnapshotInfo::load_for_schema_version(&self.pool, schema_version).await?
+        {
+            return Ok(self.insert_snapshot(info));
+        }
+
+        // Fall back to ducklake_schema_versions. ducklake_expire_snapshots prunes
+        // ducklake_snapshot but retains ducklake_schema_versions so older data files (and
+        // ducklake_inlined_data_tables) can still be projected through their historical
+        // schema. The synthesized SnapshotInfo is intentionally not cached: its sentinel
+        // `next_catalog_id` / `next_file_id` / `snapshot_time` are correct for the read path
+        // that lands here, but would be wrong for any cache hit that later reaches the
+        // table_stats accessor.
+        let info = SnapshotInfo::synthesize_for_schema_version(&self.pool, schema_version).await?;
+        Ok(Arc::new(Snapshot::new(
+            info,
+            self.catalog_cache.clone(),
+            self.table_stats_cache.clone(),
+        )))
     }
 
     /* ----------------------------------------- MODIFY ---------------------------------------- */
@@ -204,8 +219,8 @@ impl SnapshotInfo {
     async fn load_for_schema_version(
         pool: &db::Pool,
         schema_version: i64,
-    ) -> DucklakeResult<Self> {
-        // Read the latest snapshot for the given schema version
+    ) -> DucklakeResult<Option<Self>> {
+        // Read the latest live snapshot for the given schema version.
         let query = Query::select()
             .column(Asterisk)
             .from(ducklake_snapshot::Table)
@@ -220,10 +235,42 @@ impl SnapshotInfo {
             )
             .limit(1)
             .to_owned();
-        let snapshot: DucklakeSnapshot = pool.fetch_one(&query).await?;
+        let snapshot: Option<DucklakeSnapshot> = pool.fetch_optional(&query).await?;
+        Ok(snapshot.map(Into::into))
+    }
 
-        // Translate into snapshot struct
-        Ok(snapshot.into())
+    async fn synthesize_for_schema_version(
+        pool: &db::Pool,
+        schema_version: i64,
+    ) -> DucklakeResult<Self> {
+        // Used when ducklake_expire_snapshots has pruned every snapshot at this
+        // schema_version but ducklake_schema_versions still references it. The catalog can be
+        // reconstructed from any snapshot id that falls inside the schema_version's validity
+        // range; we use the earliest begin_snapshot recorded for it.
+        let query = Query::select()
+            .column(ducklake_schema_versions::Column::BeginSnapshot)
+            .from(ducklake_schema_versions::Table)
+            .and_where(
+                ducklake_schema_versions::Column::SchemaVersion
+                    .col()
+                    .eq(schema_version),
+            )
+            .order_by(
+                ducklake_schema_versions::Column::BeginSnapshot,
+                sea_query::Order::Asc,
+            )
+            .limit(1)
+            .to_owned();
+        let (begin_snapshot,): (i64,) = pool.fetch_one(&query).await?;
+
+        // Negative next_catalog_id and next_file_id to be abundantly clear these are fake
+        Ok(Self {
+            id: begin_snapshot,
+            schema_version,
+            next_catalog_id: -1,
+            next_file_id: -1,
+            snapshot_time: chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap(),
+        })
     }
 }
 
