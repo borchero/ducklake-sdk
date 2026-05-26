@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use super::Literal;
-use crate::DucklakeResult;
+use crate::{DucklakeError, DucklakeResult};
 
 macro_rules! str_literal {
     ($name:ident) => {
@@ -19,7 +19,25 @@ macro_rules! str_literal {
     };
 }
 
-str_literal!(bool);
+// Custom logic for bool to match Ducklake spec: https://ducklake.select/docs/stable/specification/data_types#type-encoding-for-statistics
+impl Literal for bool {
+    fn parse(s: &str) -> DucklakeResult<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            _ => Err(DucklakeError::Parsing(s.to_string())),
+        }
+    }
+
+    fn format(&self) -> String {
+        if *self {
+            "1".to_string()
+        } else {
+            "0".to_string()
+        }
+    }
+}
+
 str_literal!(i8);
 str_literal!(i16);
 str_literal!(i32);
@@ -64,8 +82,8 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case("true", true)]
-    #[case("false", false)]
+    #[case("1", true)]
+    #[case("0", false)]
     fn test_bool_roundtrip(#[case] input: &str, #[case] expected: bool) {
         let parsed = <bool as Literal>::parse(input).unwrap();
         assert_eq!(parsed, expected);
