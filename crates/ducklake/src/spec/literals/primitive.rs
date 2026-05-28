@@ -1,3 +1,5 @@
+// Literal encoding/decoding follows the ducklake specs statistics encoding
+// https://ducklake.select/docs/stable/specification/data_types#type-encoding-for-statistics
 use chrono::{NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
 use uuid::Uuid;
@@ -19,25 +21,6 @@ macro_rules! str_literal {
     };
 }
 
-// Custom logic for bool to match Ducklake spec: https://ducklake.select/docs/stable/specification/data_types#type-encoding-for-statistics
-impl Literal for bool {
-    fn parse(s: &str) -> DucklakeResult<Self> {
-        match s.to_ascii_lowercase().as_str() {
-            "true" | "1" => Ok(true),
-            "false" | "0" => Ok(false),
-            _ => Err(DucklakeError::Parsing(s.to_string())),
-        }
-    }
-
-    fn format(&self) -> String {
-        if *self {
-            "1".to_string()
-        } else {
-            "0".to_string()
-        }
-    }
-}
-
 str_literal!(i8);
 str_literal!(i16);
 str_literal!(i32);
@@ -55,6 +38,24 @@ str_literal!(NaiveTime);
 str_literal!(NaiveDate);
 str_literal!(String);
 str_literal!(Uuid);
+
+impl Literal for bool {
+    fn parse(s: &str) -> DucklakeResult<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "1" => Ok(true),
+            "0" => Ok(false),
+            _ => Err(DucklakeError::Parsing(s.to_string())),
+        }
+    }
+
+    fn format(&self) -> String {
+        if *self {
+            "1".to_string()
+        } else {
+            "0".to_string()
+        }
+    }
+}
 
 /* -------------------------------------------- BLOB ------------------------------------------- */
 
