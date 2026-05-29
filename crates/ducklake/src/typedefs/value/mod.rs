@@ -120,8 +120,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(DataType::Boolean, "true", Value::Boolean(true))]
-    #[case(DataType::Boolean, "false", Value::Boolean(false))]
+    #[case(DataType::Boolean, "1", Value::Boolean(true))]
+    #[case(DataType::Boolean, "0", Value::Boolean(false))]
     #[case(DataType::Int8, "-8", Value::Int8(-8))]
     #[case(DataType::Int16, "1234", Value::Int16(1234))]
     #[case(DataType::Int32, "-2147483648", Value::Int32(i32::MIN))]
@@ -301,7 +301,7 @@ mod tests {
     /* -------------------------------------- FORMAT / DISPLAY ------------------------------------- */
 
     #[rstest]
-    #[case(Value::Boolean(true), "true")]
+    #[case(Value::Boolean(true), "1")]
     #[case(Value::Int32(-42), "-42")]
     #[case(Value::Int64(100), "100")]
     #[case(Value::UInt32(u32::MAX), "4294967295")]
