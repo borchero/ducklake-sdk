@@ -28,7 +28,7 @@ jobs:
         with:
           fetch-depth: 0 # for versioning
       - name: Set up pixi
-        uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e # v0.9.4
+        uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
         with:
           environments: build
           activate-environment: true
@@ -58,7 +58,7 @@ jobs:
         with:
           fetch-depth: 0 # for versioning
       - name: Set up pixi
-        uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e # v0.9.4
+        uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
         with:
           environments: build
           activate-environment: true
@@ -70,7 +70,7 @@ jobs:
       - name: Build project
         run: pixi run build-py-sdist
       - name: Upload package
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: py-sdist
           path: ducklake-python/dist/*
@@ -100,7 +100,7 @@ jobs:
         with:
           fetch-depth: 0 # for versioning
       - name: Set up pixi
-        uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e # v0.9.4
+        uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
         with:
           environments: build
           activate-environment: true
@@ -111,7 +111,7 @@ jobs:
           git ls-files '**Cargo.toml' | xargs sed -i "s/0.0.0/$VERSION/"
         shell: bash
       - name: Build wheel
-        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
           args: --out dist --release -i python3.10 -m ducklake-python/Cargo.toml
@@ -120,7 +120,7 @@ jobs:
       - name: Check package
         run: pixi run twine check dist/*
       - name: Upload package
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: py-wheel-${{ matrix.target-platform }}
           path: dist/*
@@ -141,4 +141,4 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Publish package on PyPi
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
