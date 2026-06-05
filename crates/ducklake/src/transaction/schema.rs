@@ -21,7 +21,7 @@ impl<'a> Transaction<'a> {
         let mut schema = self.catalog_mut().schema_mut(name)?;
         schema.delete()?;
         let change = Change::DeleteSchema {
-            schema_ref: schema.into(),
+            schema_ref: schema.ref_(),
         };
         self.changes.push(change);
         Ok(())

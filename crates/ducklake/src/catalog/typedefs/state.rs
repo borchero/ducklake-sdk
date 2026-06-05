@@ -5,7 +5,7 @@
 /// that they exist locally without an entity ID assigned yet. Entities that are deleted within the
 /// transaction are marked as `Deleted` to keep the information around until committing the
 /// changes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(in crate::catalog) enum CatalogState {
     Pending,
     Existing { id: i64 },

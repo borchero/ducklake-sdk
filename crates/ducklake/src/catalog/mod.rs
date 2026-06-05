@@ -155,7 +155,7 @@ impl Catalog {
                 .map(|col| (table_idx, col.column).into())
                 .collect()
         });
-        Ok((schema.into(), table_idx.into(), column_refs, partition_refs))
+        Ok((schema.ref_(), table_idx.into(), column_refs, partition_refs))
     }
 
     /// Get the IDs of all tables and their schemas, optionally filtered by schema name.

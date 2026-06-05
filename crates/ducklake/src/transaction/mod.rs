@@ -113,14 +113,14 @@ impl<'a> Transaction<'a> {
 impl<'a> Transaction<'a> {
     /// Commit the transaction, persisting all changes as a new snapshot in the catalog.
     pub async fn commit(self) -> DucklakeResult<()> {
-        // If there were no changes, there's nothing to commit
-        if self.changes.is_empty() {
-            return Ok(());
-        }
-
-        // Otherwise, we initialize a changeset type which allows us to de-duplicate changes and
+        // First, we initialize a changeset type which allows us to de-duplicate changes and
         // provides high-level utilities.
         let change_set = ChangeSet::new(self.changes);
+
+        // If the change set is empty, there's nothing to commit
+        if change_set.is_empty() {
+            return Ok(());
+        }
 
         // To remedy conflicts caused by high-concurrency writes, we retry committing the
         // transaction. When retrying, we need to obtain the latest snapshot from the database.
