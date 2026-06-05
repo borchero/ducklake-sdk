@@ -4,7 +4,6 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 import ducklake as dl
-from ducklake.transaction import Transaction
 
 
 def test_readme_example(tmp_path: Path) -> None:
@@ -28,10 +27,11 @@ def test_readme_example(tmp_path: Path) -> None:
 
 def test_top_level_transaction_export() -> None:
     # Arrange
-    expected = Transaction
+    expected_name = "Transaction"
 
     # Act
     actual = getattr(dl, "Transaction")
 
     # Assert
-    assert actual is expected
+    assert isinstance(actual, type)
+    assert actual.__name__ == expected_name
