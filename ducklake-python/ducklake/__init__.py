@@ -10,6 +10,7 @@ except importlib.metadata.PackageNotFoundError as e:  # pragma: no cover
 from .connect import connect, create
 from .ducklake import Ducklake
 from .table import Table
+from .transaction import Transaction
 from .typedefs import (
     Blob,
     Boolean,
@@ -90,6 +91,7 @@ __all__ = [
     "Table",
     "TableMetadata",
     "TableName",
+    "Transaction",
     "Time",
     "Timestamp",
     "TimestampTz",
