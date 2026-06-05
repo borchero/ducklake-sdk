@@ -187,13 +187,6 @@ impl DucklakeError {
         }
     }
 
-    pub(crate) fn column_not_found(name: &str) -> Self {
-        DucklakeError::NotFound {
-            entity: "column",
-            name: name.to_string(),
-        }
-    }
-
     pub(crate) fn column_path_not_found(path: &[String]) -> Self {
         DucklakeError::NotFound {
             entity: "column",

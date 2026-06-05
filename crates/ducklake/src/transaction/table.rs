@@ -49,7 +49,7 @@ impl<'a> Transaction<'a> {
         let name = name.try_into().map_err(|e| e.into())?;
         // NOTE: We could create the TransactionTable directly here without querying the catalog
         //  first. However, we want to ensure that the table exists at this point.
-        self.catalog_mut().try_table_id_by_name(&name)?;
+        self.catalog().table(&name)?;
         Ok(TransactionTable::new(self, name.clone()))
     }
 }
@@ -64,7 +64,8 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
         let columns = self
             .tx
             .catalog()
-            .try_table_schema_by_name(&self.name)?
+            .table(&self.name)?
+            .schema()
             .columns
             .into_values();
         Ok(columns)
@@ -75,7 +76,8 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
         let columns = self
             .tx
             .catalog()
-            .try_table_partitioning_by_name(&self.name)?
+            .table(&self.name)?
+            .partitioning()
             .map(|p| p.0);
         Ok(columns)
     }
@@ -139,8 +141,11 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
 impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn delete_table(&mut self, name: &TableName) -> DucklakeResult<()> {
-        let table_ref = self.catalog_mut().delete_table(name)?;
-        let change = Change::DeleteTable { table_ref };
+        let mut table = self.catalog_mut().table_mut(name)?;
+        table.delete()?;
+        let change = Change::DeleteTable {
+            table_ref: table.ref_(),
+        };
         self.changes.push(change);
         Ok(())
     }
@@ -204,16 +209,12 @@ impl<'a> Transaction<'a> {
         table_name: &TableName,
     ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator)> {
         // Derive data path
-        let (table_ref, data_path) = self
-            .catalog
-            .try_table_data_path_by_name(table_name, &self.metadata.data_path())?;
+        let table = self.catalog().table(table_name)?;
+        let data_path = table.data_path(&self.metadata.data_path());
 
         // Derive metadata
-        let schema_id = self
-            .catalog
-            .try_schema_id_by_name(&table_name.schema)
-            .unwrap();
-        let table_id = self.catalog().table_id(table_ref).unwrap();
+        let schema_id = table.parent_schema().id().unwrap();
+        let table_id = table.id().unwrap();
         let metadata = self.metadata.table_metadata(schema_id, table_id);
 
         // Construct result
@@ -227,10 +228,9 @@ impl<'a> Transaction<'a> {
         table_name: &TableName,
         data_files: Vec<crate::WriteDataFile>,
     ) -> DucklakeResult<()> {
-        let (table_ref, base_path) = self
-            .catalog()
-            .try_table_data_path_by_name(table_name, &self.metadata.data_path())?;
-        let table_info = self.catalog().table_info_by_ref(table_ref);
+        let table = self.catalog().table(table_name)?;
+        let base_path = table.data_path(&self.metadata.data_path());
+        let table_info = table.info();
         let schema_columns = table_info.schema.columns_by_id();
 
         // Ensure that statistics are available for all data files
@@ -301,9 +301,8 @@ impl<'a> Transaction<'a> {
                                     column: col.name.to_string(),
                                 });
                             }
-                            let col_ref = self
-                                .catalog_mut()
-                                .try_column_ref_by_id(table_ref, column_id)?;
+                            let Ok(table) = self.catalog().table(table.ref_());
+                            let col_ref = table.column(column_id)?.ref_();
                             Ok((col_ref, stats))
                         })
                         .collect::<DucklakeResult<_>>()?,
@@ -312,7 +311,7 @@ impl<'a> Transaction<'a> {
             })
             .collect::<DucklakeResult<Vec<_>>>()?;
         let change = Change::WriteTableDataFiles {
-            table_ref,
+            table_ref: table.ref_(),
             data_files: commit_data_files,
         };
         self.changes.push(change);
@@ -325,8 +324,9 @@ impl<'a> Transaction<'a> {
         table_name: &TableName,
         data: Vec<RecordBatch>,
     ) -> DucklakeResult<()> {
-        let table_ref = self.catalog_mut().try_table_ref_by_name(table_name)?;
-        let schema = self.catalog().table_schema_by_ref(table_ref);
+        let table = self.catalog_mut().table(table_name)?;
+        let table_ref = table.ref_();
+        let schema = table.schema();
         let schema_columns = schema.columns_by_id();
 
         let change = Change::WriteTableInlineData {
@@ -349,9 +349,8 @@ impl<'a> Transaction<'a> {
                                         column: col.name.to_string(),
                                     });
                                 }
-                                let col_ref = self
-                                    .catalog_mut()
-                                    .try_column_ref_by_id(table_ref, column_id)?;
+                                let Ok(table) = self.catalog().table(table_ref);
+                                let col_ref = table.column(column_id)?.ref_();
                                 Ok((col_ref, stats))
                             })
                             .collect::<DucklakeResult<_>>()?,
@@ -387,9 +386,10 @@ impl<'a> Transaction<'a> {
             return Ok(());
         }
 
-        let table_ref = self.catalog_mut().rename_table(old_name, new_name)?;
+        let mut table = self.catalog_mut().table_mut(old_name)?;
+        table.rename(new_name)?;
         let change = Change::RenameTable {
-            table_ref,
+            table_ref: table.ref_(),
             name: TableName {
                 schema: old_name.schema.clone(),
                 name: new_name.to_string(),
@@ -416,10 +416,10 @@ impl<'a> Transaction<'a> {
         name: &TableName,
         new_columns: Vec<Column>,
     ) -> DucklakeResult<()> {
-        let table_info = self.catalog_mut().try_table_info_by_name(name)?;
+        let schema = self.catalog().table(name)?.schema();
         let guard = self.guard();
         // Iterate over the schemas and either update data types, add, or remove columns
-        let old_columns = table_info.schema.columns;
+        let old_columns = schema.columns;
         let new_columns = Schema::try_from(new_columns)?.columns;
         for item in primitives::iter_index_map_diff(&old_columns, &new_columns) {
             match item {
@@ -481,11 +481,9 @@ impl<'a> Transaction<'a> {
         column: Column,
         parent_path: &ColumnName,
     ) -> DucklakeResult<()> {
-        let (parent_column_ref, column_refs) = self.catalog_mut().add_table_column(
-            table_name,
-            parent_path.as_ref(),
-            column.clone(),
-        )?;
+        let mut table = self.catalog_mut().table_mut(table_name)?;
+        let (parent_column_ref, column_refs) =
+            table.add_column(parent_path.as_ref(), column.clone())?;
         self.changes.push(Change::AddTableColumn {
             parent_column_ref,
             column_refs,
@@ -500,9 +498,9 @@ impl<'a> Transaction<'a> {
         table_name: &TableName,
         column: &ColumnName,
     ) -> DucklakeResult<()> {
-        let column_refs = self
-            .catalog_mut()
-            .remove_table_column(table_name, column.as_ref())?;
+        let mut table = self.catalog_mut().table_mut(table_name)?;
+        let mut column = table.column_mut(column.as_ref())?;
+        let column_refs = column.remove()?;
         for column_ref in column_refs {
             self.changes.push(Change::RemoveTableColumn { column_ref });
         }
@@ -580,14 +578,15 @@ impl<'a> Transaction<'a> {
             return Ok(());
         }
 
-        let column_ref =
-            self.catalog_mut()
-                .rename_table_column(table_name, column.as_ref(), new_name)?;
-        self.changes.push(Change::UpdateTableColumn {
-            parent_column_ref: self.catalog().parent_column_ref(column_ref),
-            column_ref,
-            column: self.catalog().column(column_ref),
-        });
+        let mut table = self.catalog_mut().table_mut(table_name)?;
+        let mut column = table.column_mut(column.as_ref())?;
+        column.rename(new_name)?;
+        let change = Change::UpdateTableColumn {
+            parent_column_ref: column.parent_ref(),
+            column_ref: column.ref_(),
+            column: column.info(),
+        };
+        self.changes.push(change);
         Ok(())
     }
 
@@ -598,7 +597,8 @@ impl<'a> Transaction<'a> {
         column: &ColumnName,
         dtype: crate::DataType,
     ) -> DucklakeResult<()> {
-        let (_, existing_column) = self.catalog.try_column_by_name(table_name, column)?;
+        let table = self.catalog().table(table_name)?;
+        let existing_column = table.column(column.as_ref())?.info();
         let guard = self.guard();
         // NOTE: Some "data type updates" may actually be represented as column additions or
         //  deletions in case structs are being modified
@@ -619,16 +619,15 @@ impl<'a> Transaction<'a> {
         column: &ColumnName,
         default_value: crate::ColumnDefault,
     ) -> DucklakeResult<()> {
-        let column_ref = self.catalog_mut().update_table_column_default_value(
-            table_name,
-            column.as_ref(),
-            default_value.clone(),
-        )?;
-        self.changes.push(Change::UpdateTableColumn {
-            parent_column_ref: self.catalog().parent_column_ref(column_ref),
-            column_ref,
-            column: self.catalog().column(column_ref),
-        });
+        let mut table = self.catalog_mut().table_mut(table_name)?;
+        let mut column = table.column_mut(column.as_ref())?;
+        column.update_default_value(default_value);
+        let change = Change::UpdateTableColumn {
+            parent_column_ref: column.parent_ref(),
+            column_ref: column.ref_(),
+            column: column.info(),
+        };
+        self.changes.push(change);
         Ok(())
     }
 
@@ -639,37 +638,36 @@ impl<'a> Transaction<'a> {
         column: &ColumnName,
         nullable: bool,
     ) -> DucklakeResult<()> {
-        let (column_ref, existing_column) = self.catalog.try_column_by_name(table_name, column)?;
-        if existing_column.nullable == nullable {
+        let table = self.catalog().table(table_name)?;
+        let column_view = table.column(column.as_ref())?;
+        if column_view.nullable() == nullable {
             return Ok(());
         }
 
         // If we want to make the column non-nullable, we need to ensure that it doesn't currently
         // contain null values.
-        if !nullable {
-            let table_id = self.catalog().try_table_id_by_name(table_name)?;
-            if let Some(table_stats) = self.snapshot.table_stats().await?.get(&table_id) {
-                let column_id = self.catalog().column_id(column_ref).unwrap();
-                if let Some(column_stats) = table_stats.column_stats(column_id)
-                    && column_stats.contains_null().unwrap_or(false)
-                {
-                    return Err(DucklakeError::InvalidNullabilityChange {
-                        column: column.to_string(),
-                    });
-                }
+        if !nullable
+            && let Some(table_stats) = self.snapshot.table_stats().await?.get(&table.id().unwrap())
+        {
+            let column_id = column_view.id().unwrap();
+            if let Some(column_stats) = table_stats.column_stats(column_id)
+                && column_stats.contains_null().unwrap_or(false)
+            {
+                return Err(DucklakeError::InvalidNullabilityChange {
+                    column: column.to_string(),
+                });
             }
         }
 
-        let column_ref = self.catalog_mut().update_table_column_nullability(
-            table_name,
-            column.as_ref(),
-            nullable,
-        )?;
-        self.changes.push(Change::UpdateTableColumn {
-            parent_column_ref: self.catalog().parent_column_ref(column_ref),
-            column_ref,
-            column: self.catalog().column(column_ref),
-        });
+        let mut table = self.catalog_mut().table_mut(table_name)?;
+        let mut column = table.column_mut(column.as_ref())?;
+        column.update_nullability(nullable);
+        let change = Change::UpdateTableColumn {
+            parent_column_ref: column.parent_ref(),
+            column_ref: column.ref_(),
+            column: column.info(),
+        };
+        self.changes.push(change);
         Ok(())
     }
 
@@ -698,16 +696,15 @@ impl<'a> Transaction<'a> {
             | (UInt16, UInt32 | UInt64)
             | (UInt32, UInt64)
             | (Float32, Float64) => {
-                let column_ref = self.catalog_mut().update_table_column_primitive_data_type(
-                    table_name,
-                    column_name,
-                    target_dtype.clone(),
-                )?;
-                self.changes.push(Change::UpdateTableColumn {
-                    parent_column_ref: self.catalog().parent_column_ref(column_ref),
-                    column_ref,
-                    column: self.catalog().column(column_ref),
-                });
+                let mut table = self.catalog_mut().table_mut(table_name)?;
+                let mut column = table.column_mut(column_name)?;
+                column.update_primitive_data_type(target_dtype);
+                let change = Change::UpdateTableColumn {
+                    parent_column_ref: column.parent_ref(),
+                    column_ref: column.ref_(),
+                    column: column.info(),
+                };
+                self.changes.push(change);
             }
             // Struct "casts"
             (Struct(old_fields), Struct(new_fields)) => {
@@ -799,11 +796,11 @@ impl<'a> Transaction<'a> {
         table_name: &TableName,
         partition_columns: Option<Vec<PartitionColumn>>,
     ) -> DucklakeResult<()> {
-        let (table_ref, partition_column_refs) = self
-            .catalog_mut()
-            .update_table_partitioning(table_name, partition_columns.clone().map(|c| c.into()))?;
+        let mut table = self.catalog_mut().table_mut(table_name)?;
+        let partition_column_refs =
+            table.update_partitioning(partition_columns.clone().map(|c| c.into()))?;
         let change = Change::UpdateTablePartitioning {
-            table_ref,
+            table_ref: table.ref_(),
             partition_column_refs,
             partition_columns,
         };
@@ -837,17 +834,22 @@ impl<'a> Transaction<'a> {
             key: key.to_string(),
             value: value.to_string(),
         };
-        let table_ref = self.catalog_mut().add_table_tag(name, tag.clone())?;
-        let change = Change::AddTableTag { table_ref, tag };
+        let mut table = self.catalog_mut().table_mut(name)?;
+        table.add_tag(tag.clone());
+        let change = Change::AddTableTag {
+            table_ref: table.ref_(),
+            tag,
+        };
         self.changes.push(change);
         Ok(())
     }
 
     #[visibility_if(feature = "python", pub)]
     fn remove_table_tag(&mut self, name: &TableName, key: &str) -> DucklakeResult<()> {
-        let table_ref = self.catalog_mut().remove_table_tag(name, key)?;
+        let mut table = self.catalog_mut().table_mut(name)?;
+        table.remove_tag(key)?;
         let change = Change::RemoveTableTag {
-            table_ref,
+            table_ref: table.ref_(),
             key: key.to_string(),
         };
         self.changes.push(change);
@@ -900,12 +902,13 @@ impl<'a> Transaction<'a> {
             key: key.to_string(),
             value: value.to_string(),
         };
-        let column_ref = self.catalog_mut().add_table_column_tag(
-            table_name,
-            column_name.as_ref(),
-            tag.clone(),
-        )?;
-        let change = Change::AddTableColumnTag { column_ref, tag };
+        let mut table = self.catalog_mut().table_mut(table_name)?;
+        let mut column = table.column_mut(column_name.as_ref())?;
+        column.add_tag(tag.clone());
+        let change = Change::AddTableColumnTag {
+            column_ref: column.ref_(),
+            tag,
+        };
         self.changes.push(change);
         Ok(())
     }
@@ -917,11 +920,11 @@ impl<'a> Transaction<'a> {
         column_name: &ColumnName,
         key: &str,
     ) -> DucklakeResult<()> {
-        let column_ref =
-            self.catalog_mut()
-                .remove_table_column_tag(table_name, column_name.as_ref(), key)?;
+        let mut table = self.catalog_mut().table_mut(table_name)?;
+        let mut column = table.column_mut(column_name.as_ref())?;
+        column.remove_tag(key)?;
         let change = Change::RemoveTableColumnTag {
-            column_ref,
+            column_ref: column.ref_(),
             key: key.to_string(),
         };
         self.changes.push(change);

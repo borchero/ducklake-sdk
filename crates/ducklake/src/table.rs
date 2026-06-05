@@ -30,23 +30,17 @@ impl Table {
 
     /// Get the name of the table.
     pub async fn name(&self) -> DucklakeResult<crate::TableName> {
-        self.conn
-            .current_snapshot()
-            .catalog()
-            .await?
-            .try_table_name_by_id(self.id)
+        let snapshot = self.conn.current_snapshot();
+        let catalog = snapshot.catalog().await?;
+        let table = catalog.table(self.id)?;
+        Ok(table.name().clone())
     }
 
     /// Get the schema of the table.
     pub async fn columns(&self) -> DucklakeResult<impl Iterator<Item = crate::Column>> {
-        let columns = self
-            .conn
-            .current_snapshot()
-            .catalog()
-            .await?
-            .try_table_schema_by_id(self.id)?
-            .columns
-            .into_values();
+        let snapshot = self.conn.current_snapshot();
+        let catalog = snapshot.catalog().await?;
+        let columns = catalog.table(self.id)?.schema().columns.into_values();
         Ok(columns)
     }
 
@@ -57,18 +51,22 @@ impl Table {
             .current_snapshot()
             .catalog()
             .await?
-            .try_table_partitioning_by_id(self.id)?
+            .table(self.id)?
+            .partitioning()
             .map(|p| p.0);
         Ok(columns)
     }
 
     /// Get the tags of the table.
     pub async fn tags(&self) -> DucklakeResult<Vec<crate::Tag>> {
-        self.conn
+        let tags = self
+            .conn
             .current_snapshot()
             .catalog()
             .await?
-            .try_table_tags_by_id(self.id)
+            .table(self.id)?
+            .tags();
+        Ok(tags)
     }
 
     /// Get the metadata set on this table.
@@ -84,7 +82,8 @@ impl Table {
             .current_snapshot()
             .catalog()
             .await?
-            .try_table_schema_by_id(self.id)?
+            .table(self.id)?
+            .schema()
             .to_arrow();
         Ok(schema)
     }
@@ -99,7 +98,7 @@ impl Table {
         &self,
         tx: &'tx mut crate::Transaction<'a>,
     ) -> DucklakeResult<crate::TransactionTable<'tx, 'a>> {
-        let name = tx.catalog().try_table_name_by_id(self.id)?;
+        let name = tx.catalog().table(self.id)?.name().clone();
         tx.table(name)
     }
 }
@@ -130,8 +129,7 @@ impl Table {
         let catalog = snapshot.catalog().await?;
         let meta = self.conn.metadata();
         let metadata = meta.table_metadata(self.schema_id, self.id);
-        let data_path =
-            catalog.try_table_data_path_by_id(self.schema_id, self.id, &meta.data_path())?;
+        let data_path = catalog.table(self.id)?.data_path(&meta.data_path());
         let generator = utils::DataFilePathGenerator::new(data_path, metadata.hive_file_pattern);
         Ok((metadata, generator))
     }
@@ -262,11 +260,11 @@ impl Table {
     /// Currently, this fails if any data is inlined.
     pub async fn scan(&self) -> DucklakeResult<crate::ScanResult> {
         let snapshot = self.conn.latest_snapshot(true).await?;
-        let data_path = snapshot.catalog().await?.try_table_data_path_by_id(
-            self.schema_id,
-            self.id,
-            &self.conn.metadata().data_path(),
-        )?;
+        let data_path = snapshot
+            .catalog()
+            .await?
+            .table(self.id)?
+            .data_path(&self.conn.metadata().data_path());
         scan::scan_table(
             self.conn.pool(),
             self.id,
