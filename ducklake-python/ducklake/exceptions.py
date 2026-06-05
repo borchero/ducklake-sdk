@@ -1,4 +1,4 @@
-from ._native import (  # noqa: F401
+from ._native import (
     AlreadyExistsError,
     AlreadyInitializedError,
     ImmutableDucklakeError,
