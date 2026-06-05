@@ -31,3 +31,29 @@ def test_match_reference_table_double_rename_and_alter(
 
     # Assert
     assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)
+
+
+@pytest.mark.differential
+def test_match_reference_create_and_delete(
+    ducklake: dl.Ducklake,
+    catalog_url: str,
+    reference_catalog_url: str,
+    reference_duckdb_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    # Act
+    with ducklake.transaction() as tx:
+        tx.create_table("test", {"x": dl.Int64()})
+        tx.table("test").rename("test2")
+        tx.table("test2").delete()
+
+    reference_duckdb_connection.execute(
+        """BEGIN;
+        CREATE TABLE test (x BIGINT);
+        ALTER TABLE test RENAME TO test2;
+        DROP TABLE test2;
+        COMMIT;
+        """
+    )
+
+    # Assert
+    assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)

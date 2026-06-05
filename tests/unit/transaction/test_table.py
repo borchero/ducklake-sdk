@@ -19,6 +19,35 @@ def test_create_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     assert table.tags == {}
 
 
+def test_create_delete_table_does_nothing(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    snapshot = shared_ducklake.get_latest_snapshot()
+
+    # Act
+    with shared_ducklake.transaction() as tx:
+        tx.create_table(random_table_name, {"x": dl.Int64()})
+        tx.table(random_table_name).delete()
+
+    # Assert
+    assert shared_ducklake.get_latest_snapshot().id == snapshot.id
+
+
+def test_delete_create_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+
+    # Act
+    with shared_ducklake.transaction() as tx:
+        tx.table(random_table_name).delete()
+        tx.create_table(random_table_name, {"y": dl.Int64()})
+
+    # Assert
+    table = shared_ducklake.get_table(random_table_name)
+    assert table.schema.columns == [dl.Column("y", dl.Int64(), field_id=1)]
+
+
 def test_double_rename_keeps_last(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})

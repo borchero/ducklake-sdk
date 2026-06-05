@@ -74,12 +74,6 @@ impl TryIntoRef<SchemaRef> for i64 {
 /*                                          READ & WRITE                                         */
 /* --------------------------------------------------------------------------------------------- */
 
-impl<'a, C> From<SchemaView<'a, C>> for SchemaRef {
-    fn from(value: SchemaView<'a, C>) -> Self {
-        SchemaRef(value.arena_idx)
-    }
-}
-
 impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
     pub(in crate::catalog) fn inner(&self) -> &CatalogSchema {
         match &self.catalog.arena[self.arena_idx.0] {
@@ -101,6 +95,10 @@ impl<'a> SchemaViewMut<'a> {
 /* ----------------------------------------- ACCESSORS ----------------------------------------- */
 
 impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
+    pub fn ref_(&self) -> SchemaRef {
+        SchemaRef(self.arena_idx)
+    }
+
     pub fn id(&self) -> Option<i64> {
         self.inner().state.id()
     }

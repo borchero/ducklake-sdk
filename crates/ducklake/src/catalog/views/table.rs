@@ -87,11 +87,20 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
     pub(in crate::catalog) fn inner(&self) -> &CatalogTable {
         self.catalog.table_by_idx(self.arena_idx)
     }
+
+    pub fn parent_schema(&self) -> super::schema::SchemaView<'_> {
+        self.catalog.schema(&self.name().schema).unwrap()
+    }
 }
 
 impl<'a> TableViewMut<'a> {
     pub(in crate::catalog) fn inner_mut(&mut self) -> &mut CatalogTable {
         self.catalog.table_by_idx_mut(self.arena_idx)
+    }
+
+    pub fn parent_schema_mut(&mut self) -> super::schema::SchemaViewMut<'_> {
+        let schema_view = self.catalog.schema(&self.name().schema).unwrap();
+        self.catalog.schema_mut(schema_view.ref_()).unwrap()
     }
 }
 
@@ -114,10 +123,6 @@ impl Catalog {
 /* ----------------------------------------- ACCESSORS ----------------------------------------- */
 
 impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
-    pub fn parent_schema(&self) -> super::schema::SchemaView<'_> {
-        self.catalog.schema(&self.name().schema).unwrap()
-    }
-
     pub fn ref_(&self) -> TableRef {
         self.arena_idx.into()
     }
@@ -289,15 +294,21 @@ impl<'a> TableViewMut<'a> {
     /// Delete the table with the given identifier by marking it as deleted.
     pub fn delete(&mut self) -> DucklakeResult<()> {
         let table = self.inner_mut();
-        match &table.state {
+        match table.state {
             CatalogState::Existing { id } => {
-                table.state = CatalogState::Deleted { id: *id };
+                table.state = CatalogState::Deleted { id: id };
+                let name = table.name.name.clone();
+                self.catalog.by_id.remove(&id);
+                self.parent_schema_mut().inner_mut().tables.remove(&name);
                 Ok(())
             }
-            CatalogState::Pending => Err(DucklakeError::InvalidChanges(format!(
-                "cannot delete table {} which was created in the same transaction",
-                table.name
-            ))),
+            CatalogState::Pending => {
+                // NOTE: We simply keep the table around as 'pending'. There's no harm in having
+                //  this "orphan" table in the arena
+                let name = table.name.name.clone();
+                self.parent_schema_mut().inner_mut().tables.remove(&name);
+                Ok(())
+            }
             CatalogState::Deleted { .. } => Err(DucklakeError::table_not_found(&table.name)),
         }
     }

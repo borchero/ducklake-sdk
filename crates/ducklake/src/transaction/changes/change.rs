@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use itertools::Itertools;
 
 use super::{AppliedChange, AppliedChangeSet};
@@ -28,7 +30,44 @@ impl ChangeSet {
             .unique_by(|c| HashableChange::from(c))
             .collect_vec();
         changes.reverse();
+
+        // We also have to handle some special cases: if a table is deleted, all previous changes
+        // to this table become irrelevant and should be removed. If a table is created in the
+        // same transaction, the drop itself should also be removed.
+        let created_tables: HashSet<_> = changes
+            .iter()
+            .filter_map(|c| {
+                if let Change::CreateTable { table_ref, .. } = c {
+                    Some(*table_ref)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let deleted_tables: HashSet<_> = changes
+            .iter()
+            .filter_map(|c| {
+                if let Change::DeleteTable { table_ref } = c {
+                    Some(*table_ref)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        changes.retain(|c| match c {
+            Change::DeleteTable { table_ref } => !created_tables.contains(&table_ref),
+            c => c
+                .affected_table_ref()
+                .map(|r| !deleted_tables.contains(&r))
+                .unwrap_or(true),
+        });
+
         Self { changes }
+    }
+
+    /// Whether this change set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty()
     }
 
     /// Compute the applied from the changes in this change set.
@@ -368,6 +407,27 @@ impl Change {
             | AddTableColumnTag { .. }
             | RemoveTableColumnTag { .. } => true,
             WriteTableDataFiles { .. } | WriteTableInlineData { .. } => false,
+        }
+    }
+
+    /// The TableRef which is affected by this change, if any.
+    fn affected_table_ref(&self) -> Option<TableRef> {
+        use Change::*;
+        match self {
+            CreateTable { table_ref, .. }
+            | RenameTable { table_ref, .. }
+            | UpdateTablePartitioning { table_ref, .. }
+            | DeleteTable { table_ref, .. }
+            | AddTableTag { table_ref, .. }
+            | RemoveTableTag { table_ref, .. }
+            | WriteTableDataFiles { table_ref, .. }
+            | WriteTableInlineData { table_ref, .. } => Some(*table_ref),
+            UpdateTableColumn { column_ref, .. }
+            | RemoveTableColumn { column_ref, .. }
+            | AddTableColumnTag { column_ref, .. }
+            | RemoveTableColumnTag { column_ref, .. } => Some(column_ref.table_ref),
+            AddTableColumn { column_refs, .. } => column_refs.first().map(|r| r.table_ref),
+            CreateSchema { .. } | DeleteSchema { .. } => None,
         }
     }
 
