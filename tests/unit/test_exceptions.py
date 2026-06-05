@@ -16,5 +16,8 @@ def test_exceptions_all_exports() -> None:
         "TransactionConflictError",
     ]
 
-    # Act & Assert
-    assert dlexc.__all__ == expected_exports
+    # Act
+    actual_exports = dlexc.__all__
+
+    # Assert
+    assert actual_exports == expected_exports
