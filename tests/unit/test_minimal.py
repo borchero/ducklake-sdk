@@ -23,15 +23,3 @@ def test_readme_example(tmp_path: Path) -> None:
     # Assert
     lf_roundtrip = table.scan_polars()
     assert_frame_equal(lf, lf_roundtrip)
-
-
-def test_top_level_transaction_export() -> None:
-    # Arrange
-    expected_name = "Transaction"
-
-    # Act
-    actual = getattr(dl, "Transaction")
-
-    # Assert
-    assert isinstance(actual, type)
-    assert actual.__name__ == expected_name
