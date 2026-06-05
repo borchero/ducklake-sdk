@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use itertools::Itertools;
 
 use super::*;
@@ -16,14 +14,6 @@ pub(in crate::catalog) struct CatalogTablePartition {
 pub(in crate::catalog) struct CatalogPartitionColumn {
     pub column: ArenaIdx,
     transform: crate::PartitionTransform,
-}
-
-impl Deref for CatalogTablePartition {
-    type Target = CatalogState;
-
-    fn deref(&self) -> &CatalogState {
-        &self.state
-    }
 }
 
 /* ----------------------------------------- TRANSFORM ----------------------------------------- */

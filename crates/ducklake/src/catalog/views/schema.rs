@@ -102,7 +102,7 @@ impl<'a> SchemaViewMut<'a> {
 
 impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
     pub fn id(&self) -> Option<i64> {
-        self.inner().id()
+        self.inner().state.id()
     }
 
     pub fn name(&self) -> &str {

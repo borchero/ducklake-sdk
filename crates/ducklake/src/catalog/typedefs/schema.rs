@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 
 use super::*;
 use crate::io;
@@ -11,12 +10,4 @@ pub(in crate::catalog) struct CatalogSchema {
     pub name: String,
     pub tables: HashMap<String, ArenaIdx>,
     pub path: io::DucklakePath,
-}
-
-impl Deref for CatalogSchema {
-    type Target = CatalogState;
-
-    fn deref(&self) -> &CatalogState {
-        &self.state
-    }
 }

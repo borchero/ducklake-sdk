@@ -136,7 +136,7 @@ impl<'a, C: Deref<Target = Catalog>> ColumnView<'a, C> {
     }
 
     pub fn id(&self) -> Option<i64> {
-        self.inner().id()
+        self.inner().state.id()
     }
 
     pub fn info(&self) -> crate::Column {

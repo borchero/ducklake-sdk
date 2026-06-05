@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use super::*;
 use crate::io;
 
@@ -12,12 +10,4 @@ pub(in crate::catalog) struct CatalogTable {
     pub partition: Option<CatalogTablePartition>,
     pub tags: Vec<crate::Tag>,
     pub path: io::DucklakePath,
-}
-
-impl Deref for CatalogTable {
-    type Target = CatalogState;
-
-    fn deref(&self) -> &CatalogState {
-        &self.state
-    }
 }

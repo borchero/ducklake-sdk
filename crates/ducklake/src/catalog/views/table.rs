@@ -123,11 +123,11 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
     }
 
     pub fn id(&self) -> Option<i64> {
-        self.inner().id()
+        self.inner().state.id()
     }
 
     pub fn partition_id(&self) -> Option<i64> {
-        self.inner().partition.as_ref().and_then(|p| p.id())
+        self.inner().partition.as_ref().and_then(|p| p.state.id())
     }
 
     pub fn info(&self) -> crate::TableInfo {
