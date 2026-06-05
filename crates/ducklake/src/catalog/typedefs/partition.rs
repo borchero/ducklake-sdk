@@ -42,7 +42,7 @@ impl CatalogTablePartition {
                 col.transform
                     .parse()
                     .map(|transform| CatalogPartitionColumn {
-                        column: columns.arena_idx_by_id(col.column_id).unwrap(),
+                        column: *columns.by_id.get(&col.column_id).unwrap(),
                         transform,
                     })
             })
@@ -65,7 +65,7 @@ impl CatalogTablePartition {
             .into_iter()
             .map(|col| {
                 Ok(CatalogPartitionColumn {
-                    column: columns.try_column_by_name(&col.column)?.1,
+                    column: columns.arena_idx_by_path(&[col.column])?,
                     transform: col.transform,
                 })
             })
@@ -82,7 +82,7 @@ impl CatalogTablePartition {
             .columns
             .iter()
             .map(|col| crate::PartitionColumn {
-                column: columns.column_by_arena_idx(col.column).name.clone(),
+                column: columns.arena[col.column.0].name.clone(),
                 transform: col.transform,
             })
             .collect();

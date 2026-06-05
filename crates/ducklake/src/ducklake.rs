@@ -243,8 +243,8 @@ impl Ducklake {
         let name = name.try_into().map_err(|e| e.into())?;
         let snapshot = self.conn.latest_snapshot(true).await?;
         let catalog = snapshot.catalog().await?;
-        let schema_id = catalog.try_schema_id_by_name(&name.schema)?;
-        let table_id = catalog.try_table_id_by_name(&name)?;
+        let schema_id = catalog.schema(&name.schema)?.id().unwrap();
+        let table_id = catalog.table(&name)?.id().unwrap();
         Ok(Table::new(self.conn.clone(), schema_id, table_id))
     }
 
@@ -256,8 +256,8 @@ impl Ducklake {
         let tables = table_ids
             .into_iter()
             .map(|id| {
-                catalog.try_table_name_by_id(id).map(|name| {
-                    let schema_id = catalog.try_schema_id_by_name(&name.schema).unwrap();
+                catalog.table(id).map(|table| {
+                    let schema_id = catalog.schema(&table.name().schema).unwrap().id().unwrap();
                     Table::new(self.conn.clone(), schema_id, id)
                 })
             })
@@ -420,7 +420,7 @@ impl Ducklake {
         if let Some(schema_name) = schema {
             let snapshot = self.conn.latest_snapshot(true).await?;
             let catalog = snapshot.catalog().await?;
-            let schema_id = catalog.try_schema_id_by_name(schema_name)?;
+            let schema_id = catalog.schema(schema_name)?.id().unwrap();
             self.conn
                 .0
                 .metadata_cache
@@ -441,7 +441,7 @@ impl Ducklake {
         if let Some(schema_name) = schema {
             let snapshot = self.conn.latest_snapshot(true).await?;
             let catalog = snapshot.catalog().await?;
-            let schema_id = catalog.try_schema_id_by_name(schema_name)?;
+            let schema_id = catalog.schema(schema_name)?.id().unwrap();
             self.conn
                 .0
                 .metadata_cache

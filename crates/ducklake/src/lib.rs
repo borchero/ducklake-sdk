@@ -1,4 +1,4 @@
-#![feature(trait_alias)]
+#![feature(trait_alias, unwrap_infallible, never_type)]
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 #[macro_use]

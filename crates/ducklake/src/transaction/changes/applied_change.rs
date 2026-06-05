@@ -111,8 +111,8 @@ impl AppliedChange {
             }
             (DroppedSchema { id: schema_id }, CreatedTable { name: table_name })
             | (CreatedTable { name: table_name }, DroppedSchema { id: schema_id }) => {
-                let schema = catalog.try_schema_name_by_id(*schema_id)?;
-                if schema == table_name.schema {
+                let schema = catalog.schema(*schema_id)?;
+                if schema.name() == table_name.schema {
                     format!(
                         "attempting to drop schema with ID {schema_id} but table {table_name} was created in it"
                     )
@@ -122,8 +122,8 @@ impl AppliedChange {
             }
             (DroppedSchema { id: schema_id }, CreatedView { name: view_name })
             | (CreatedView { name: view_name }, DroppedSchema { id: schema_id }) => {
-                let schema = catalog.try_schema_name_by_id(*schema_id)?;
-                if schema == view_name.schema {
+                let schema = catalog.schema(*schema_id)?;
+                if schema.name() == view_name.schema {
                     format!(
                         "attempting to drop schema with ID {schema_id} but view {view_name} was created in it"
                     )

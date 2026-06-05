@@ -138,11 +138,7 @@ impl SnapshotTableStats {
         // Populate column stats for each table
         let column_dtypes: HashMap<_, _> = table_stats_map
             .keys()
-            .map(|id| {
-                catalog
-                    .try_table_column_data_types_by_id(*id)
-                    .map(|d| (*id, d))
-            })
+            .map(|id| catalog.table(*id).map(|t| (*id, t.column_data_types())))
             .collect::<DucklakeResult<_>>()?;
         for stat in column_stats {
             let dtype = column_dtypes

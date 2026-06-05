@@ -14,19 +14,6 @@ pub(in crate::catalog) struct CatalogTable {
     pub path: io::DucklakePath,
 }
 
-impl CatalogTable {
-    /// Get the names of the partition columns if this table is partitioned.
-    pub fn partition_column_names(&self) -> Option<Vec<String>> {
-        self.partition.as_ref().map(|partition| {
-            partition
-                .columns
-                .iter()
-                .map(|col| self.columns.column_by_arena_idx(col.column).name.clone())
-                .collect()
-        })
-    }
-}
-
 impl Deref for CatalogTable {
     type Target = CatalogState;
 

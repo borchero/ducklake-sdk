@@ -147,7 +147,7 @@ impl Catalog {
 
             // 1) Get the schema this table belongs to
             let schema = self
-                .schema_by_id(table.schema_id)
+                .schema(table.schema_id)
                 .expect("table references the ID of non-existent schema");
 
             // 2) Collect the columns for this table along with their tags
@@ -190,7 +190,7 @@ impl Catalog {
             // 4) Construct the full table catalog object
             let catalog_table = CatalogTable {
                 name: crate::TableName {
-                    schema: schema.name.clone(),
+                    schema: schema.name().to_string(),
                     name: table_name.clone(),
                 },
                 state: CatalogState::Existing { id: table.table_id },
@@ -209,8 +209,9 @@ impl Catalog {
             // 5) Add the table to the catalog
             let arena_idx = self.push_table(catalog_table);
             self.by_id.insert(table.table_id, arena_idx);
-            self.schema_by_id_mut(table.schema_id)
+            self.schema_mut(table.schema_id)
                 .unwrap() // SAFETY: we already verified existence above
+                .inner_mut()
                 .tables
                 .insert(table_name, arena_idx);
         }

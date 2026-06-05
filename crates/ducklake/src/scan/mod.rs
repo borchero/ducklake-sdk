@@ -71,7 +71,7 @@ pub async fn scan_table(
         futures::future::try_join_all(fetched_inlined_data_tables.into_iter().zip(snapshots).map(
             |(table, snapshot_with_schema)| async move {
                 let catalog = snapshot_with_schema.catalog().await?;
-                let schema = catalog.try_table_schema_by_id(table_id)?;
+                let schema = catalog.table(table_id)?.schema();
                 let query = queries::build_inlined_data_query(
                     &table.table_name,
                     schema.columns.keys(),
@@ -115,7 +115,7 @@ pub async fn scan_table(
 
     // Before iterating over the data files, we extract some information from the catalog
     let catalog = snapshot.catalog().await?;
-    let column_dtypes = catalog.try_table_column_data_types_by_id(table_id)?;
+    let column_dtypes = catalog.table(table_id)?.column_data_types();
 
     // Then, we can iterate over the data files
     let mut result = Vec::with_capacity(fetched_data_files.len());

@@ -18,8 +18,11 @@ impl<'a> Transaction<'a> {
 
     /// Delete an existing schema from the catalog.
     pub fn delete_schema(&mut self, name: &str) -> DucklakeResult<()> {
-        let schema_ref = self.catalog_mut().delete_schema(name)?;
-        let change = Change::DeleteSchema { schema_ref };
+        let mut schema = self.catalog_mut().schema_mut(name)?;
+        schema.delete()?;
+        let change = Change::DeleteSchema {
+            schema_ref: schema.into(),
+        };
         self.changes.push(change);
         Ok(())
     }

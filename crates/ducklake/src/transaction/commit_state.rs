@@ -44,43 +44,40 @@ impl<'a> CommitState<'a> {
     /// Obtain the ID for the schema with the provided name. If the schema does not yet
     /// exist, a new ID is generated from the catalog ID sequence.
     pub fn schema_id(&mut self, schema_ref: SchemaRef) -> i64 {
-        match self.catalog.schema_id(schema_ref) {
-            Some(id) => id,
-            None => {
-                let id = self.catalog_id();
-                self.catalog.to_mut().resolve_schema_id(schema_ref, id);
-                id
-            }
+        if let Some(id) = self.catalog.schema(schema_ref).into_ok().id() {
+            return id;
         }
+        let id = self.catalog_id();
+        let Ok(mut schema) = self.catalog.to_mut().schema_mut(schema_ref);
+        schema.resolve_id(id);
+        id
     }
 
     /// Obtain the ID for the table with the provided identifier. If the table does not yet
     /// exist, a new ID is generated from the catalog ID sequence.
     pub fn table_id(&mut self, table_ref: TableRef) -> i64 {
-        match self.catalog.table_id(table_ref) {
-            Some(id) => id,
-            None => {
-                let id = self.catalog_id();
-                self.catalog.to_mut().resolve_table_id(table_ref, id);
-                id
-            }
+        if let Some(id) = self.catalog.table(table_ref).into_ok().id() {
+            return id;
         }
+        let id = self.catalog_id();
+        let Ok(mut table) = self.catalog.to_mut().table_mut(table_ref);
+        table.resolve_id(id);
+        id
     }
 
     /// Obtain the IDs for the column with the provided reference.
     pub fn column_id(&mut self, column_ref: ColumnRef) -> i64 {
-        match self.catalog.column_id(column_ref) {
-            Some(id) => id,
-            None => {
-                let table_id = self
-                    .catalog
-                    .table_id(column_ref.table_ref)
-                    .expect("table ID must be set before resolving column IDs");
-                let id = self.next_column_id(table_id);
-                self.catalog.to_mut().resolve_column_id(column_ref, id);
-                id
-            }
+        let Ok(table) = self.catalog.table(column_ref.table_ref);
+        if let Some(id) = table.column(column_ref).into_ok().id() {
+            return id;
         }
+        let table_id = table
+            .id()
+            .expect("table ID must be set before resolving column IDs");
+        let column_id = self.next_column_id(table_id);
+        let Ok(mut table) = self.catalog.to_mut().table_mut(column_ref.table_ref);
+        table.column_mut(column_ref).into_ok().resolve_id(column_id);
+        column_id
     }
 
     /// Obtain the ID for a partition within the table with the provided ID. If the partition does
@@ -88,14 +85,13 @@ impl<'a> CommitState<'a> {
     /// partition has not been defined for the table (i.e. is neither existing nor pending nor
     /// deleted).
     pub fn partition_id(&mut self, table_ref: TableRef) -> i64 {
-        match self.catalog.partition_id(table_ref) {
-            Some(id) => id,
-            None => {
-                let id = self.catalog_id();
-                self.catalog.to_mut().resolve_partition_id(table_ref, id);
-                id
-            }
+        if let Some(id) = self.catalog.table(table_ref).into_ok().partition_id() {
+            return id;
         }
+        let id = self.catalog_id();
+        let Ok(mut table) = self.catalog.to_mut().table_mut(table_ref);
+        table.resolve_partition_id(id);
+        id
     }
 
     /// Set the next column ID for the specified table ID, if it is not already set.
@@ -142,7 +138,7 @@ impl<'a> CommitState<'a> {
     }
 
     pub fn table_schema(&self, table_ref: TableRef) -> crate::Schema {
-        self.catalog.table_info_by_ref(table_ref).schema
+        self.catalog.table(table_ref).into_ok().schema()
     }
 
     fn catalog_id(&mut self) -> i64 {

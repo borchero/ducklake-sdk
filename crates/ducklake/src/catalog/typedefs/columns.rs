@@ -9,18 +9,17 @@ use regex::Regex;
 
 use super::*;
 use crate::spec::*;
-use crate::utils::format_identifier;
 use crate::{DucklakeError, DucklakeResult};
 
 #[derive(Debug, Clone)]
 pub(in crate::catalog) struct CatalogColumns {
     /// Arena holding all columns, including nested ones, in a flat structure.
-    arena: Vec<CatalogColumn>,
+    pub arena: Vec<CatalogColumn>,
     /// Mapping from column ID to arena index for quick lookup by ID.
     /// Does not include pending columns as they do not have an ID yet.
-    by_id: HashMap<i64, ArenaIdx>,
+    pub by_id: HashMap<i64, ArenaIdx>,
     /// Arena indices of the root (top-level) columns, ordered by the order in the schema.
-    root_columns: IndexMap<String, ArenaIdx>,
+    pub root_columns: IndexMap<String, ArenaIdx>,
 }
 
 /// A column within a table in a catalog.
@@ -102,7 +101,7 @@ impl CatalogColumns {
 
     fn aggregate_column_indices(&self, idx: ArenaIdx, result: &mut Vec<ArenaIdx>) {
         result.push(idx);
-        match &self.column_by_arena_idx(idx).dtype {
+        match &self.arena[idx.0].dtype {
             CatalogDataType::Struct(fields) => {
                 for field_idx in fields.values() {
                     self.aggregate_column_indices(*field_idx, result);
@@ -118,6 +117,30 @@ impl CatalogColumns {
             _ => {}
         }
     }
+
+    pub fn arena_idx_by_path(&self, path: &[String]) -> DucklakeResult<ArenaIdx> {
+        let mut idx = *self
+            .root_columns
+            .get(&path[0])
+            .ok_or_else(|| DucklakeError::column_path_not_found(path))?;
+        for part in &path[1..] {
+            let col = &self.arena[idx.0];
+            match &col.dtype {
+                CatalogDataType::Struct(fields) => {
+                    idx = *fields
+                        .get(part)
+                        .ok_or_else(|| DucklakeError::column_path_not_found(path))?;
+                }
+                CatalogDataType::List(list_idx) if part == "element" => idx = *list_idx,
+                CatalogDataType::Map(key_idx, _) if part == "key" => idx = *key_idx,
+                CatalogDataType::Map(_, value_idx) if part == "value" => idx = *value_idx,
+                _ => {
+                    return Err(DucklakeError::column_path_not_found(path));
+                }
+            }
+        }
+        Ok(idx)
+    }
 }
 
 /* ------------------------------------------ CHANGES ------------------------------------------ */
@@ -125,50 +148,40 @@ impl CatalogColumns {
 impl CatalogColumns {
     // --- RENAME ---
 
-    pub fn rename_column(
-        &mut self,
-        column_path: &[String],
-        new_name: &str,
-    ) -> DucklakeResult<ArenaIdx> {
-        // Check if the new name is unique at the given path
-        self.ensure_column_unique_at_path(&column_path[..column_path.len() - 1], new_name)?;
+    pub fn rename_column(&mut self, idx: ArenaIdx, new_name: &str) -> DucklakeResult<ArenaIdx> {
+        // Check that the new name is unique among the column's siblings
+        let parent = self.arena[idx.0].parent_column;
+        self.ensure_column_unique_at_parent(parent, new_name)?;
 
         // If unique, rename
-        // NOTE: In the check above, we simply ignore if the path is invalid. The error will be
-        //  propagated from here.
-        let (column, idx) = self.try_column_by_path_mut(column_path)?;
+        let column = &mut self.arena[idx.0];
         column.name = new_name.to_string();
         Ok(idx)
     }
 
-    fn ensure_column_unique_at_path(&self, path: &[String], name: &str) -> DucklakeResult<()> {
-        let existing_names = self.sibling_names_at_path(path)?;
-        if existing_names.contains(&&name.to_string()) {
+    fn ensure_column_unique_at_parent(
+        &self,
+        parent: Option<ArenaIdx>,
+        name: &str,
+    ) -> DucklakeResult<()> {
+        let exists = match parent {
+            None => self.root_columns.contains_key(name),
+            Some(idx) => match &self.arena[idx.0].dtype {
+                CatalogDataType::Struct(fields) => fields.contains_key(name),
+                _ => unreachable!(),
+            },
+        };
+        if exists {
             return Err(DucklakeError::column_already_exists(name));
         }
         Ok(())
     }
 
-    fn sibling_names_at_path(&self, path: &[String]) -> DucklakeResult<Vec<&String>> {
-        if path.is_empty() {
-            return Ok(self.root_columns.keys().collect());
-        }
-        let (column, _) = self.try_column_by_path(path)?;
-        match &column.dtype {
-            CatalogDataType::Struct(fields) => Ok(fields.keys().collect()),
-            _ => Err(DucklakeError::InvalidColumnName {
-                name: format_identifier(path),
-                reason: "column may not have named children",
-            }),
-        }
-    }
-
     // --- REMOVE ---
 
-    pub fn remove_column(&mut self, column_path: &[String]) -> DucklakeResult<Vec<ArenaIdx>> {
-        let (_, idx) = self.try_column_by_path(column_path)?;
+    pub fn remove_column(&mut self, idx: ArenaIdx) -> DucklakeResult<Vec<ArenaIdx>> {
         let mut deletions = Vec::new();
-        self.mark_column_deleted(idx, &mut deletions, column_path)?;
+        self.mark_column_deleted(idx, &mut deletions)?;
         Ok(deletions)
     }
 
@@ -176,22 +189,23 @@ impl CatalogColumns {
         &mut self,
         idx: ArenaIdx,
         deletions: &mut Vec<ArenaIdx>,
-        original_column_path: &[String],
     ) -> DucklakeResult<()> {
         // Get the column and mark it as deleted
-        let column = self.column_by_arena_idx_mut(idx);
+        let column = &mut self.arena[idx.0];
         match &column.state {
             CatalogState::Existing { id } => {
+                self.by_id.remove(id);
                 column.state = CatalogState::Deleted { id: *id };
             }
             CatalogState::Pending => {
-                return Err(DucklakeError::InvalidChanges(format!(
-                    "cannot delete column {} which was created in the same transaction",
-                    crate::ColumnName::from(original_column_path)
-                )));
+                return Err(DucklakeError::InvalidChanges(
+                    "cannot delete column which was created in the same transaction".to_string(),
+                ));
             }
             CatalogState::Deleted { .. } => {
-                return Err(DucklakeError::column_path_not_found(original_column_path));
+                return Err(DucklakeError::InvalidChanges(
+                    "cannot delete column which is already deleted".to_string(),
+                ));
             }
         }
         deletions.push(idx);
@@ -201,15 +215,15 @@ impl CatalogColumns {
         match dtype {
             CatalogDataType::Struct(fields) => {
                 for field_idx in fields.values() {
-                    self.mark_column_deleted(*field_idx, deletions, original_column_path)?;
+                    self.mark_column_deleted(*field_idx, deletions)?;
                 }
             }
             CatalogDataType::List(item_idx) => {
-                self.mark_column_deleted(item_idx, deletions, original_column_path)?;
+                self.mark_column_deleted(item_idx, deletions)?;
             }
             CatalogDataType::Map(key_idx, value_idx) => {
-                self.mark_column_deleted(key_idx, deletions, original_column_path)?;
-                self.mark_column_deleted(value_idx, deletions, original_column_path)?;
+                self.mark_column_deleted(key_idx, deletions)?;
+                self.mark_column_deleted(value_idx, deletions)?;
             }
             _ => {}
         }
@@ -220,18 +234,11 @@ impl CatalogColumns {
 
     pub fn add_column(
         &mut self,
-        path: &[String],
+        parent_idx: Option<ArenaIdx>,
         column: crate::Column,
-    ) -> DucklakeResult<(Option<ArenaIdx>, Vec<ArenaIdx>)> {
+    ) -> DucklakeResult<Vec<ArenaIdx>> {
         // Check that the column name is unique at the given path
-        self.ensure_column_unique_at_path(path, &column.name)?;
-
-        // Resolve the parent arena index (if any) before mutating the arena
-        let parent_idx = if path.is_empty() {
-            None
-        } else {
-            Some(self.try_column_by_path(path)?.1)
-        };
+        self.ensure_column_unique_at_parent(parent_idx, &column.name)?;
 
         // If so, add the column to the arena - this does not "register" the column in the "tree"
         // of columns yet
@@ -241,12 +248,12 @@ impl CatalogColumns {
         // We either add the column as a root column or as a struct field
         if let Some(pidx) = parent_idx {
             // The new column is a struct field, add it there
-            let parent = self.column_by_arena_idx_mut(pidx);
+            let parent = &mut self.arena[pidx.0];
             match parent.dtype {
                 CatalogDataType::Struct(ref mut fields) => {
                     fields.insert(column_name, arena_idxs[0]);
                 }
-                // SAFETY: Cannot be reached as `ensure_column_unique_at_path` already makes sure
+                // SAFETY: Cannot be reached as `ensure_column_unique_at_parent` already makes sure
                 //  we can only encounter a struct
                 _ => unreachable!("parent column is not a struct"),
             }
@@ -256,7 +263,7 @@ impl CatalogColumns {
         }
 
         // Return the arena indices of all added columns
-        Ok((parent_idx, arena_idxs))
+        Ok(arena_idxs)
     }
 
     fn add_column_to_arena(
@@ -318,116 +325,6 @@ impl CatalogColumns {
             result.push(idx);
         }
         result
-    }
-
-    // --- DATA TYPE ---
-
-    pub fn update_primitive_data_type(
-        &mut self,
-        path: &[String],
-        data_type: crate::DataType,
-    ) -> DucklakeResult<ArenaIdx> {
-        let (column, idx) = self.try_column_by_path_mut(path)?;
-        column.dtype = CatalogDataType::Primitive(data_type.into());
-        Ok(idx)
-    }
-
-    // --- DEFAULT VALUE ---
-
-    pub fn update_default_value(
-        &mut self,
-        path: &[String],
-        default_value: crate::ColumnDefault,
-    ) -> DucklakeResult<ArenaIdx> {
-        let (column, idx) = self.try_column_by_path_mut(path)?;
-        column.default_value = default_value;
-        Ok(idx)
-    }
-
-    // --- NULLABILITY ---
-
-    pub fn update_nullability(
-        &mut self,
-        path: &[String],
-        nullable: bool,
-    ) -> DucklakeResult<ArenaIdx> {
-        let (column, idx) = self.try_column_by_path_mut(path)?;
-        column.nullable = nullable;
-        Ok(idx)
-    }
-}
-
-/* ----------------------------------------- ACCESSORS ----------------------------------------- */
-
-impl CatalogColumns {
-    // --- NAME ---
-
-    /// Get a column by its name. Returns an error if the column does not exist.
-    pub fn try_column_by_name(&self, name: &str) -> DucklakeResult<(&CatalogColumn, ArenaIdx)> {
-        let idx = self
-            .root_columns
-            .get(name)
-            .ok_or(DucklakeError::column_not_found(name))?;
-        Ok((self.column_by_arena_idx(*idx), *idx))
-    }
-
-    /// Get a mutable column by its name. Returns an error if the column does not exist.
-    pub fn try_column_by_path(
-        &self,
-        path: &[String],
-    ) -> DucklakeResult<(&CatalogColumn, ArenaIdx)> {
-        let idx = self
-            .arena_idx_by_path(path)
-            .ok_or(DucklakeError::column_path_not_found(path))?;
-        Ok((self.column_by_arena_idx(idx), idx))
-    }
-
-    /// Get a mutable column by its name. Returns an error if the column does not exist.
-    pub fn try_column_by_path_mut(
-        &mut self,
-        path: &[String],
-    ) -> DucklakeResult<(&mut CatalogColumn, ArenaIdx)> {
-        let idx = self
-            .arena_idx_by_path(path)
-            .ok_or(DucklakeError::column_path_not_found(path))?;
-        Ok((self.column_by_arena_idx_mut(idx), idx))
-    }
-
-    // --- ID ---
-
-    pub fn arena_idx_by_id(&self, id: i64) -> Option<ArenaIdx> {
-        self.by_id.get(&id).copied()
-    }
-
-    fn arena_idx_by_path(&self, path: &[String]) -> Option<ArenaIdx> {
-        let mut idx = *self.root_columns.get(&path[0])?;
-        for part in &path[1..] {
-            let col = self.column_by_arena_idx(idx);
-            match &col.dtype {
-                CatalogDataType::Struct(fields) => {
-                    idx = *fields.get(part)?;
-                }
-                CatalogDataType::List(list_idx) if part == "element" => idx = *list_idx,
-                CatalogDataType::Map(key_idx, _) if part == "key" => idx = *key_idx,
-                CatalogDataType::Map(_, value_idx) if part == "value" => idx = *value_idx,
-                _ => {
-                    return None;
-                }
-            }
-        }
-        Some(idx)
-    }
-
-    // --- ARENA IDX ---
-
-    /// Get a column by its arena index. Panics on invalid index.
-    pub fn column_by_arena_idx(&self, idx: ArenaIdx) -> &CatalogColumn {
-        &self.arena[idx.0]
-    }
-
-    /// Get a mutable column by its arena index. Panics on invalid index.
-    pub fn column_by_arena_idx_mut(&mut self, idx: ArenaIdx) -> &mut CatalogColumn {
-        &mut self.arena[idx.0]
     }
 }
 
@@ -552,7 +449,7 @@ impl From<&CatalogColumns> for HashMap<i64, crate::DataType> {
 
 impl CatalogColumns {
     fn collect_existing_dtypes(&self, idx: ArenaIdx, result: &mut HashMap<i64, crate::DataType>) {
-        let column = self.column_by_arena_idx(idx);
+        let column = &self.arena[idx.0];
         if let CatalogState::Existing { id } = column.state {
             result.insert(id, self.schema_dtype(&column.dtype));
         }
@@ -576,10 +473,10 @@ impl CatalogColumns {
 
 impl CatalogColumns {
     pub fn schema_column_from_arena_index(&self, idx: ArenaIdx) -> Option<crate::Column> {
-        if let CatalogState::Deleted { .. } = self.column_by_arena_idx(idx).state {
+        if let CatalogState::Deleted { .. } = self.arena[idx.0].state {
             return None;
         }
-        let col = self.column_by_arena_idx(idx);
+        let col = &self.arena[idx.0];
         let column = crate::Column {
             name: col.name.clone(),
             dtype: self.schema_dtype(&col.dtype),
