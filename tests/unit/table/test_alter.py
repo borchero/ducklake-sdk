@@ -271,7 +271,7 @@ def test_remove_missing_table_tag_raises(
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
 
     # Act & Assert
-    with pytest.raises(ValueError):
+    with pytest.raises(dlexc.NotFoundError):
         table.remove_tag("missing")
 
 
@@ -282,7 +282,7 @@ def test_remove_missing_column_tag_raises(
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
 
     # Act & Assert
-    with pytest.raises(ValueError):
+    with pytest.raises(dlexc.NotFoundError):
         table.remove_column_tag("x", "missing")
 
 

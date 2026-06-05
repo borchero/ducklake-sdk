@@ -240,8 +240,8 @@ impl<'a> TableViewMut<'a> {
         path: &[String],
         column: crate::Column,
     ) -> DucklakeResult<(Option<ColumnRef>, Vec<ColumnRef>)> {
-        let parent_idx = if path.len() > 1 {
-            Some(self.column(&path[..path.len() - 1])?.ref_().column_idx)
+        let parent_idx = if path.len() > 0 {
+            Some(self.column(path)?.ref_().column_idx)
         } else {
             None
         };
