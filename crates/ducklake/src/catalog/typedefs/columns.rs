@@ -47,43 +47,10 @@ impl Deref for CatalogColumn {
 
 #[derive(Debug, Clone)]
 pub(in crate::catalog) enum CatalogDataType {
-    Primitive(CatalogPrimitiveDataType),
+    Primitive(crate::DataType),
     List(ArenaIdx),
     Struct(IndexMap<String, ArenaIdx>),
     Map(ArenaIdx, ArenaIdx),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(in crate::catalog) enum CatalogPrimitiveDataType {
-    Boolean,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    Float32,
-    Float64,
-    Decimal {
-        precision: u8,
-        scale: u8,
-    },
-    Time,
-    TimeTz,
-    Date,
-    Timestamp {
-        precision: crate::TimestampPrecision,
-    },
-    TimestampTz,
-    Interval,
-    Varchar,
-    Blob,
-    Json,
-    Uuid,
 }
 
 /* -------------------------------------------- INFO ------------------------------------------- */
@@ -305,7 +272,7 @@ impl CatalogColumns {
                     let children = &children_by_parent[&idx];
                     CatalogDataType::Map(children[0], children[1])
                 }
-                dtype => CatalogDataType::Primitive(dtype.into()),
+                dtype => CatalogDataType::Primitive(dtype),
             };
             let parent_column = flat_column
                 .parent_index
@@ -491,7 +458,7 @@ impl CatalogColumns {
 
     fn schema_dtype(&self, dtype: &CatalogDataType) -> crate::DataType {
         match dtype {
-            CatalogDataType::Primitive(p) => (*p).into(),
+            CatalogDataType::Primitive(p) => p.clone(),
             CatalogDataType::List(item_idx) => crate::DataType::List(Box::new(
                 // SAFETY: We can unwrap here because the list element cannot be deleted
                 self.schema_column_from_arena_index(*item_idx).unwrap(),
@@ -576,7 +543,7 @@ impl CatalogColumn {
 
         // Parse initial_default
         let initial_default = match (col.initial_default, &dtype) {
-            (Some(val), CatalogDataType::Primitive(p)) => crate::Value::parse(&(*p).into(), &val)?,
+            (Some(val), CatalogDataType::Primitive(p)) => crate::Value::parse(&p.clone(), &val)?,
             (Some(_), _) => {
                 return Err(DucklakeError::InvalidDefault {
                     column: col.column_name,
@@ -590,7 +557,7 @@ impl CatalogColumn {
         let default_value = match col.default_value_type.as_deref() {
             Some("literal") => match (col.default_value, &dtype) {
                 (Some(val), CatalogDataType::Primitive(p)) => {
-                    crate::ColumnDefault::Literal(crate::Value::parse(&(*p).into(), &val)?)
+                    crate::ColumnDefault::Literal(crate::Value::parse(&p.clone(), &val)?)
                 }
                 (Some(_), _) => {
                     return Err(DucklakeError::InvalidDefault {
@@ -634,74 +601,11 @@ impl CatalogColumn {
 
 /* ----------------------------------------- DATA TYPE ----------------------------------------- */
 
-impl From<crate::DataType> for CatalogPrimitiveDataType {
-    fn from(value: crate::DataType) -> Self {
-        use crate::DataType::*;
-        match value {
-            Boolean => Self::Boolean,
-            Int8 => Self::Int8,
-            Int16 => Self::Int16,
-            Int32 => Self::Int32,
-            Int64 => Self::Int64,
-            UInt8 => Self::UInt8,
-            UInt16 => Self::UInt16,
-            UInt32 => Self::UInt32,
-            UInt64 => Self::UInt64,
-            Float32 => Self::Float32,
-            Float64 => Self::Float64,
-            Decimal { precision, scale } => Self::Decimal { precision, scale },
-            Time => Self::Time,
-            TimeTz => Self::TimeTz,
-            Date => Self::Date,
-            Timestamp { precision } => Self::Timestamp { precision },
-            TimestampTz => Self::TimestampTz,
-            Interval => Self::Interval,
-            Varchar => Self::Varchar,
-            Blob => Self::Blob,
-            Json => Self::Json,
-            Uuid => Self::Uuid,
-            _ => panic!("cannot convert non-primitive data type"),
-        }
-    }
-}
-
-impl From<CatalogPrimitiveDataType> for crate::DataType {
-    fn from(value: CatalogPrimitiveDataType) -> Self {
-        use CatalogPrimitiveDataType::*;
-        match value {
-            Boolean => crate::DataType::Boolean,
-            Int8 => crate::DataType::Int8,
-            Int16 => crate::DataType::Int16,
-            Int32 => crate::DataType::Int32,
-            Int64 => crate::DataType::Int64,
-            Int128 => crate::DataType::Int128,
-            UInt8 => crate::DataType::UInt8,
-            UInt16 => crate::DataType::UInt16,
-            UInt32 => crate::DataType::UInt32,
-            UInt64 => crate::DataType::UInt64,
-            UInt128 => crate::DataType::UInt128,
-            Float32 => crate::DataType::Float32,
-            Float64 => crate::DataType::Float64,
-            Decimal { precision, scale } => crate::DataType::Decimal { precision, scale },
-            Time => crate::DataType::Time,
-            TimeTz => crate::DataType::TimeTz,
-            Date => crate::DataType::Date,
-            Timestamp { precision } => crate::DataType::Timestamp { precision },
-            TimestampTz => crate::DataType::TimestampTz,
-            Interval => crate::DataType::Interval,
-            Varchar => crate::DataType::Varchar,
-            Blob => crate::DataType::Blob,
-            Json => crate::DataType::Json,
-            Uuid => crate::DataType::Uuid,
-        }
-    }
-}
-
-impl FromStr for CatalogPrimitiveDataType {
+impl FromStr for crate::DataType {
     type Err = DucklakeError;
 
     fn from_str(s: &str) -> DucklakeResult<Self> {
-        use CatalogPrimitiveDataType::*;
+        use crate::DataType::*;
         match s {
             "boolean" => Ok(Boolean),
             "int8" => Ok(Int8),

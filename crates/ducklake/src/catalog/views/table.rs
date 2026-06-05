@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 
-use itertools::Itertools;
-
 use super::TryIntoRef;
 use crate::catalog::{
     ArenaIdx,
@@ -240,7 +238,7 @@ impl<'a> TableViewMut<'a> {
         path: &[String],
         column: crate::Column,
     ) -> DucklakeResult<(Option<ColumnRef>, Vec<ColumnRef>)> {
-        let parent_idx = if path.len() > 0 {
+        let parent_idx = if !path.is_empty() {
             Some(self.column(path)?.ref_().column_idx)
         } else {
             None
@@ -279,19 +277,12 @@ impl<'a> TableViewMut<'a> {
 
     pub fn add_tag(&mut self, tag: crate::Tag) {
         let tags = &mut self.inner_mut().tags;
-        tags.retain(|t| t.key != tag.key);
-        tags.push(tag);
+        super::upsert_tag(tags, tag);
     }
 
     pub fn remove_tag(&mut self, key: &str) -> DucklakeResult<()> {
         let tags = &mut self.inner_mut().tags;
-        let removed = tags.extract_if(.., |t| t.key == key).collect_vec();
-        if removed.is_empty() {
-            return Err(DucklakeError::NotFound {
-                entity: "tag",
-                name: key.to_string(),
-            });
-        }
+        super::remove_tag(tags, key)?;
         Ok(())
     }
 

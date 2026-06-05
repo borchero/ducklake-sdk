@@ -1,7 +1,5 @@
 use std::ops::Deref;
 
-use itertools::Itertools;
-
 use super::TryIntoRef;
 use super::table::{TableView, TableViewMut};
 use crate::catalog::typedefs::CatalogDataType;
@@ -176,7 +174,7 @@ impl<'a> ColumnViewMut<'a> {
     }
 
     pub fn update_primitive_data_type(&mut self, data_type: crate::DataType) {
-        self.inner_mut().dtype = CatalogDataType::Primitive(data_type.into());
+        self.inner_mut().dtype = CatalogDataType::Primitive(data_type);
     }
 
     pub fn update_default_value(&mut self, default_value: crate::ColumnDefault) {
@@ -196,19 +194,12 @@ impl<'a> ColumnViewMut<'a> {
 
     pub fn add_tag(&mut self, tag: crate::Tag) {
         let tags = &mut self.inner_mut().tags;
-        tags.retain(|t| t.key != tag.key);
-        tags.push(tag);
+        super::upsert_tag(tags, tag);
     }
 
     pub fn remove_tag(&mut self, key: &str) -> DucklakeResult<()> {
         let tags = &mut self.inner_mut().tags;
-        let removed = tags.extract_if(.., |t| t.key == key).collect_vec();
-        if removed.is_empty() {
-            return Err(DucklakeError::NotFound {
-                entity: "tag",
-                name: key.to_string(),
-            });
-        }
+        super::remove_tag(tags, key)?;
         Ok(())
     }
 

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use itertools::Itertools;
 use sea_query::{Asterisk, Query};
 
 use super::*;
@@ -18,15 +19,6 @@ macro_rules! snapshot_query {
                 $snapshot_id,
             )
             .to_owned()
-    };
-}
-
-macro_rules! group_by {
-    ($vec:expr, $field:ident) => {
-        $vec.into_iter().fold(HashMap::new(), |mut map, item| {
-            map.entry(item.$field).or_insert_with(Vec::new).push(item);
-            map
-        })
     };
 }
 
@@ -88,11 +80,19 @@ impl Catalog {
 
         // Group all relevant data by the keys we need to filter by below. This avoids a bunch
         // of linear searches and memcopies later on.
-        let mut grouped_columns = group_by!(fetched_columns, table_id);
-        let mut grouped_tags = group_by!(fetched_tags, object_id);
-        let mut grouped_column_tags = group_by!(fetched_column_tags, table_id);
-        let mut grouped_partition_infos = group_by!(fetched_partition_infos, table_id);
-        let mut grouped_partition_columns = group_by!(fetched_partition_columns, table_id);
+        let mut grouped_columns = fetched_columns
+            .into_iter()
+            .into_group_map_by(|c| c.table_id);
+        let mut grouped_tags = fetched_tags.into_iter().into_group_map_by(|t| t.object_id);
+        let mut grouped_column_tags = fetched_column_tags
+            .into_iter()
+            .into_group_map_by(|ct| ct.table_id);
+        let mut grouped_partition_infos = fetched_partition_infos
+            .into_iter()
+            .into_group_map_by(|pi| pi.table_id);
+        let mut grouped_partition_columns = fetched_partition_columns
+            .into_iter()
+            .into_group_map_by(|pc| pc.table_id);
 
         // Initialize a new catalog and populate it with the fetched data
         let mut catalog = Catalog::new();
