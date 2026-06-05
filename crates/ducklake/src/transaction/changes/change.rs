@@ -55,7 +55,7 @@ impl ChangeSet {
             })
             .collect();
         changes.retain(|c| match c {
-            Change::DeleteTable { table_ref } => !created_tables.contains(&table_ref),
+            Change::DeleteTable { table_ref } => !created_tables.contains(table_ref),
             c => c
                 .affected_table_ref()
                 .map(|r| !deleted_tables.contains(&r))

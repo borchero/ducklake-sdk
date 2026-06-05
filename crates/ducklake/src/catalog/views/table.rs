@@ -296,7 +296,7 @@ impl<'a> TableViewMut<'a> {
         let table = self.inner_mut();
         match table.state {
             CatalogState::Existing { id } => {
-                table.state = CatalogState::Deleted { id: id };
+                table.state = CatalogState::Deleted { id };
                 let name = table.name.name.clone();
                 self.catalog.by_id.remove(&id);
                 self.parent_schema_mut().inner_mut().tables.remove(&name);
