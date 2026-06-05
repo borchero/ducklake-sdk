@@ -27,4 +27,11 @@ def test_readme_example(tmp_path: Path) -> None:
 
 
 def test_top_level_transaction_export() -> None:
-    assert dl.Transaction is Transaction
+    # Arrange
+    transaction = dl.Transaction
+
+    # Act
+    actual = transaction
+
+    # Assert
+    assert actual is Transaction
