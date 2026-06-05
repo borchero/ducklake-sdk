@@ -28,10 +28,10 @@ def test_readme_example(tmp_path: Path) -> None:
 
 def test_top_level_transaction_export() -> None:
     # Arrange
-    transaction = dl.Transaction
+    expected = Transaction
 
     # Act
-    actual = transaction
+    actual = getattr(dl, "Transaction")
 
     # Assert
-    assert actual is Transaction
+    assert actual is expected
