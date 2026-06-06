@@ -12,6 +12,7 @@ version = "0.0.0"
 arrow-arith = { workspace = true }
 arrow-array = { workspace = true }
 arrow-schema = { workspace = true, features = ["canonical_extension_types"] }
+async-recursion = { workspace = true }
 chrono = { workspace = true }
 ducklake-macros = { workspace = true }
 futures = { workspace = true }

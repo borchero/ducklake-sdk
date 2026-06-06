@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 
 use crate::caches::{SnapshotInfo, TableStats};
 use crate::catalog::{Catalog, ColumnRef, SchemaRef, TableRef};
@@ -13,8 +12,6 @@ pub struct CommitState<'a> {
     next_catalog_id: i64,
     next_file_id: i64,
     catalog: Cow<'a, Catalog>,
-    // Map from table ID to next column ID. Only populated on demand.
-    next_column_ids: HashMap<i64, i64>,
     // Map from table ID to table stats. Populated only if provided in input.
     table_stats: Option<HashMap<i64, TableStats>>,
 }
@@ -32,7 +29,6 @@ impl<'a> CommitState<'a> {
             next_catalog_id: snapshot_info.next_catalog_id,
             next_file_id: snapshot_info.next_file_id,
             catalog,
-            next_column_ids: HashMap::new(),
             table_stats,
         }
     }
@@ -68,16 +64,7 @@ impl<'a> CommitState<'a> {
     /// Obtain the IDs for the column with the provided reference.
     pub fn column_id(&mut self, column_ref: ColumnRef) -> i64 {
         let Ok(table) = self.catalog.table(column_ref.table_ref);
-        if let Some(id) = table.column(column_ref).into_ok().id() {
-            return id;
-        }
-        let table_id = table
-            .id()
-            .expect("table ID must be set before resolving column IDs");
-        let column_id = self.next_column_id(table_id);
-        let Ok(mut table) = self.catalog.to_mut().table_mut(column_ref.table_ref);
-        table.column_mut(column_ref).into_ok().resolve_id(column_id);
-        column_id
+        table.column(column_ref).into_ok().id()
     }
 
     /// Obtain the ID for a partition within the table with the provided ID. If the partition does
@@ -92,20 +79,6 @@ impl<'a> CommitState<'a> {
         let Ok(mut table) = self.catalog.to_mut().table_mut(table_ref);
         table.resolve_partition_id(id);
         id
-    }
-
-    /// Set the next column ID for the specified table ID, if it is not already set.
-    /// If it is not set, the provided future is awaited to "initialize" the ID.
-    pub async fn ensure_next_column_id_set(
-        &mut self,
-        table_id: i64,
-        fetch_id: impl Future<Output = DucklakeResult<i64>>,
-    ) -> DucklakeResult<()> {
-        if let Entry::Vacant(entry) = self.next_column_ids.entry(table_id) {
-            let id = fetch_id.await?;
-            entry.insert(id);
-        }
-        Ok(())
     }
 
     /// Obtain the table stats for the specified table ID. If the table stats have not been
@@ -145,16 +118,6 @@ impl<'a> CommitState<'a> {
         let catalog_id = self.next_catalog_id;
         self.next_catalog_id += 1;
         catalog_id
-    }
-
-    fn next_column_id(&mut self, table_id: i64) -> i64 {
-        let column_id = self
-            .next_column_ids
-            .get_mut(&table_id)
-            .expect("next column ID must be set for table");
-        let next_id = *column_id;
-        *column_id += 1;
-        next_id
     }
 }
 

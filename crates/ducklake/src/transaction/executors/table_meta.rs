@@ -43,13 +43,6 @@ pub async fn create_table<'a>(
     tx.execute(&query).await?;
 
     // 2/4) Create the columns and, optionally, their tags
-    state
-        .ensure_next_column_id_set(table_id, async {
-            // NOTE: The table is just being created, so its ID sequence should start at 1
-            Ok(1)
-        })
-        .await?;
-
     let mut ducklake_columns = Vec::new();
     let mut column_tags = Vec::new();
     for (column, column_refs) in columns.iter().zip(column_refs.iter()) {
@@ -264,20 +257,6 @@ pub async fn add_table_column(
 ) -> DucklakeResult<()> {
     let table_ref = column_refs[0].table_ref;
     let table_id = state.table_id(table_ref);
-
-    // Make sure that the column IDs that we derive are accurate. The first column ID that
-    // we derive ought to be the next column ID in the sequence of all historic column IDs
-    state
-        .ensure_next_column_id_set(table_id, async {
-            let query = Query::select()
-                .expr(ducklake_column::Column::ColumnId.col().max())
-                .from(ducklake_column::Table)
-                .and_where(ducklake_column::Column::TableId.col().eq(table_id))
-                .to_owned();
-            let (max_col,): (i64,) = tx.fetch_one(&query).await?;
-            Ok(max_col + 1)
-        })
-        .await?;
 
     // Create columns and tags
     let mut ducklake_columns = Vec::new();

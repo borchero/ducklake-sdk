@@ -72,7 +72,7 @@ impl Table {
     /// Get the metadata set on this table.
     pub fn metadata(&self) -> TableMetadata {
         let meta = self.conn.metadata();
-        meta.table_metadata(self.schema_id, self.id)
+        meta.table_metadata(Some(self.schema_id), Some(self.id))
     }
 
     /// Get the Arrow schema of the table.
@@ -128,7 +128,7 @@ impl Table {
         let snapshot = self.conn.latest_snapshot(false).await?;
         let catalog = snapshot.catalog().await?;
         let meta = self.conn.metadata();
-        let metadata = meta.table_metadata(self.schema_id, self.id);
+        let metadata = meta.table_metadata(Some(self.schema_id), Some(self.id));
         let data_path = catalog.table(self.id)?.data_path(&meta.data_path());
         let generator = utils::DataFilePathGenerator::new(data_path, metadata.hive_file_pattern);
         Ok((metadata, generator))
@@ -201,8 +201,6 @@ within_transaction! {
     fn rename(new_name: &str);
     /// Update the table's partitioning.
     fn update_partitioning(columns: Option<Vec<crate::PartitionColumn>>);
-    /// Add a new column to the table.
-    fn add_column(column: crate::Column);
     /// Rename a column in the table.
     fn rename_column(column: impl IntoColumnName, new_name: &str);
     /// Remove a column from the table.
@@ -220,6 +218,8 @@ within_transaction! {
 }
 
 within_transaction_async! {
+    /// Add a new column to the table.
+    fn add_column(column: crate::Column);
     /// Update the dtype of a column in the table.
     fn update_column_dtype(column: impl IntoColumnName, new_dtype: crate::DataType);
     /// Update the nullability of a column in the table.

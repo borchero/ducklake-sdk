@@ -124,6 +124,7 @@ impl ChangeSet {
                 .iter()
                 .any(|c| matches!(c, Change::WriteTableDataFiles { .. }))
     }
+
     /// Whether any of the changes in this change set affects the schema of the DuckLake. This
     /// essentially applies to all changes that do not insert or re-arrange data.
     pub fn changes_schema(&self) -> bool {

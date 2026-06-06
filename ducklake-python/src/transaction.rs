@@ -173,11 +173,14 @@ impl PyTransactionTable {
             .map_err(error::into_pyerr)
     }
 
-    fn add_column(&mut self, column: Wrap<ducklake::Column>) -> PyResult<()> {
+    fn add_column(&mut self, py: Python, column: Wrap<ducklake::Column>) -> PyResult<()> {
         let table = self.table.clone();
-        self.tx()
-            .add_table_column(&table, column.0, &Default::default())
-            .map_err(error::into_pyerr)
+        let mut tx_guard = self.tx();
+        block_on(
+            py,
+            tx_guard.add_table_column(&table, column.0, &Default::default()),
+        )
+        .map_err(error::into_pyerr)
     }
 
     fn rename_column(
@@ -200,13 +203,17 @@ impl PyTransactionTable {
 
     fn update_column_dtype(
         &mut self,
+        py: Python,
         column: Wrap<ducklake::ColumnName>,
         new_dtype: Wrap<ducklake::DataType>,
     ) -> PyResult<()> {
         let table = self.table.clone();
-        self.tx()
-            .update_table_column_dtype(&table, &column.0, new_dtype.0)
-            .map_err(error::into_pyerr)
+        let mut tx_guard = self.tx();
+        block_on(
+            py,
+            tx_guard.update_table_column_dtype(&table, &column.0, new_dtype.0),
+        )
+        .map_err(error::into_pyerr)
     }
 
     fn update_column_default(
