@@ -14,7 +14,6 @@ pub(in crate::catalog) struct CatalogColumns {
     /// Arena holding all columns, including nested ones, in a flat structure.
     pub arena: Vec<CatalogColumn>,
     /// Mapping from column ID to arena index for quick lookup by ID.
-    /// Does not include pending columns as they do not have an ID yet.
     pub by_id: HashMap<i64, ArenaIdx>,
     /// Arena indices of the root (top-level) columns, ordered by the order in the schema.
     pub root_columns: IndexMap<String, ArenaIdx>,

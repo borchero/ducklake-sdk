@@ -14,4 +14,4 @@ def test_create_write_in_transaction(shared_ducklake: dl.Ducklake, random_table_
 
     # Assert
     table = shared_ducklake.get_table(random_table_name)
-    assert_frame_equal(table.scan_polars(), lf)
+    assert_frame_equal(lf, table.scan_polars())
