@@ -14,10 +14,12 @@ pub(in crate::catalog) struct CatalogColumns {
     /// Arena holding all columns, including nested ones, in a flat structure.
     pub arena: Vec<CatalogColumn>,
     /// Mapping from column ID to arena index for quick lookup by ID.
-    /// Does not include pending columns as they do not have an ID yet.
     pub by_id: HashMap<i64, ArenaIdx>,
     /// Arena indices of the root (top-level) columns, ordered by the order in the schema.
     pub root_columns: IndexMap<String, ArenaIdx>,
+    /// The next column ID to assign for a column added to the arena. This is unset when initially
+    /// loading the catalog and needs to be lazily fetched from the database.
+    pub next_column_id: Option<i64>,
 }
 
 /// A column within a table in a catalog.
@@ -25,7 +27,7 @@ pub(in crate::catalog) struct CatalogColumns {
 /// The column might either be a root column or a child column of a nested type.
 #[derive(Debug, Clone)]
 pub(in crate::catalog) struct CatalogColumn {
-    pub state: CatalogState,
+    pub id: i64,
     pub name: String,
     pub dtype: CatalogDataType,
     pub parent_column: Option<ArenaIdx>,
@@ -149,22 +151,7 @@ impl CatalogColumns {
     ) -> DucklakeResult<()> {
         // Get the column and mark it as deleted
         let column = &mut self.arena[idx.0];
-        match &column.state {
-            CatalogState::Existing { id } => {
-                self.by_id.remove(id);
-                column.state = CatalogState::Deleted { id: *id };
-            }
-            CatalogState::Pending => {
-                return Err(DucklakeError::InvalidChanges(
-                    "cannot delete column which was created in the same transaction".to_string(),
-                ));
-            }
-            CatalogState::Deleted { .. } => {
-                return Err(DucklakeError::InvalidChanges(
-                    "cannot delete column which is already deleted".to_string(),
-                ));
-            }
-        }
+        self.by_id.remove(&column.id);
         deletions.push(idx);
 
         // Then, recursively mark child columns as deleted
@@ -269,7 +256,7 @@ impl CatalogColumns {
                 .map(|i| ArenaIdx(first_idx + i))
                 .or(parent);
             let catalog_column = CatalogColumn {
-                state: CatalogState::Pending,
+                id: self.next_column_id(),
                 parent_column,
                 name: flat_column.column.name,
                 dtype,
@@ -288,8 +275,15 @@ impl CatalogColumns {
 /* ----------------------------------------- INTERNALS ----------------------------------------- */
 
 impl CatalogColumns {
+    fn next_column_id(&mut self) -> i64 {
+        let column_id = self.next_column_id.unwrap();
+        *self.next_column_id.as_mut().unwrap() += 1;
+        column_id
+    }
+
     fn push_column(&mut self, column: CatalogColumn) -> ArenaIdx {
         let idx = ArenaIdx(self.arena.len());
+        self.by_id.insert(column.id, idx);
         self.arena.push(column);
         idx
     }
@@ -302,11 +296,12 @@ impl CatalogColumns {
 /* ------------------------------------------ COLUMNS ------------------------------------------ */
 
 impl CatalogColumns {
-    fn new() -> Self {
+    fn new(next_column_id: Option<i64>) -> Self {
         Self {
             arena: Vec::new(),
             by_id: HashMap::new(),
             root_columns: IndexMap::new(),
+            next_column_id,
         }
     }
 
@@ -336,12 +331,12 @@ impl CatalogColumns {
             }
         }
 
-        // Iterate over all columns and turn them into catalog columns. While doing so, we
-        // populate all the fields of the return type. As we mirror the iteration order from
-        // above, the `idx` matches the one used for grouping children.
-        let mut result = Self::new();
-        for (idx, col) in columns.into_iter().enumerate() {
-            let column_id = col.column_id;
+        // Iterate over all columns and turn them into catalog columns
+        // NOTE: The next column ID for the catalog columns is unknown at this point as we would
+        //  need to send a separate database query to find the maximum historic column ID. This
+        //  would be wasteful.
+        let mut result = Self::new(None);
+        for col in columns {
             let column_name = col.column_name.clone();
             let parent_column = col.parent_column.map(|pid| id_to_arena_idx[&pid]);
             let is_root = parent_column.is_none();
@@ -353,10 +348,7 @@ impl CatalogColumns {
                 &mut tags,
             )?;
 
-            result.arena.push(catalog_column);
-            // NOTE: `idx` is exactly the index in the arena at this point
-            let arena_idx = ArenaIdx(idx);
-            result.by_id.insert(column_id, arena_idx);
+            let arena_idx = result.push_column(catalog_column);
             if is_root {
                 if result.root_columns.contains_key(&column_name) {
                     return Err(DucklakeError::column_already_exists(&column_name));
@@ -370,7 +362,9 @@ impl CatalogColumns {
 
 impl From<crate::Schema> for CatalogColumns {
     fn from(value: crate::Schema) -> Self {
-        let mut result = Self::new();
+        // NOTE: This implementation is only called when creating a new table. In this instance,
+        //  we know that the first column ID will be a 1.
+        let mut result = Self::new(Some(1));
         for column in value.columns.into_values() {
             let column_name = column.name.clone();
             let idxs = result.add_column_to_arena(column, None);
@@ -384,7 +378,9 @@ impl From<&CatalogColumns> for crate::Schema {
     fn from(value: &CatalogColumns) -> Self {
         let mut columns = Vec::new();
         for idx in value.root_columns.values() {
-            if let Some(column) = value.schema_column_from_arena_index(*idx) {
+            // NOTE: We need to check `by_id` here to not include deleted columns
+            if value.by_id.contains_key(&value.arena[idx.0].id) {
+                let column = value.schema_column_from_arena_index(*idx);
                 columns.push(column);
             }
         }
@@ -407,9 +403,7 @@ impl From<&CatalogColumns> for HashMap<i64, crate::DataType> {
 impl CatalogColumns {
     fn collect_existing_dtypes(&self, idx: ArenaIdx, result: &mut HashMap<i64, crate::DataType>) {
         let column = &self.arena[idx.0];
-        if let CatalogState::Existing { id } = column.state {
-            result.insert(id, self.schema_dtype(&column.dtype));
-        }
+        result.insert(column.id, self.schema_dtype(&column.dtype));
         match &column.dtype {
             CatalogDataType::Struct(fields) => {
                 for field_idx in fields.values() {
@@ -429,21 +423,17 @@ impl CatalogColumns {
 }
 
 impl CatalogColumns {
-    pub fn schema_column_from_arena_index(&self, idx: ArenaIdx) -> Option<crate::Column> {
-        if let CatalogState::Deleted { .. } = self.arena[idx.0].state {
-            return None;
-        }
+    pub fn schema_column_from_arena_index(&self, idx: ArenaIdx) -> crate::Column {
         let col = &self.arena[idx.0];
-        let column = crate::Column {
+        crate::Column {
             name: col.name.clone(),
             dtype: self.schema_dtype(&col.dtype),
             nullable: col.nullable,
             tags: col.tags.clone(),
             initial_default: col.initial_default.clone(),
             default_value: col.default_value.clone(),
-            field_id: col.state.id(),
-        };
-        Some(column)
+            field_id: Some(col.id),
+        }
     }
 
     fn schema_dtype(&self, dtype: &CatalogDataType) -> crate::DataType {
@@ -451,19 +441,19 @@ impl CatalogColumns {
             CatalogDataType::Primitive(p) => p.clone(),
             CatalogDataType::List(item_idx) => crate::DataType::List(Box::new(
                 // SAFETY: We can unwrap here because the list element cannot be deleted
-                self.schema_column_from_arena_index(*item_idx).unwrap(),
+                self.schema_column_from_arena_index(*item_idx),
             )),
             CatalogDataType::Struct(fields) => {
                 let field_columns = fields
                     .values()
-                    .flat_map(|idx| self.schema_column_from_arena_index(*idx))
+                    .map(|idx| self.schema_column_from_arena_index(*idx))
                     .collect();
                 crate::DataType::Struct(field_columns)
             }
             CatalogDataType::Map(key_idx, value_idx) => crate::DataType::Map(
                 // SAFETY: We can unwrap here because map key and value cannot be deleted
-                Box::new(self.schema_column_from_arena_index(*key_idx).unwrap()),
-                Box::new(self.schema_column_from_arena_index(*value_idx).unwrap()),
+                Box::new(self.schema_column_from_arena_index(*key_idx)),
+                Box::new(self.schema_column_from_arena_index(*value_idx)),
             ),
         }
     }
@@ -574,7 +564,7 @@ impl CatalogColumn {
         };
 
         Ok(Self {
-            state: CatalogState::Existing { id: column_id },
+            id: column_id,
             parent_column,
             name: col.column_name,
             dtype,

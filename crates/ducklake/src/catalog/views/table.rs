@@ -12,7 +12,7 @@ use crate::catalog::{
     ColumnRef,
     TableRef,
 };
-use crate::{DucklakeError, DucklakeResult, io};
+use crate::{DucklakeError, DucklakeResult, db, io};
 
 pub struct TableView<'a, C = &'a Catalog> {
     pub(super) catalog: C,
@@ -200,6 +200,17 @@ impl<'a> TableViewMut<'a> {
             }
             _ => panic!("partition must be in state 'pending' to set ID"),
         }
+    }
+
+    pub async fn ensure_next_column_id(&mut self, pool: &db::Pool) -> DucklakeResult<()> {
+        if self.inner().columns.next_column_id.is_none() {
+            let next_column_id = self
+                .catalog
+                .load_next_column_id(pool, self.id().unwrap())
+                .await?;
+            self.inner_mut().columns.next_column_id = Some(next_column_id);
+        }
+        Ok(())
     }
 
     pub fn rename(&mut self, new_name: &str) -> DucklakeResult<()> {

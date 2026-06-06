@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::sync::Arc;
 
 use arrow_array::RecordBatch;
 use ducklake_macros::visibility_if;
-use itertools::{EitherOrBoth, Itertools};
+use itertools::EitherOrBoth;
 
 use super::changes::Change;
 use super::{CommitDataFile, CommitInlineData, Transaction};
@@ -101,6 +101,7 @@ impl<'a> Transaction<'a> {
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
         let name = name.try_into().map_err(|e| e.into())?;
         let path: io::DucklakePath = path.unwrap_or_else(|| name.name.clone()).parse()?;
+        let path = path.ensure_directory();
 
         // Insert the table into the catalog along with all its metadata
         let info = crate::TableInfo {
@@ -121,7 +122,7 @@ impl<'a> Transaction<'a> {
             name: name.clone(),
             columns,
             partition_columns,
-            path: path.ensure_directory(),
+            path,
             tags,
         };
         self.changes.push(change);
@@ -213,9 +214,11 @@ impl<'a> Transaction<'a> {
         let data_path = table.data_path(&self.metadata.data_path());
 
         // Derive metadata
-        let schema_id = table.parent_schema().id().unwrap();
-        let table_id = table.id().unwrap();
-        let metadata = self.metadata.table_metadata(schema_id, table_id);
+        // NOTE: We must not unwrap the IDs here as, otherwise, we run into issues with pending
+        //  tables that were created in the current transaction.
+        let metadata = self
+            .metadata
+            .table_metadata(table.parent_schema().id(), table.id());
 
         // Construct result
         let generator = utils::DataFilePathGenerator::new(data_path, metadata.hive_file_pattern);
@@ -427,7 +430,8 @@ impl<'a> Transaction<'a> {
                     let col_name = ColumnName::named(col_name);
                     guard
                         .tx
-                        .update_table_column_dtype(name, &col_name, col.dtype.clone())?;
+                        .update_table_column_dtype(name, &col_name, col.dtype.clone())
+                        .await?;
                     guard.tx.update_table_column_default(
                         name,
                         &col_name,
@@ -448,7 +452,8 @@ impl<'a> Transaction<'a> {
                 EitherOrBoth::Right((_, col)) => {
                     guard
                         .tx
-                        .add_table_column(name, col.clone(), &Default::default())?;
+                        .add_table_column(name, col.clone(), &Default::default())
+                        .await?;
                 }
             }
         }
@@ -461,9 +466,10 @@ impl<'a> Transaction<'a> {
 
 impl<'tx, 'a> TransactionTable<'tx, 'a> {
     /// Add a new column to the table.
-    pub fn add_column(&mut self, column: crate::Column) -> DucklakeResult<()> {
+    pub async fn add_column(&mut self, column: crate::Column) -> DucklakeResult<()> {
         self.tx
             .add_table_column(&self.name, column, &Default::default())
+            .await
     }
 
     /// Remove a column from the table.
@@ -475,13 +481,14 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
 
 impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
-    fn add_table_column(
+    async fn add_table_column(
         &mut self,
         table_name: &TableName,
         column: Column,
         parent_path: &ColumnName,
     ) -> DucklakeResult<()> {
-        let mut table = self.catalog_mut().table_mut(table_name)?;
+        let mut table = Arc::make_mut(&mut self.catalog).table_mut(table_name)?;
+        table.ensure_next_column_id(&self.pool).await?;
         let (parent_column_ref, column_refs) =
             table.add_column(parent_path.as_ref(), column.clone())?;
         self.changes.push(Change::AddTableColumn {
@@ -530,11 +537,13 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
         column: impl IntoColumnName,
         new_dtype: crate::DataType,
     ) -> DucklakeResult<()> {
-        self.tx.update_table_column_dtype(
-            &self.name,
-            &column.try_into().map_err(|e| e.into())?,
-            new_dtype,
-        )
+        self.tx
+            .update_table_column_dtype(
+                &self.name,
+                &column.try_into().map_err(|e| e.into())?,
+                new_dtype,
+            )
+            .await
     }
 
     /// Update the default value of a column in the table.
@@ -591,7 +600,7 @@ impl<'a> Transaction<'a> {
     }
 
     #[visibility_if(feature = "python", pub)]
-    fn update_table_column_dtype(
+    async fn update_table_column_dtype(
         &mut self,
         table_name: &TableName,
         column: &ColumnName,
@@ -602,12 +611,15 @@ impl<'a> Transaction<'a> {
         let guard = self.guard();
         // NOTE: Some "data type updates" may actually be represented as column additions or
         //  deletions in case structs are being modified
-        guard.tx.update_table_column_dtype_recursive(
-            table_name,
-            column.as_ref(),
-            existing_column.dtype,
-            dtype,
-        )?;
+        guard
+            .tx
+            .update_table_column_dtype_recursive(
+                table_name,
+                column.as_ref(),
+                existing_column.dtype,
+                dtype,
+            )
+            .await?;
         guard.commit();
         Ok(())
     }
@@ -648,15 +660,12 @@ impl<'a> Transaction<'a> {
         // contain null values.
         if !nullable
             && let Some(table_stats) = self.snapshot.table_stats().await?.get(&table.id().unwrap())
+            && let Some(column_stats) = table_stats.column_stats(column_view.id())
+            && column_stats.contains_null().unwrap_or(false)
         {
-            let column_id = column_view.id().unwrap();
-            if let Some(column_stats) = table_stats.column_stats(column_id)
-                && column_stats.contains_null().unwrap_or(false)
-            {
-                return Err(DucklakeError::InvalidNullabilityChange {
-                    column: column.to_string(),
-                });
-            }
+            return Err(DucklakeError::InvalidNullabilityChange {
+                column: column.to_string(),
+            });
         }
 
         let mut table = self.catalog_mut().table_mut(table_name)?;
@@ -671,7 +680,8 @@ impl<'a> Transaction<'a> {
         Ok(())
     }
 
-    fn update_table_column_dtype_recursive(
+    #[async_recursion::async_recursion]
+    async fn update_table_column_dtype_recursive(
         &mut self,
         table_name: &TableName,
         column_name: &[String],
@@ -708,36 +718,30 @@ impl<'a> Transaction<'a> {
             }
             // Struct "casts"
             (Struct(old_fields), Struct(new_fields)) => {
-                let old_fields_map: HashMap<_, _> = old_fields
-                    .iter()
-                    .map(|col| (col.name.clone(), col))
-                    .collect();
-                let new_fields_map: HashMap<_, _> = new_fields
-                    .iter()
-                    .map(|col| (col.name.clone(), col))
-                    .collect();
-
                 // - Update dtype of common fields recursively
                 // - Delete fields in 'old' but not in 'new'
                 // - Add fields in 'new' but not in 'old'
-                for key in old_fields_map.keys().chain(new_fields_map.keys()).unique() {
-                    let nested_column_name = [column_name, &[key.to_owned()]].concat();
-                    match (old_fields_map.get(key), new_fields_map.get(key)) {
-                        (Some(old), Some(new)) => {
+                for item in
+                    primitives::iter_vec_diff(old_fields, new_fields, |col| col.name.clone())
+                {
+                    match item {
+                        EitherOrBoth::Both(old, new) => {
                             self.update_table_column_dtype_recursive(
                                 table_name,
-                                &nested_column_name,
+                                &[column_name, &[old.name.clone()]].concat(),
                                 old.dtype.clone(),
                                 new.dtype.clone(),
-                            )?;
+                            )
+                            .await?;
                         }
-                        (Some(_), None) => {
-                            self.remove_table_column(table_name, &nested_column_name.into())?
+                        EitherOrBoth::Left(old) => self.remove_table_column(
+                            table_name,
+                            &[column_name, &[old.name.clone()]].concat().into(),
+                        )?,
+                        EitherOrBoth::Right(new) => {
+                            self.add_table_column(table_name, (*new).clone(), &column_name.into())
+                                .await?
                         }
-                        (None, Some(new)) => {
-                            self.add_table_column(table_name, (*new).clone(), &column_name.into())?
-                        }
-                        (None, None) => unreachable!(),
                     }
                 }
             }
@@ -748,7 +752,8 @@ impl<'a> Transaction<'a> {
                     &nested_column_name,
                     old_inner.dtype.clone(),
                     new_inner.dtype.clone(),
-                )?;
+                )
+                .await?;
             }
             (Map(old_key, old_value), Map(new_key, new_value)) => {
                 let key_name = [column_name, &["key".to_owned()]].concat();
@@ -758,13 +763,15 @@ impl<'a> Transaction<'a> {
                     &key_name,
                     old_key.dtype.clone(),
                     new_key.dtype.clone(),
-                )?;
+                )
+                .await?;
                 self.update_table_column_dtype_recursive(
                     table_name,
                     &value_name,
                     old_value.dtype.clone(),
                     new_value.dtype.clone(),
-                )?;
+                )
+                .await?;
             }
             _ => {
                 return Err(DucklakeError::InvalidCast {

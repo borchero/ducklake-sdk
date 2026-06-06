@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use itertools::Itertools;
-use sea_query::{Asterisk, Query};
+use sea_query::{Asterisk, ExprTrait, Query};
 
 use super::*;
 use crate::spec::*;
@@ -224,5 +224,23 @@ fn default_empty_string(s: &str, on_empty: impl FnOnce() -> String) -> Cow<'_, s
         Cow::Owned(on_empty())
     } else {
         Cow::Borrowed(s)
+    }
+}
+
+/* ----------------------------------------- ON-DEMAND ----------------------------------------- */
+
+impl Catalog {
+    pub(super) async fn load_next_column_id(
+        &self,
+        pool: &db::Pool,
+        table_id: i64,
+    ) -> DucklakeResult<i64> {
+        let query = Query::select()
+            .expr(ducklake_column::Column::ColumnId.col().max())
+            .from(ducklake_column::Table)
+            .and_where(ducklake_column::Column::TableId.col().eq(table_id))
+            .to_owned();
+        let (max_col,): (i64,) = pool.fetch_one(&query).await?;
+        Ok(max_col + 1)
     }
 }

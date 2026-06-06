@@ -3,15 +3,7 @@ use std::ops::Deref;
 use super::TryIntoRef;
 use super::table::{TableView, TableViewMut};
 use crate::catalog::typedefs::CatalogDataType;
-use crate::catalog::{
-    ArenaIdx,
-    Catalog,
-    CatalogColumn,
-    CatalogState,
-    CatalogTable,
-    ColumnRef,
-    TableRef,
-};
+use crate::catalog::{ArenaIdx, Catalog, CatalogColumn, CatalogTable, ColumnRef, TableRef};
 use crate::{DucklakeError, DucklakeResult};
 
 pub struct ColumnView<'a, C = &'a Catalog> {
@@ -135,15 +127,14 @@ impl<'a, C: Deref<Target = Catalog>> ColumnView<'a, C> {
         }
     }
 
-    pub fn id(&self) -> Option<i64> {
-        self.inner().state.id()
+    pub fn id(&self) -> i64 {
+        self.inner().id
     }
 
     pub fn info(&self) -> crate::Column {
         self.table()
             .columns
             .schema_column_from_arena_index(self.column_arena_idx)
-            .unwrap()
     }
 
     pub fn nullable(&self) -> bool {
@@ -161,18 +152,6 @@ impl<'a, C: Deref<Target = Catalog>> ColumnView<'a, C> {
 /* ------------------------------------------ MUTATION ----------------------------------------- */
 
 impl<'a> ColumnViewMut<'a> {
-    pub fn resolve_id(&mut self, id: i64) {
-        let column = self.inner_mut();
-        match column.state {
-            CatalogState::Pending => {
-                column.state = CatalogState::Existing { id };
-                let idx = self.column_arena_idx;
-                self.table_mut().columns.by_id.insert(id, idx);
-            }
-            _ => panic!("column must be in state 'pending' to set ID"),
-        }
-    }
-
     pub fn update_primitive_data_type(&mut self, data_type: crate::DataType) {
         self.inner_mut().dtype = CatalogDataType::Primitive(data_type);
     }

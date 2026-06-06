@@ -137,7 +137,7 @@ impl Metadata {
             .unwrap_or_default()
     }
 
-    pub fn table_metadata(&self, schema_id: i64, table_id: i64) -> TableMetadata {
+    pub fn table_metadata(&self, schema_id: Option<i64>, table_id: Option<i64>) -> TableMetadata {
         TableMetadata {
             data_inlining_row_limit: self
                 .get_key(spec::metadata::DATA_INLINING_ROW_LIMIT, schema_id, table_id)
@@ -197,13 +197,20 @@ impl Metadata {
 /* ------------------------------------------- UTILS ------------------------------------------- */
 
 impl Metadata {
-    fn get_key(&'_ self, key: &str, schema_id: i64, table_id: i64) -> Option<&'_ str> {
-        if let Some(table_meta) = self.table.get(&table_id)
+    fn get_key(
+        &'_ self,
+        key: &str,
+        schema_id: Option<i64>,
+        table_id: Option<i64>,
+    ) -> Option<&'_ str> {
+        if let Some(table_id) = table_id
+            && let Some(table_meta) = self.table.get(&table_id)
             && let Some(value) = table_meta.get(key)
         {
             return Some(value.as_str());
         }
-        if let Some(schema_meta) = self.schema.get(&schema_id)
+        if let Some(schema_id) = schema_id
+            && let Some(schema_meta) = self.schema.get(&schema_id)
             && let Some(value) = schema_meta.get(key)
         {
             return Some(value.as_str());
