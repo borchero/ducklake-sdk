@@ -136,4 +136,5 @@ impl<'a> SchemaViewMut<'a> {
         }
         self.catalog.schemas.remove(&name);
         Ok(())
+    }
 }

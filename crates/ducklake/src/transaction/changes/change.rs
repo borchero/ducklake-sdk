@@ -62,7 +62,7 @@ impl ChangeSet {
                 .unwrap_or(true),
         });
 
-        // The same applies to schemas. However, there we have on modifications other than schema
+        // The same applies to schemas. However, there are no modifications other than schema
         // creation
         let created_schemas: HashSet<_> = changes
             .iter()

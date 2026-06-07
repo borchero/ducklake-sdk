@@ -293,7 +293,7 @@ impl<'a> TableViewMut<'a> {
         Ok(())
     }
 
-    /// Delete the table with the given identifier by marking it as deleted.
+    /// Delete the table with the given identifier.
     pub fn delete(&mut self) {
         let table = self.inner_mut();
         let name = table.name.name.clone();
