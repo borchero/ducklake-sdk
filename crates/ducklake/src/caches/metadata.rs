@@ -3,7 +3,6 @@ use std::sync::{Arc, RwLock};
 
 use sea_query::{Asterisk, ExprTrait, Query};
 
-use crate::db::sea_query_ext::InsertIntoTable;
 use crate::spec::*;
 use crate::{DucklakeError, DucklakeResult, db, io, spec};
 
@@ -353,13 +352,13 @@ impl MetadataCache {
 
         // Insert new entry if the update actually inserts a value
         if let Some(value) = value {
-            let insert = Query::insert_entity(DucklakeMetadata {
+            tx.insert_entity(DucklakeMetadata {
                 key: key.to_string(),
                 value: value.to_string(),
                 scope: scope.map(|s| s.to_string()),
                 scope_id,
-            });
-            tx.execute(&insert).await?;
+            })
+            .await?;
         }
 
         tx.commit().await?;

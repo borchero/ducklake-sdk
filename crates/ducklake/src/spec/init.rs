@@ -1,8 +1,8 @@
-use sea_query::{Query, Table};
+use sea_query::Table;
 
 use super::entities::*;
 use super::{LATEST_VERSION, metadata};
-use crate::db::sea_query_ext::{CreateTable, InsertIntoTable};
+use crate::db::sea_query_ext::CreateTable;
 use crate::{DucklakeResult, db, io};
 
 macro_rules! create_table {
@@ -61,7 +61,7 @@ pub async fn init_catalog(pool: &db::Pool, config: Config) -> DucklakeResult<()>
 
 async fn populate(tx: &mut db::Transaction, data_path: &str) -> DucklakeResult<()> {
     // Basic metadata
-    let query = Query::insert_entities([
+    tx.insert_entities([
         DucklakeMetadata {
             key: metadata::VERSION.to_string(),
             value: LATEST_VERSION.to_string(),
@@ -89,11 +89,11 @@ async fn populate(tx: &mut db::Transaction, data_path: &str) -> DucklakeResult<(
             scope: None,
             scope_id: None,
         },
-    ]);
-    tx.execute(&query).await?;
+    ])
+    .await?;
 
     // Initial schema
-    let query = Query::insert_entity(DucklakeSchema {
+    tx.insert_entity(DucklakeSchema {
         schema_id: 0,
         schema_uuid: Some(db::UuidText::now_v7()),
         schema_name: "main".to_string(),
@@ -101,28 +101,28 @@ async fn populate(tx: &mut db::Transaction, data_path: &str) -> DucklakeResult<(
         end_snapshot: None,
         path: "main/".to_string(),
         path_is_relative: true,
-    });
-    tx.execute(&query).await?;
+    })
+    .await?;
 
     // Initial snapshot
-    let query = Query::insert_entity(DucklakeSnapshot {
+    tx.insert_entity(DucklakeSnapshot {
         snapshot_id: 0,
         snapshot_time: db::UtcDateTime::now(),
         schema_version: 0,
         next_catalog_id: 1,
         next_file_id: 0,
-    });
-    tx.execute(&query).await?;
+    })
+    .await?;
 
     // Snapshot changes
-    let query = Query::insert_entity(DucklakeSnapshotChanges {
+    tx.insert_entity(DucklakeSnapshotChanges {
         snapshot_id: 0,
         changes_made: "created_schema:\"main\"".to_string(),
         author: None,
         commit_message: None,
         commit_extra_info: None,
-    });
-    tx.execute(&query).await?;
+    })
+    .await?;
 
     Ok(())
 }

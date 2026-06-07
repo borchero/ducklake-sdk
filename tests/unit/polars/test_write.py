@@ -267,6 +267,32 @@ def test_write_parquet_default_list(shared_ducklake: dl.Ducklake, random_table_n
     assert_frame_equal(expected, actual)
 
 
+# ------------------------------------------ MANY FILES ----------------------------------------- #
+
+
+def test_sink_many_tiny_files(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    """This test is meant to verify that inserting into a table succeeds when the number of file
+    column stats causes a naïve query to fail due to exceeding the maximum number of bind
+    parameters."""
+    # Arrange
+    num_columns = 100
+    num_files = 100_000 // num_columns
+    table = shared_ducklake.create_table(
+        random_table_name, {f"c{i}": dl.Int64() for i in range(num_columns)}
+    )
+    # Force one tiny file per row by minimizing the row group size and the target file size.
+    table.set_metadata(parquet_row_group_size=1, target_file_size=1)
+    lf = pl.LazyFrame({f"c{i}": range(num_files) for i in range(num_columns)})
+
+    # Act
+    table.sink_polars(lf)
+
+    # Assert
+    scan_result = table.scan()
+    assert len(scan_result.data_files) == num_files
+    assert_frame_equal(lf, table.scan_polars(), check_row_order=False)
+
+
 # ----------------------------------------------------------------------------------------------- #
 #                                              UTILS                                              #
 # ----------------------------------------------------------------------------------------------- #

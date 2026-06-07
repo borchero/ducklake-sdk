@@ -3,7 +3,6 @@ use sea_query::{Expr, ExprTrait, Query};
 use strum::IntoEnumIterator;
 
 use crate::catalog::{ColumnRef, SchemaRef, TableRef};
-use crate::db::sea_query_ext::InsertIntoTable;
 use crate::spec::*;
 use crate::transaction::CommitState;
 use crate::{DucklakeResult, Value, db, io};
@@ -39,8 +38,7 @@ pub async fn create_table<'a>(
         path: path.to_string(),
         path_is_relative: true,
     };
-    let query = Query::insert_entity(table);
-    tx.execute(&query).await?;
+    tx.insert_entity(table).await?;
 
     // 2/4) Create the columns and, optionally, their tags
     let mut ducklake_columns = Vec::new();
@@ -56,12 +54,8 @@ pub async fn create_table<'a>(
             &mut column_tags,
         )?;
     }
-    let query = Query::insert_entities(ducklake_columns);
-    tx.execute(&query).await?;
-    if !column_tags.is_empty() {
-        let query = Query::insert_entities(column_tags);
-        tx.execute(&query).await?;
-    }
+    tx.insert_entities(ducklake_columns).await?;
+    tx.insert_entities(column_tags).await?;
 
     // 3/4) Optionally create partition
     if let Some(partition_column_refs) = partition_column_refs
@@ -89,8 +83,7 @@ pub async fn create_table<'a>(
             key: t.key.clone(),
             value: t.value.clone(),
         });
-        let query = Query::insert_entities(ducklake_tags);
-        tx.execute(&query).await?;
+        tx.insert_entities(ducklake_tags).await?;
     }
 
     Ok(())
@@ -187,8 +180,7 @@ pub async fn add_table_tag<'a>(
         key: tag.key.clone(),
         value: tag.value.clone(),
     };
-    let query = Query::insert_entity(ducklake_tag);
-    tx.execute(&query).await?;
+    tx.insert_entity(ducklake_tag).await?;
 
     Ok(())
 }
@@ -236,11 +228,9 @@ async fn create_partitioning<'a>(
             transform: p.transform.to_string(),
         });
 
-    let query = Query::insert_entity(partition_info);
-    tx.execute(&query).await?;
+    tx.insert_entity(partition_info).await?;
 
-    let query = Query::insert_entities(partition_columns);
-    tx.execute(&query).await?;
+    tx.insert_entities(partition_columns).await?;
     Ok(())
 }
 
@@ -271,12 +261,8 @@ pub async fn add_table_column(
         &mut ducklake_column_tags,
     )?;
 
-    let query = Query::insert_entities(ducklake_columns);
-    tx.execute(&query).await?;
-    if !ducklake_column_tags.is_empty() {
-        let query = Query::insert_entities(ducklake_column_tags);
-        tx.execute(&query).await?;
-    }
+    tx.insert_entities(ducklake_columns).await?;
+    tx.insert_entities(ducklake_column_tags).await?;
 
     // Optionally add tags
     if !column.tags.is_empty() {
@@ -317,8 +303,7 @@ pub async fn update_table_column<'a>(
         &mut ducklake_column_tags,
     )?;
 
-    let query = Query::insert_entities(ducklake_columns);
-    tx.execute(&query).await?;
+    tx.insert_entities(ducklake_columns).await?;
 
     Ok(())
 }
@@ -364,8 +349,7 @@ pub async fn add_table_column_tag<'a>(
         key: tag.key.clone(),
         value: tag.value.clone(),
     };
-    let query = Query::insert_entity(ducklake_column_tag);
-    tx.execute(&query).await?;
+    tx.insert_entity(ducklake_column_tag).await?;
 
     Ok(())
 }

@@ -1,7 +1,6 @@
 use sea_query::{ExprTrait, Query};
 
 use crate::catalog::SchemaRef;
-use crate::db::sea_query_ext::InsertIntoTable;
 use crate::spec::*;
 use crate::transaction::CommitState;
 use crate::{DucklakeResult, db, io};
@@ -25,8 +24,7 @@ pub async fn create_schema<'a>(
         path: path.to_string(),
         path_is_relative: path.is_relative(),
     };
-    let query = Query::insert_entity(schema);
-    tx.execute(&query).await?;
+    tx.insert_entity(schema).await?;
 
     Ok(())
 }

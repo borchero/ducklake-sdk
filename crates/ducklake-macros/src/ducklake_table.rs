@@ -32,6 +32,7 @@ fn ducklake_table_blocks(ast: &mut syn::DeriveInput) -> proc_macro2::TokenStream
 
     let column_snake_names: Vec<_> = fields.iter().map(|f| f.snake_name).collect();
     let column_camel_names: Vec<_> = fields.iter().map(|f| &f.camel_name).collect();
+    let num_columns = column_camel_names.len();
 
     quote! {
         #visibility mod #snake_name {
@@ -61,6 +62,8 @@ fn ducklake_table_blocks(ast: &mut syn::DeriveInput) -> proc_macro2::TokenStream
         }
 
         impl sea_query_ext::InsertableEntity for #camel_name {
+            const NUM_COLUMNS: usize = #num_columns;
+
             fn insert_into_table(&self) -> sea_query::InsertStatement {
                 sea_query::Query::insert()
                     .into_table(#snake_name::Table)

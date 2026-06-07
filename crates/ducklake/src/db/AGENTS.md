@@ -38,8 +38,8 @@ The module uses `sea-query` for database-agnostic SQL generation:
 The `sea_query_ext` submodule provides helper traits for common patterns:
 
 - `CreateTable` / `CreatableEntity`: Simplifies table creation by allowing entity types to define their own schema
-- `InsertIntoTable` / `InsertableEntity`: Simplifies row insertion by allowing entity types to define their own insert
-  logic
+- `InsertableEntity`: Simplifies row insertion by allowing entity types to define their own insert logic. Entities are
+  inserted via `Transaction::insert_entity` / `Transaction::insert_entities`.
 
 These traits are used in conjunction with the `ducklake_macros` crate to derive implementations automatically.
 
