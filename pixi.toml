@@ -34,7 +34,7 @@ ty = "*"
 typos = "*"
 
 [feature.lint.tasks]
-lefthook-install-py = "lefthook install-py pre-commit"
+lefthook-install = "lefthook install pre-commit"
 lint = "lefthook run pre-commit --all-files"
 lint-staged = "lefthook run pre-commit"
 
