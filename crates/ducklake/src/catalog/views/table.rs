@@ -5,7 +5,6 @@ use super::TryIntoRef;
 use crate::catalog::{
     ArenaIdx,
     Catalog,
-    CatalogEntity,
     CatalogTable,
     CatalogTablePartition,
     ColumnRef,
@@ -26,7 +25,7 @@ pub type TableViewMut<'a> = TableView<'a, &'a mut Catalog>;
 /* --------------------------------------------------------------------------------------------- */
 
 impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
-    fn new(catalog: C, table_ref: TableRef) -> Self {
+    pub(super) fn new(catalog: C, table_ref: TableRef) -> Self {
         Self {
             catalog,
             arena_idx: table_ref.0,
@@ -70,9 +69,9 @@ impl TryIntoRef<TableRef> for i64 {
     type Error = DucklakeError;
 
     fn try_into_ref(self, catalog: &Catalog) -> Result<TableRef, Self::Error> {
-        let idx = *catalog
-            .by_id
-            .get(&self)
+        let idx = catalog
+            .table_arena
+            .map_id(self)
             .ok_or(DucklakeError::EntityNotFound { id: self })?;
         Ok(idx.into())
     }
@@ -105,17 +104,11 @@ impl<'a> TableViewMut<'a> {
 
 impl Catalog {
     pub(super) fn table_by_idx(&self, arena_idx: ArenaIdx) -> &CatalogTable {
-        match &self.arena[arena_idx.0] {
-            CatalogEntity::Table(table) => table,
-            _ => unreachable!("arena index does not point to a table"),
-        }
+        self.table_arena.get(arena_idx)
     }
 
     pub(super) fn table_by_idx_mut(&mut self, arena_idx: ArenaIdx) -> &mut CatalogTable {
-        match &mut self.arena[arena_idx.0] {
-            CatalogEntity::Table(table) => table,
-            _ => unreachable!("arena index does not point to a table"),
-        }
+        self.table_arena.get_mut(arena_idx)
     }
 }
 
@@ -181,7 +174,7 @@ impl<'a> TableViewMut<'a> {
         match table.id {
             None => {
                 table.id = Some(id);
-                self.catalog.by_id.insert(id, self.arena_idx);
+                self.catalog.table_arena.register_id(self.arena_idx, id);
             }
             _ => panic!("table ID must not be overwritten"),
         }
@@ -297,9 +290,6 @@ impl<'a> TableViewMut<'a> {
     pub fn delete(&mut self) {
         let table = self.inner_mut();
         let name = table.name.name.clone();
-        if let Some(id) = table.id {
-            self.catalog.by_id.remove(&id);
-        }
         self.parent_schema_mut().inner_mut().tables.remove(&name);
     }
 }

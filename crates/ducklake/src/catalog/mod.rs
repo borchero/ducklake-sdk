@@ -2,12 +2,16 @@ use std::collections::HashMap;
 
 use crate::{DucklakeError, DucklakeResult, io};
 
+mod arena;
 mod load;
 mod refs;
 mod typedefs;
 mod views;
-pub use refs::{ColumnRef, SchemaRef, TableRef};
+
+use arena::{Arena, ArenaIdx};
+pub(crate) use refs::{ColumnRef, SchemaRef, TableRef};
 use typedefs::*;
+pub(crate) use views::SchemaView;
 
 /// Point-in-time capture of the DuckLake schema. This includes all schemas, tables, their
 /// columns, etc.
@@ -18,26 +22,12 @@ use typedefs::*;
 /// their name as opposed to an entity ID.
 #[derive(Debug, Clone)]
 pub struct Catalog {
-    // Unordered list of all entities (=schemas and tables) in the catalog.
-    // When modifying the catalog within a transaction, this arena contains pending and deleted
-    // entities as well.
-    arena: Vec<CatalogEntity>,
-    // Mapping from entity ID to arena index for quick lookup by ID. This mapping does not include
-    // pending entities as they do not have an ID yet.
-    by_id: HashMap<i64, ArenaIdx>,
+    // Storage of schemas.
+    schema_arena: Arena<CatalogSchema>,
+    // Storage of tables across schemas.
+    table_arena: Arena<CatalogTable>,
     // Mapping from schema name to arena index for quick lookup by schema name.
     schemas: HashMap<String, ArenaIdx>,
-}
-
-/// Index into the catalog arena.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct ArenaIdx(usize);
-
-/// An entity in the catalog, either a schema or a table.
-#[derive(Debug, Clone)]
-enum CatalogEntity {
-    Schema(CatalogSchema),
-    Table(CatalogTable),
 }
 
 /* ------------------------------------------- SCHEMA ------------------------------------------ */
@@ -60,14 +50,9 @@ impl Catalog {
             tables: HashMap::new(),
             path,
         };
-        let idx = self.push_schema(schema);
+        let idx = self.schema_arena.push(schema, None);
         self.schemas.insert(name.to_string(), idx);
         Ok(idx.into())
-    }
-
-    /// Get the names of all schemas.
-    pub fn list_schema_names(&self) -> Vec<String> {
-        self.schemas.keys().cloned().collect()
     }
 }
 
@@ -117,7 +102,7 @@ impl Catalog {
             path,
         };
         let column_idxs = catalog_table.columns.root_column_indices();
-        let table_idx = self.push_table(catalog_table);
+        let table_idx = self.table_arena.push(catalog_table, None);
 
         let mut schema = self.schema_mut(&table.name.schema)?;
         let catalog_schema = schema.inner_mut();
@@ -141,40 +126,5 @@ impl Catalog {
                 .collect()
         });
         Ok((schema.ref_(), table_idx.into(), column_refs, partition_refs))
-    }
-
-    /// Get the IDs of all tables and their schemas, optionally filtered by schema name.
-    pub fn list_table_ids(&self, schema: Option<&str>) -> Vec<i64> {
-        self.by_id
-            .iter()
-            .filter_map(|(id, arena_idx)| {
-                if let CatalogEntity::Table(table) = &self.arena[arena_idx.0]
-                    && (schema.is_none() || schema == Some(table.name.schema.as_str()))
-                {
-                    return Some(*id);
-                }
-                None
-            })
-            .collect()
-    }
-}
-
-/* --------------------------------------------------------------------------------------------- */
-/*                                           INTERNALS                                           */
-/* --------------------------------------------------------------------------------------------- */
-
-impl Catalog {
-    fn push_schema(&mut self, schema: CatalogSchema) -> ArenaIdx {
-        self.push_entity(CatalogEntity::Schema(schema))
-    }
-
-    fn push_table(&mut self, table: CatalogTable) -> ArenaIdx {
-        self.push_entity(CatalogEntity::Table(table))
-    }
-
-    fn push_entity(&mut self, entity: CatalogEntity) -> ArenaIdx {
-        let idx = ArenaIdx(self.arena.len());
-        self.arena.push(entity);
-        idx
     }
 }

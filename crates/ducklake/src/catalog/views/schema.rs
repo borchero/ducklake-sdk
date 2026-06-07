@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use super::TryIntoRef;
-use crate::catalog::{ArenaIdx, Catalog, CatalogEntity, CatalogSchema, SchemaRef};
+use crate::catalog::{ArenaIdx, Catalog, CatalogSchema, SchemaRef};
 use crate::{DucklakeError, DucklakeResult};
 
 pub struct SchemaView<'a, C = &'a Catalog> {
@@ -27,6 +27,13 @@ impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
 }
 
 impl Catalog {
+    pub fn list_schemas(&self) -> Vec<SchemaView<'_>> {
+        self.schemas
+            .values()
+            .map(|arena_idx| SchemaView::new(self, (*arena_idx).into()))
+            .collect()
+    }
+
     pub fn schema<R: TryIntoRef<SchemaRef>>(
         &self,
         schema_ref: R,
@@ -62,9 +69,9 @@ impl TryIntoRef<SchemaRef> for i64 {
     type Error = DucklakeError;
 
     fn try_into_ref(self, catalog: &Catalog) -> Result<SchemaRef, Self::Error> {
-        let idx = *catalog
-            .by_id
-            .get(&self)
+        let idx = catalog
+            .schema_arena
+            .map_id(self)
             .ok_or(DucklakeError::EntityNotFound { id: self })?;
         Ok(idx.into())
     }
@@ -76,19 +83,13 @@ impl TryIntoRef<SchemaRef> for i64 {
 
 impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
     pub(in crate::catalog) fn inner(&self) -> &CatalogSchema {
-        match &self.catalog.arena[self.arena_idx.0] {
-            CatalogEntity::Schema(schema) => schema,
-            _ => unreachable!("arena index does not point to a schema"),
-        }
+        self.catalog.schema_arena.get(self.arena_idx)
     }
 }
 
 impl<'a> SchemaViewMut<'a> {
     pub(in crate::catalog) fn inner_mut(&mut self) -> &mut CatalogSchema {
-        match &mut self.catalog.arena[self.arena_idx.0] {
-            CatalogEntity::Schema(schema) => schema,
-            _ => unreachable!("arena index does not point to a schema"),
-        }
+        self.catalog.schema_arena.get_mut(self.arena_idx)
     }
 }
 
@@ -106,6 +107,15 @@ impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
     pub fn name(&self) -> &str {
         &self.inner().name
     }
+
+    pub fn list_tables(&self) -> Vec<super::TableView<'_>> {
+        let catalog: &Catalog = &self.catalog;
+        self.inner()
+            .tables
+            .values()
+            .map(|arena_idx| super::TableView::new(catalog, (*arena_idx).into()))
+            .collect()
+    }
 }
 
 /* ------------------------------------------ MUTATION ----------------------------------------- */
@@ -116,7 +126,7 @@ impl<'a> SchemaViewMut<'a> {
         match schema.id {
             None => {
                 schema.id = Some(id);
-                self.catalog.by_id.insert(id, self.arena_idx);
+                self.catalog.schema_arena.register_id(self.arena_idx, id);
             }
             _ => panic!("schema ID must not be overwritten"),
         }
@@ -131,9 +141,6 @@ impl<'a> SchemaViewMut<'a> {
             )));
         }
         let name = schema.name.clone();
-        if let Some(id) = schema.id {
-            self.catalog.by_id.remove(&id);
-        }
         self.catalog.schemas.remove(&name);
         Ok(())
     }

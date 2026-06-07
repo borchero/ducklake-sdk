@@ -28,8 +28,8 @@ impl Catalog {
     /// This is reserved for unit testing. Consumers should always use `Catalog::load`.
     pub(super) fn new() -> Self {
         Self {
-            arena: Vec::new(),
-            by_id: HashMap::new(),
+            schema_arena: Arena::new(),
+            table_arena: Arena::new(),
             schemas: HashMap::new(),
         }
     }
@@ -125,8 +125,9 @@ impl Catalog {
             };
 
             // 2) Add the schema to the catalog
-            let idx = self.push_schema(catalog_schema);
-            self.by_id.insert(schema.schema_id, idx);
+            let idx = self
+                .schema_arena
+                .push(catalog_schema, Some(schema.schema_id));
             self.schemas.insert(schema_name, idx);
         }
     }
@@ -205,8 +206,7 @@ impl Catalog {
             };
 
             // 5) Add the table to the catalog
-            let arena_idx = self.push_table(catalog_table);
-            self.by_id.insert(table.table_id, arena_idx);
+            let arena_idx = self.table_arena.push(catalog_table, Some(table.table_id));
             self.schema_mut(table.schema_id)
                 .unwrap() // SAFETY: we already verified existence above
                 .inner_mut()

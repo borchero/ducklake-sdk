@@ -41,10 +41,8 @@ All references are backed by instances of the `ArenaIdx` struct which is used to
 ### Public API
 
 The public surface of the catalog is meant to be minimal. None of the internal representations of the catalog should
-leak outside of this module (i.e. not even be exposed as `pub(crate)`). This especially includes:
-
-- The internal representation of the entities (e.g. `CatalogTable`, `CatalogColumns`, ...)
-- The `CatalogState` enum
+leak outside of this module (i.e. not even be exposed as `pub(crate)`). This especially includes the internal
+representation of the entities (e.g. `CatalogTable`, `CatalogColumns`, ...).
 
 All publicly exposed functions must only have parameters and return types of the following kinds:
 
