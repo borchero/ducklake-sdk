@@ -17,7 +17,6 @@ use typedefs::*;
 
 use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};
-use crate::db::sea_query_ext::InsertIntoTable;
 use crate::primitives::Borrowed;
 use crate::spec::*;
 use crate::{DucklakeError, DucklakeResult, db};
@@ -254,8 +253,7 @@ impl<'a> Transaction<'a> {
         // Write a new snapshot
         let snapshot = DucklakeSnapshot::from(state);
         let snapshot_info = SnapshotInfo::from(snapshot.clone());
-        let query = Query::insert_entity(snapshot);
-        tx.execute(&query).await?;
+        tx.insert_entity(snapshot).await?;
 
         // Write the schema changes
         let snapshot_changes = DucklakeSnapshotChanges {
@@ -265,8 +263,7 @@ impl<'a> Transaction<'a> {
             commit_message: author_info.message.clone(),
             commit_extra_info: author_info.extra_info.clone(),
         };
-        let query = Query::insert_entity(snapshot_changes);
-        tx.execute(&query).await?;
+        tx.insert_entity(snapshot_changes).await?;
 
         // Update schema version if necessary
         let schema_versions = table_ids_with_schema_changes
@@ -277,10 +274,7 @@ impl<'a> Transaction<'a> {
                 table_id: Some(*table_id),
             })
             .collect::<Vec<_>>();
-        if !schema_versions.is_empty() {
-            let query = Query::insert_entities(schema_versions);
-            tx.execute(&query).await?;
-        }
+        tx.insert_entities(schema_versions).await?;
         Ok(snapshot_info)
     }
 

@@ -294,8 +294,56 @@ impl Transaction {
         };
         Ok(())
     }
+    /// Insert a single entity into its backing table.
+    pub async fn insert_entity(
+        &mut self,
+        entity: impl sea_query_ext::InsertableEntity,
+    ) -> DucklakeResult<()> {
+        let query = entity.insert_into_table();
+        self.execute(&query).await
+    }
 
-    #[allow(dead_code)]
+    /// Insert the given entities into their backing table.
+    ///
+    /// Insertions are automatically batched into multiple statements to prevent exhausting the
+    /// underlying database's bind parameter limit.
+    pub async fn insert_entities<E>(
+        &mut self,
+        entities: impl IntoIterator<Item = E>,
+    ) -> DucklakeResult<()>
+    where
+        E: sea_query_ext::InsertableEntity,
+    {
+        self.insert_entities_multi_row_values(entities).await
+    }
+
+    /// Insert the given entities using one or more multi-row `VALUES` statements, batching them
+    /// such that the backend's bind parameter limit is respected.
+    async fn insert_entities_multi_row_values<E>(
+        &mut self,
+        entities: impl IntoIterator<Item = E>,
+    ) -> DucklakeResult<()>
+    where
+        E: sea_query_ext::InsertableEntity,
+    {
+        let chunk_size = self.dialect().max_bind_params() / E::NUM_COLUMNS;
+        // NOTE: We materialize the entities into an owned `vec::IntoIter` up front. Some call
+        //  sites pass borrowing iterators (e.g. `slice.iter().map(...)`); holding such an
+        //  iterator across the `await` below would make the resulting future non-`Send`.
+        let mut entities = entities.into_iter().collect::<Vec<_>>().into_iter();
+        // NOTE: Unfortunately, we cannot use `itertools.chunks` because the resulting future
+        //  would not be `Send`.
+        loop {
+            let chunk: Vec<E> = entities.by_ref().take(chunk_size).collect();
+            if chunk.is_empty() {
+                break;
+            }
+            let query = E::insert_all_into_table(chunk);
+            self.execute(&query).await?;
+        }
+        Ok(())
+    }
+
     pub async fn insert_all_arrow(
         &mut self,
         table: &str,

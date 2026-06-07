@@ -48,6 +48,21 @@ impl Dialect {
             Dialect::Sqlite => sqlite::column_type_for_data_type(data_type),
         }
     }
+
+    /// The maximum number of bind parameters that may be used within a single statement for this
+    /// dialect.
+    pub fn max_bind_params(&self) -> usize {
+        match self {
+            // https://www.postgresql.org/docs/current/limits.html
+            #[cfg(feature = "postgres")]
+            Dialect::Postgres => 65535,
+            #[cfg(feature = "mysql")]
+            Dialect::MySql => 65535,
+            // https://sqlite.org/limits.html
+            #[cfg(feature = "sqlite")]
+            Dialect::Sqlite => 32766,
+        }
+    }
 }
 
 /* ---------------------------------- DUCKDB TYPE EQUIVALENCE ---------------------------------- */

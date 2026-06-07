@@ -6,7 +6,6 @@ use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Schema as Arr
 use sea_query::{ColumnDef, ExprTrait, Query, Table};
 
 use crate::catalog::TableRef;
-use crate::db::sea_query_ext::InsertIntoTable;
 use crate::spec::*;
 use crate::transaction::{CommitDataFile, CommitInlineData, CommitState};
 use crate::{DucklakeResult, db};
@@ -92,21 +91,9 @@ pub async fn write_table_data(
             ducklake_file_column_stats.push(ducklake_column_stat);
         }
     }
-    let query = Query::insert_entities(ducklake_data_files);
-    tx.execute(&query).await?;
-
-    if !ducklake_partition_values.is_empty() {
-        let query = Query::insert_entities(ducklake_partition_values);
-        tx.execute(&query).await?;
-    }
-
-    // NOTE: We conditionally run this as there may be no column stats if the writer did not
-    //  supply any - the Rust API generally allows for that by supplying data files with no
-    //  columns.
-    if !ducklake_file_column_stats.is_empty() {
-        let query = Query::insert_entities(ducklake_file_column_stats);
-        tx.execute(&query).await?;
-    }
+    tx.insert_entities(ducklake_data_files).await?;
+    tx.insert_entities(ducklake_partition_values).await?;
+    tx.insert_entities(ducklake_file_column_stats).await?;
 
     // After all data files have been added, we insert/update table and column stats
     persist_table_stats(tx, state, table_id).await?;
@@ -166,8 +153,7 @@ pub async fn create_inlined_data_table(
         table_name: inlined_table_name,
         schema_version: state.schema_version(),
     };
-    let query = Query::insert_entity(inlined_data_table).to_owned();
-    tx.execute(&query).await?;
+    tx.insert_entity(inlined_data_table).await?;
 
     Ok(())
 }
@@ -351,8 +337,7 @@ async fn persist_table_stats(
             next_row_id: table_stats.next_row_id(),
             file_size_bytes: table_stats.file_size_bytes(),
         };
-        let query = Query::insert_entity(entity).to_owned();
-        tx.execute(&query).await?;
+        tx.insert_entity(entity).await?;
         table_stats.set_persisted();
     }
     Ok(())
@@ -410,8 +395,7 @@ async fn persist_column_stats(
                 max_value: column_stats.max_value().map(|v| v.to_string()),
                 extra_stats: None, // TODO: Support extra stats
             };
-            let query = Query::insert_entity(entity).to_owned();
-            tx.execute(&query).await?;
+            tx.insert_entity(entity).await?;
             column_stats.set_persisted();
         }
     }
