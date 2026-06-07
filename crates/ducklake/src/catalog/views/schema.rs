@@ -131,7 +131,9 @@ impl<'a> SchemaViewMut<'a> {
             )));
         }
         let name = schema.name.clone();
+        if let Some(id) = schema.id {
+            self.catalog.by_id.remove(&id);
+        }
         self.catalog.schemas.remove(&name);
         Ok(())
-    }
 }
