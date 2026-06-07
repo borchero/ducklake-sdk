@@ -49,20 +49,13 @@ impl Catalog {
     /// already exists.
     pub fn add_schema(&mut self, name: &str, path: io::DucklakePath) -> DucklakeResult<SchemaRef> {
         // If the schema exists already, we need to raise some kind of error
-        if let Ok(schema) = self.schema(name) {
-            return match &schema.inner().state {
-                CatalogState::Existing { .. } | CatalogState::Pending => {
-                    Err(DucklakeError::schema_already_exists(name))
-                }
-                CatalogState::Deleted { .. } => Err(DucklakeError::InvalidChanges(format!(
-                    "cannot create schema {name} which was deleted in the same transaction"
-                ))),
-            };
+        if self.schema(name).is_ok() {
+            return Err(DucklakeError::schema_already_exists(name));
         }
 
         // If the schema does not yet exist, create a new pending schema
         let schema = CatalogSchema {
-            state: CatalogState::Pending,
+            id: None,
             name: name.to_string(),
             tables: HashMap::new(),
             path,
@@ -103,15 +96,7 @@ impl Catalog {
     )> {
         // If the table exists already, we need to raise some kind of error
         if let Ok(table) = self.table(&table.name) {
-            return match table.inner().state {
-                CatalogState::Existing { .. } | CatalogState::Pending => {
-                    Err(DucklakeError::table_already_exists(table.name()))
-                }
-                CatalogState::Deleted { .. } => Err(DucklakeError::InvalidChanges(format!(
-                    "cannot create table {} which was deleted in the same transaction",
-                    table.name()
-                ))),
-            };
+            return Err(DucklakeError::table_already_exists(table.name()));
         }
 
         // If the table does not yet exist, create a new pending table
@@ -124,7 +109,7 @@ impl Catalog {
             .map(|p| CatalogTablePartition::from_partition(p, &columns))
             .transpose()?;
         let catalog_table = CatalogTable {
-            state: CatalogState::Pending,
+            id: None,
             name: table.name.clone(),
             columns,
             partition: partition.clone(),

@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use super::TryIntoRef;
-use crate::catalog::{ArenaIdx, Catalog, CatalogEntity, CatalogSchema, CatalogState, SchemaRef};
+use crate::catalog::{ArenaIdx, Catalog, CatalogEntity, CatalogSchema, SchemaRef};
 use crate::{DucklakeError, DucklakeResult};
 
 pub struct SchemaView<'a, C = &'a Catalog> {
@@ -100,7 +100,7 @@ impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
     }
 
     pub fn id(&self) -> Option<i64> {
-        self.inner().state.id()
+        self.inner().id
     }
 
     pub fn name(&self) -> &str {
@@ -113,12 +113,12 @@ impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
 impl<'a> SchemaViewMut<'a> {
     pub fn resolve_id(&mut self, id: i64) {
         let schema = self.inner_mut();
-        match schema.state {
-            CatalogState::Pending => {
-                schema.state = CatalogState::Existing { id };
+        match schema.id {
+            None => {
+                schema.id = Some(id);
                 self.catalog.by_id.insert(id, self.arena_idx);
             }
-            _ => panic!("schema must be in state 'pending' to set ID"),
+            _ => panic!("schema ID must not be overwritten"),
         }
     }
 
@@ -130,18 +130,8 @@ impl<'a> SchemaViewMut<'a> {
                 schema.name
             )));
         }
-
-        // Depending on the current state, either mark deleted or raise an error
-        match &schema.state {
-            CatalogState::Existing { id } => {
-                schema.state = CatalogState::Deleted { id: *id };
-                Ok(())
-            }
-            CatalogState::Pending => Err(DucklakeError::InvalidChanges(format!(
-                "cannot delete schema {} which was created in the same transaction",
-                schema.name
-            ))),
-            CatalogState::Deleted { .. } => Err(DucklakeError::schema_not_found(&schema.name)),
-        }
+        let name = schema.name.clone();
+        self.catalog.schemas.remove(&name);
+        Ok(())
     }
 }

@@ -6,7 +6,6 @@ use crate::catalog::{
     ArenaIdx,
     Catalog,
     CatalogEntity,
-    CatalogState,
     CatalogTable,
     CatalogTablePartition,
     ColumnRef,
@@ -128,11 +127,11 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
     }
 
     pub fn id(&self) -> Option<i64> {
-        self.inner().state.id()
+        self.inner().id
     }
 
     pub fn partition_id(&self) -> Option<i64> {
-        self.inner().partition.as_ref().and_then(|p| p.state.id())
+        self.inner().partition.as_ref().and_then(|p| p.id)
     }
 
     pub fn info(&self) -> crate::TableInfo {
@@ -179,12 +178,12 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
 impl<'a> TableViewMut<'a> {
     pub fn resolve_id(&mut self, id: i64) {
         let table = self.inner_mut();
-        match table.state {
-            CatalogState::Pending => {
-                table.state = CatalogState::Existing { id };
+        match table.id {
+            None => {
+                table.id = Some(id);
                 self.catalog.by_id.insert(id, self.arena_idx);
             }
-            _ => panic!("table must be in state 'pending' to set ID"),
+            _ => panic!("table ID must not be overwritten"),
         }
     }
 
@@ -194,11 +193,11 @@ impl<'a> TableViewMut<'a> {
             .partition
             .as_mut()
             .expect("table must have partition info to resolve partition ID");
-        match partition.state {
-            CatalogState::Pending => {
-                partition.state = CatalogState::Existing { id };
+        match partition.id {
+            None => {
+                partition.id = Some(id);
             }
-            _ => panic!("partition must be in state 'pending' to set ID"),
+            _ => panic!("partition ID must not be overwritten"),
         }
     }
 
@@ -214,39 +213,31 @@ impl<'a> TableViewMut<'a> {
     }
 
     pub fn rename(&mut self, new_name: &str) -> DucklakeResult<()> {
-        // Depending on the current state, either rename or raise an error
-        match self.inner().state {
-            CatalogState::Existing { .. } | CatalogState::Pending => {
-                let name = self.name().clone();
+        let name = self.name().clone();
 
-                // Ensure that the new name does not already exist
-                let mut schema = self.catalog.schema_mut(&name.schema)?;
-                let catalog_schema = schema.inner_mut();
-                if catalog_schema.tables.contains_key(new_name) {
-                    return Err(DucklakeError::table_already_exists(&crate::TableName {
-                        schema: name.schema.clone(),
-                        name: new_name.to_string(),
-                    }));
-                }
-
-                // Rename the table in the schema's table mapping
-                let arena_idx = catalog_schema.tables.remove(&name.name).unwrap();
-                catalog_schema
-                    .tables
-                    .insert(new_name.to_string(), arena_idx);
-
-                // Rename the table itself
-                let table = self.inner_mut();
-                table.name = crate::TableName {
-                    schema: table.name.schema.clone(),
-                    name: new_name.to_string(),
-                };
-                Ok(())
-            }
-            CatalogState::Deleted { .. } => {
-                Err(DucklakeError::table_not_found(&self.inner().name))
-            }
+        // Ensure that the new name does not already exist
+        let mut schema = self.catalog.schema_mut(&name.schema)?;
+        let catalog_schema = schema.inner_mut();
+        if catalog_schema.tables.contains_key(new_name) {
+            return Err(DucklakeError::table_already_exists(&crate::TableName {
+                schema: name.schema.clone(),
+                name: new_name.to_string(),
+            }));
         }
+
+        // Rename the table in the schema's table mapping
+        let arena_idx = catalog_schema.tables.remove(&name.name).unwrap();
+        catalog_schema
+            .tables
+            .insert(new_name.to_string(), arena_idx);
+
+        // Rename the table itself
+        let table = self.inner_mut();
+        table.name = crate::TableName {
+            schema: table.name.schema.clone(),
+            name: new_name.to_string(),
+        };
+        Ok(())
     }
 
     pub fn add_column(
@@ -303,24 +294,12 @@ impl<'a> TableViewMut<'a> {
     }
 
     /// Delete the table with the given identifier by marking it as deleted.
-    pub fn delete(&mut self) -> DucklakeResult<()> {
+    pub fn delete(&mut self) {
         let table = self.inner_mut();
-        match table.state {
-            CatalogState::Existing { id } => {
-                table.state = CatalogState::Deleted { id };
-                let name = table.name.name.clone();
-                self.catalog.by_id.remove(&id);
-                self.parent_schema_mut().inner_mut().tables.remove(&name);
-                Ok(())
-            }
-            CatalogState::Pending => {
-                // NOTE: We simply keep the table around as 'pending'. There's no harm in having
-                //  this "orphan" table in the arena
-                let name = table.name.name.clone();
-                self.parent_schema_mut().inner_mut().tables.remove(&name);
-                Ok(())
-            }
-            CatalogState::Deleted { .. } => Err(DucklakeError::table_not_found(&table.name)),
+        let name = table.name.name.clone();
+        if let Some(id) = table.id {
+            self.catalog.by_id.remove(&id);
         }
+        self.parent_schema_mut().inner_mut().tables.remove(&name);
     }
 }

@@ -115,9 +115,7 @@ impl Catalog {
 
             // 1) Create the catalog schema
             let catalog_schema = CatalogSchema {
-                state: CatalogState::Existing {
-                    id: schema.schema_id,
-                },
+                id: Some(schema.schema_id),
                 name: schema_name.clone(),
                 tables: HashMap::new(),
                 path: io::DucklakePath::new(
@@ -189,11 +187,11 @@ impl Catalog {
 
             // 4) Construct the full table catalog object
             let catalog_table = CatalogTable {
+                id: Some(table.table_id),
                 name: crate::TableName {
                     schema: schema.name().to_string(),
                     name: table_name.clone(),
                 },
-                state: CatalogState::Existing { id: table.table_id },
                 columns: table_columns,
                 partition: table_partition,
                 tags: tags

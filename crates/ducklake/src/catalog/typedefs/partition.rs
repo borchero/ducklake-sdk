@@ -6,7 +6,7 @@ use crate::spec::*;
 
 #[derive(Debug, Clone)]
 pub(in crate::catalog) struct CatalogTablePartition {
-    pub state: CatalogState,
+    pub id: Option<i64>,
     pub columns: Vec<CatalogPartitionColumn>,
 }
 
@@ -38,9 +38,7 @@ impl CatalogTablePartition {
             })
             .collect::<DucklakeResult<_>>()?;
         let partition = CatalogTablePartition {
-            state: CatalogState::Existing {
-                id: partition_info.partition_id,
-            },
+            id: Some(partition_info.partition_id),
             columns,
         };
         Ok(partition)
@@ -61,7 +59,7 @@ impl CatalogTablePartition {
             })
             .collect::<DucklakeResult<_>>()?;
         Ok(CatalogTablePartition {
-            state: CatalogState::Pending,
+            id: None,
             columns: catalog_columns,
         })
     }

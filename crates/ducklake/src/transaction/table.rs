@@ -143,7 +143,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn delete_table(&mut self, name: &TableName) -> DucklakeResult<()> {
         let mut table = self.catalog_mut().table_mut(name)?;
-        table.delete()?;
+        table.delete();
         let change = Change::DeleteTable {
             table_ref: table.ref_(),
         };
