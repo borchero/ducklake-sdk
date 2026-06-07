@@ -176,12 +176,12 @@ impl TypeDecoder for SqliteDialect {
 /*                                            ENCODING                                           */
 /* --------------------------------------------------------------------------------------------- */
 
-impl EncodableArguments for sqlx::sqlite::SqliteArguments<'static> {
+impl EncodableArguments for sqlx::sqlite::SqliteArguments {
     type Encoder = SqliteDialect;
 }
 
 impl TypeEncoder for SqliteDialect {
-    type Arguments = sqlx::sqlite::SqliteArguments<'static>;
+    type Arguments = sqlx::sqlite::SqliteArguments;
     type Database = sqlx::Sqlite;
 
     fn encode_bool(value: Option<bool>) -> impl Bindable<Self::Database> {

@@ -27,7 +27,7 @@ pub trait Bindable<DB: sqlx::Database> =
     sqlx::Encode<'static, DB> + sqlx::Type<DB> + Send + 'static;
 
 pub trait TypeEncoder: Send + Sync + 'static {
-    type Arguments: sqlx::Arguments<'static, Database = Self::Database> + Default;
+    type Arguments: sqlx::Arguments<Database = Self::Database> + Default;
     type Database: sqlx::Database;
 
     fn encode_bool(value: Option<bool>) -> impl Bindable<Self::Database>;
