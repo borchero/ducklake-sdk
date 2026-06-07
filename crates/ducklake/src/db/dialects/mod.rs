@@ -23,6 +23,7 @@ use sea_query::{
     UpdateStatement,
 };
 use sea_query_sqlx::{SqlxBinder, SqlxValues};
+use sqlx::SqlSafeStr;
 
 use crate::DucklakeError;
 
@@ -114,14 +115,14 @@ impl Dialect {
 /* -------------------------------------- SQL CONVERTIBLE -------------------------------------- */
 
 pub trait SqlConvertible: Send + Sync {
-    fn to_sql(&self, dialect: Dialect) -> (String, SqlxValues);
+    fn to_sql(&self, dialect: Dialect) -> (sqlx::SqlStr, SqlxValues);
 }
 
 macro_rules! impl_sql_convertible_sqlx_binder {
     ($s:ident) => {
         impl SqlConvertible for $s {
-            fn to_sql(&self, dialect: Dialect) -> (String, SqlxValues) {
-                match dialect {
+            fn to_sql(&self, dialect: Dialect) -> (sqlx::SqlStr, SqlxValues) {
+                let (sql, values) = match dialect {
                     #[cfg(feature = "postgres")]
                     Dialect::Postgres => self.build_sqlx(PostgresQueryBuilder),
                     #[cfg(feature = "mysql")]
@@ -134,7 +135,8 @@ macro_rules! impl_sql_convertible_sqlx_binder {
                         let (sql, values) = self.build_sqlx(SqliteQueryBuilder);
                         (sql, sqlite::adapt_values(values))
                     }
-                }
+                };
+                (sqlx::AssertSqlSafe(sql).into_sql_str(), values)
             }
         }
     };
@@ -143,7 +145,7 @@ macro_rules! impl_sql_convertible_sqlx_binder {
 macro_rules! impl_sql_convertible_other {
     ($s:ident) => {
         impl SqlConvertible for $s {
-            fn to_sql(&self, dialect: Dialect) -> (String, SqlxValues) {
+            fn to_sql(&self, dialect: Dialect) -> (sqlx::SqlStr, SqlxValues) {
                 let sql = match dialect {
                     #[cfg(feature = "postgres")]
                     Dialect::Postgres => self.to_string(PostgresQueryBuilder),
@@ -153,7 +155,7 @@ macro_rules! impl_sql_convertible_other {
                     Dialect::Sqlite => self.to_string(SqliteQueryBuilder),
                 };
                 let values = SqlxValues(sea_query::Values(vec![]));
-                (sql, values)
+                (sqlx::AssertSqlSafe(sql).into_sql_str(), values)
             }
         }
     };

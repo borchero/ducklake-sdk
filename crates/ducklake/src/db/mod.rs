@@ -136,14 +136,14 @@ impl Pool {
         Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
-        log_sql(&sql, Some(&values));
+        log_sql(sql.as_str(), Some(&values));
         let result = match &self.0 {
             #[cfg(feature = "postgres")]
-            AnyPool::Postgres(pool) => sqlx::query_as_with(&sql, values).fetch_one(pool).await?,
+            AnyPool::Postgres(pool) => sqlx::query_as_with(sql, values).fetch_one(pool).await?,
             #[cfg(feature = "mysql")]
-            AnyPool::MySql(pool) => sqlx::query_as_with(&sql, values).fetch_one(pool).await?,
+            AnyPool::MySql(pool) => sqlx::query_as_with(sql, values).fetch_one(pool).await?,
             #[cfg(feature = "sqlite")]
-            AnyPool::Sqlite(pool) => sqlx::query_as_with(&sql, values).fetch_one(pool).await?,
+            AnyPool::Sqlite(pool) => sqlx::query_as_with(sql, values).fetch_one(pool).await?,
         };
         Ok(result)
     }
@@ -154,14 +154,14 @@ impl Pool {
         Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
-        log_sql(&sql, Some(&values));
+        log_sql(sql.as_str(), Some(&values));
         let result = match &self.0 {
             #[cfg(feature = "postgres")]
-            AnyPool::Postgres(pool) => sqlx::query_as_with(&sql, values).fetch_all(pool).await?,
+            AnyPool::Postgres(pool) => sqlx::query_as_with(sql, values).fetch_all(pool).await?,
             #[cfg(feature = "mysql")]
-            AnyPool::MySql(pool) => sqlx::query_as_with(&sql, values).fetch_all(pool).await?,
+            AnyPool::MySql(pool) => sqlx::query_as_with(sql, values).fetch_all(pool).await?,
             #[cfg(feature = "sqlite")]
-            AnyPool::Sqlite(pool) => sqlx::query_as_with(&sql, values).fetch_all(pool).await?,
+            AnyPool::Sqlite(pool) => sqlx::query_as_with(sql, values).fetch_all(pool).await?,
         };
         Ok(result)
     }
@@ -172,23 +172,23 @@ impl Pool {
         Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
-        log_sql(&sql, Some(&values));
+        log_sql(sql.as_str(), Some(&values));
         let result = match &self.0 {
             #[cfg(feature = "postgres")]
             AnyPool::Postgres(pool) => {
-                sqlx::query_as_with(&sql, values)
+                sqlx::query_as_with(sql, values)
                     .fetch_optional(pool)
                     .await?
             }
             #[cfg(feature = "mysql")]
             AnyPool::MySql(pool) => {
-                sqlx::query_as_with(&sql, values)
+                sqlx::query_as_with(sql, values)
                     .fetch_optional(pool)
                     .await?
             }
             #[cfg(feature = "sqlite")]
             AnyPool::Sqlite(pool) => {
-                sqlx::query_as_with(&sql, values)
+                sqlx::query_as_with(sql, values)
                     .fetch_optional(pool)
                     .await?
             }
@@ -205,18 +205,18 @@ impl Pool {
         Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
-        log_sql(&sql, Some(&values));
+        log_sql(sql.as_str(), Some(&values));
         match &self.0 {
             #[cfg(feature = "postgres")]
             AnyPool::Postgres(pool) => {
-                let rows = sqlx::query_with(&sql, values).fetch(pool);
+                let rows = sqlx::query_with(sql, values).fetch(pool);
                 arrow::decode_rows(rows, schema).await
             }
             #[cfg(feature = "mysql")]
             AnyPool::MySql(_) => unimplemented!("data inlining is not yet implemented for MySQL"),
             #[cfg(feature = "sqlite")]
             AnyPool::Sqlite(pool) => {
-                let rows = sqlx::query_with(&sql, values).fetch(pool);
+                let rows = sqlx::query_with(sql, values).fetch(pool);
                 arrow::decode_rows(rows, schema).await
             }
         }
@@ -277,19 +277,19 @@ impl Transaction {
         Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
-        log_sql(&sql, Some(&values));
+        log_sql(sql.as_str(), Some(&values));
         match &mut self.0 {
             #[cfg(feature = "postgres")]
             AnyTransaction::Postgres(tx) => {
-                sqlx::query_with(&sql, values).execute(&mut **tx).await?;
+                sqlx::query_with(sql, values).execute(&mut **tx).await?;
             }
             #[cfg(feature = "mysql")]
             AnyTransaction::MySql(tx) => {
-                sqlx::query_with(&sql, values).execute(&mut **tx).await?;
+                sqlx::query_with(sql, values).execute(&mut **tx).await?;
             }
             #[cfg(feature = "sqlite")]
             AnyTransaction::Sqlite(tx) => {
-                sqlx::query_with(&sql, values).execute(&mut **tx).await?;
+                sqlx::query_with(sql, values).execute(&mut **tx).await?;
             }
         };
         Ok(())
@@ -319,14 +319,14 @@ impl Transaction {
             stmt.values_panic(row);
         });
         let (sql, _) = stmt.to_sql(self.dialect());
-        log_sql(&sql, None);
+        log_sql(sql.as_str(), None);
 
         // Execute the insertion query with the appropriate arguments built from the Arrow data
         match &mut self.0 {
             #[cfg(feature = "postgres")]
             AnyTransaction::Postgres(tx) => {
                 let args: sqlx::postgres::PgArguments = arrow::encode_record_batch(&data)?;
-                sqlx::query_with(&sql, args).execute(&mut **tx).await?;
+                sqlx::query_with(sql, args).execute(&mut **tx).await?;
             }
             #[cfg(feature = "mysql")]
             AnyTransaction::MySql(_) => {
@@ -335,7 +335,7 @@ impl Transaction {
             #[cfg(feature = "sqlite")]
             AnyTransaction::Sqlite(tx) => {
                 let args: sqlx::sqlite::SqliteArguments = arrow::encode_record_batch(&data)?;
-                sqlx::query_with(&sql, args).execute(&mut **tx).await?;
+                sqlx::query_with(sql, args).execute(&mut **tx).await?;
             }
         };
         Ok(())
@@ -347,23 +347,23 @@ impl Transaction {
         Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
-        log_sql(&sql, Some(&values));
+        log_sql(sql.as_str(), Some(&values));
         let result = match &mut self.0 {
             #[cfg(feature = "postgres")]
             AnyTransaction::Postgres(pool) => {
-                sqlx::query_as_with(&sql, values)
+                sqlx::query_as_with(sql, values)
                     .fetch_one(&mut **pool)
                     .await?
             }
             #[cfg(feature = "mysql")]
             AnyTransaction::MySql(pool) => {
-                sqlx::query_as_with(&sql, values)
+                sqlx::query_as_with(sql, values)
                     .fetch_one(&mut **pool)
                     .await?
             }
             #[cfg(feature = "sqlite")]
             AnyTransaction::Sqlite(pool) => {
-                sqlx::query_as_with(&sql, values)
+                sqlx::query_as_with(sql, values)
                     .fetch_one(&mut **pool)
                     .await?
             }
