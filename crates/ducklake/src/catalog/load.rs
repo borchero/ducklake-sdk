@@ -28,8 +28,8 @@ impl Catalog {
     /// This is reserved for unit testing. Consumers should always use `Catalog::load`.
     pub(super) fn new() -> Self {
         Self {
-            arena: Vec::new(),
-            by_id: HashMap::new(),
+            schema_arena: Arena::new(),
+            table_arena: Arena::new(),
             schemas: HashMap::new(),
         }
     }
@@ -115,9 +115,7 @@ impl Catalog {
 
             // 1) Create the catalog schema
             let catalog_schema = CatalogSchema {
-                state: CatalogState::Existing {
-                    id: schema.schema_id,
-                },
+                id: Some(schema.schema_id),
                 name: schema_name.clone(),
                 tables: HashMap::new(),
                 path: io::DucklakePath::new(
@@ -127,8 +125,9 @@ impl Catalog {
             };
 
             // 2) Add the schema to the catalog
-            let idx = self.push_schema(catalog_schema);
-            self.by_id.insert(schema.schema_id, idx);
+            let idx = self
+                .schema_arena
+                .push(catalog_schema, Some(schema.schema_id));
             self.schemas.insert(schema_name, idx);
         }
     }
@@ -189,11 +188,11 @@ impl Catalog {
 
             // 4) Construct the full table catalog object
             let catalog_table = CatalogTable {
+                id: Some(table.table_id),
                 name: crate::TableName {
                     schema: schema.name().to_string(),
                     name: table_name.clone(),
                 },
-                state: CatalogState::Existing { id: table.table_id },
                 columns: table_columns,
                 partition: table_partition,
                 tags: tags
@@ -207,8 +206,7 @@ impl Catalog {
             };
 
             // 5) Add the table to the catalog
-            let arena_idx = self.push_table(catalog_table);
-            self.by_id.insert(table.table_id, arena_idx);
+            let arena_idx = self.table_arena.push(catalog_table, Some(table.table_id));
             self.schema_mut(table.schema_id)
                 .unwrap() // SAFETY: we already verified existence above
                 .inner_mut()

@@ -252,24 +252,35 @@ impl Ducklake {
     pub async fn list_tables(&self, schema: Option<&str>) -> DucklakeResult<Vec<Table>> {
         let snapshot = self.conn.latest_snapshot(true).await?;
         let catalog = snapshot.catalog().await?;
-        let table_ids = catalog.list_table_ids(schema);
-        let tables = table_ids
-            .into_iter()
-            .map(|id| {
-                catalog.table(id).map(|table| {
-                    let schema_id = catalog.schema(&table.name().schema).unwrap().id().unwrap();
-                    Table::new(self.conn.clone(), schema_id, id)
-                })
-            })
-            .collect::<DucklakeResult<Vec<_>>>()?;
+        let tables = if let Some(schema) = schema {
+            self.list_tables_in_schema(catalog.schema(schema)?)
+        } else {
+            catalog
+                .list_schemas()
+                .into_iter()
+                .flat_map(|s| self.list_tables_in_schema(s))
+                .collect()
+        };
         Ok(tables)
+    }
+
+    fn list_tables_in_schema(&self, schema: catalog::SchemaView<'_>) -> Vec<Table> {
+        schema
+            .list_tables()
+            .into_iter()
+            .map(|t| Table::new(self.conn.clone(), schema.id().unwrap(), t.id().unwrap()))
+            .collect()
     }
 
     /// List the names of all schemas in the catalog.
     pub async fn list_schemas(&self) -> DucklakeResult<Vec<String>> {
         let snapshot = self.conn.latest_snapshot(true).await?;
         let catalog = snapshot.catalog().await?;
-        Ok(catalog.list_schema_names())
+        Ok(catalog
+            .list_schemas()
+            .into_iter()
+            .map(|s| s.name().to_string())
+            .collect())
     }
 }
 

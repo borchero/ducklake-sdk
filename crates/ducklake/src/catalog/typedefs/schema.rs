@@ -6,7 +6,7 @@ use crate::io;
 /// A schema in a catalog.
 #[derive(Debug, Clone)]
 pub(in crate::catalog) struct CatalogSchema {
-    pub state: CatalogState,
+    pub id: Option<i64>,
     pub name: String,
     pub tables: HashMap<String, ArenaIdx>,
     pub path: io::DucklakePath,

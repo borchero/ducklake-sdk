@@ -5,6 +5,9 @@ mod column;
 mod schema;
 mod table;
 
+pub(crate) use schema::SchemaView;
+pub(crate) use table::TableView;
+
 /* ---------------------------------------- TRY INTO REF --------------------------------------- */
 
 pub trait TryIntoRef<Ref, Container = Catalog> {

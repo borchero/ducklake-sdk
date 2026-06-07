@@ -62,6 +62,34 @@ impl ChangeSet {
                 .unwrap_or(true),
         });
 
+        // The same applies to schemas. However, there are no modifications other than schema
+        // creation
+        let created_schemas: HashSet<_> = changes
+            .iter()
+            .filter_map(|c| {
+                if let Change::CreateSchema { schema_ref, .. } = c {
+                    Some(*schema_ref)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let deleted_schemas: HashSet<_> = changes
+            .iter()
+            .filter_map(|c| {
+                if let Change::DeleteSchema { schema_ref } = c {
+                    Some(*schema_ref)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        changes.retain(|c| match c {
+            Change::DeleteSchema { schema_ref } => !created_schemas.contains(schema_ref),
+            Change::CreateSchema { schema_ref, .. } => !deleted_schemas.contains(schema_ref),
+            _ => true,
+        });
+
         Self { changes }
     }
 

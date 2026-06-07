@@ -4,7 +4,7 @@ use crate::io;
 /// A table in a catalog.
 #[derive(Debug, Clone)]
 pub(in crate::catalog) struct CatalogTable {
-    pub state: CatalogState,
+    pub id: Option<i64>,
     pub name: crate::TableName,
     pub columns: CatalogColumns,
     pub partition: Option<CatalogTablePartition>,
