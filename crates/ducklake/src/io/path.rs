@@ -425,6 +425,7 @@ mod tests {
         assert_eq!(DucklakePath::default(), relative(""));
     }
 
+    #[cfg(feature = "aws")]
     #[test]
     fn test_resolve_s3() {
         let path = absolute("s3://bucket/prefix/file.parquet")

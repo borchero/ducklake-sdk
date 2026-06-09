@@ -125,6 +125,7 @@ def test_s3_options_merge_overrides_only_when_set() -> None:
 
 def test_storage_option_set_empty(
     clean_aws_env: None,  # noqa: ARG001
+    clean_azure_env: None,  # noqa: ARG001
 ) -> None:
     # Act
     option_set = StorageOptionSet()
@@ -136,6 +137,7 @@ def test_storage_option_set_empty(
 
 def test_storage_option_set_user_options(
     clean_aws_env: None,  # noqa: ARG001
+    clean_azure_env: None,  # noqa: ARG001
 ) -> None:
     # Act
     option_set = StorageOptionSet({"aws_access_key_id": "key", "aws_region": "us-east-1"})
@@ -146,6 +148,7 @@ def test_storage_option_set_user_options(
 
 def test_storage_option_set_merges_env_and_user(
     clean_aws_env: None,  # noqa: ARG001
+    clean_azure_env: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
