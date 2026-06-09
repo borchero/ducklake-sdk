@@ -45,6 +45,7 @@ lint-staged = "lefthook run pre-commit"
 # -------------------------------------------- PYTHON ------------------------------------------- #
 
 [feature.test-py.dependencies]
+azure-storage-blob = ">=12.0"
 boto3 = ">=1.43"
 mysql-client = "*"
 mysqlclient = "*"

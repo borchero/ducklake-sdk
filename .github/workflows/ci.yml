@@ -71,7 +71,7 @@ jobs:
       matrix:
         python-version: [py314]
         database: [sqlite, postgres, mysql]
-        storage: [local, s3]
+        storage: [local, s3, abs]
         include:
           - python-version: py313
             database: sqlite
@@ -108,6 +108,10 @@ jobs:
           RUSTFS_SECRET_KEY: rustfsadmin
         ports:
           - "9000:9000"
+      azurite:
+        image: ${{ case(matrix.storage == 'abs', 'mcr.microsoft.com/azure-storage/azurite:latest', '') }}
+        ports:
+          - "10000:10000"
     steps:
       - name: Checkout branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -132,6 +136,9 @@ jobs:
           AWS_ENDPOINT_URL: http://localhost:9000
           AWS_ACCESS_KEY_ID: rustfsadmin
           AWS_SECRET_ACCESS_KEY: rustfsadmin
+          AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
+          AZURE_STORAGE_ACCOUNT_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
+          AZURE_STORAGE_ENDPOINT: http://localhost:10000
       - name: Collect Rust coverage
         run: cargo llvm-cov report -p ducklake -p ducklake-python --lcov --output-path coverage-rs.lcov
       - name: Upload coverage

@@ -6,6 +6,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 use object_store::ObjectStore;
 #[cfg(feature = "aws")]
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
+#[cfg(feature = "azure")]
+use object_store::azure::{AzureConfigKey, MicrosoftAzureBuilder};
 use object_store::local::LocalFileSystem;
 use object_store::path::Path as ObjectStorePath;
 use url::Url;
@@ -149,6 +151,11 @@ pub enum Path {
         bucket: String,
         path: String,
     },
+    #[cfg(feature = "azure")]
+    Azure {
+        container: String,
+        path: String,
+    },
 }
 
 impl Path {
@@ -162,6 +169,11 @@ impl Path {
                 bucket: url.host_str().unwrap().to_string(),
                 path: url.path().to_string(),
             }),
+            #[cfg(feature = "azure")]
+            "az" | "abfs" => Ok(Path::Azure {
+                container: url.host_str().unwrap().to_string(),
+                path: url.path().to_string(),
+            }),
             _ => Err(DucklakeError::UnsupportedUrlScheme(
                 url.scheme().to_string(),
             )),
@@ -173,6 +185,8 @@ impl Path {
             Path::Local { path } => path,
             #[cfg(feature = "aws")]
             Path::S3 { path, .. } => path,
+            #[cfg(feature = "azure")]
+            Path::Azure { path, .. } => path,
         };
         ObjectStorePath::parse(path).unwrap()
     }
@@ -201,6 +215,24 @@ impl Path {
                     options: s3_options,
                 }
             }
+            #[cfg(feature = "azure")]
+            Path::Azure { container, path: _ } => {
+                // Aggregate all valid options from the provided ones
+                let mut azure_options = Vec::new();
+                if let Some(options) = options {
+                    for (key, value) in options {
+                        if let Ok(config_key) = key.to_lowercase().parse() {
+                            azure_options.push((config_key, value));
+                        }
+                    }
+                }
+
+                // Then, build the cache key based on these options and the container
+                ObjectStoreCacheKey::Azure {
+                    container: container.clone(),
+                    options: azure_options,
+                }
+            }
         };
         get_cached_object_store(cache_key)
     }
@@ -219,6 +251,11 @@ enum ObjectStoreCacheKey {
         bucket: String,
         options: Vec<(AmazonS3ConfigKey, String)>,
     },
+    #[cfg(feature = "azure")]
+    Azure {
+        container: String,
+        options: Vec<(AzureConfigKey, String)>,
+    },
 }
 
 fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
@@ -235,6 +272,19 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
             } => {
                 let mut builder = AmazonS3Builder::new()
                     .with_bucket_name(bucket)
+                    .with_allow_http(true);
+                for (config_key, value) in options {
+                    builder = builder.with_config(*config_key, value);
+                }
+                Arc::new(builder.build().unwrap())
+            }
+            #[cfg(feature = "azure")]
+            ObjectStoreCacheKey::Azure {
+                ref container,
+                ref options,
+            } => {
+                let mut builder = MicrosoftAzureBuilder::new()
+                    .with_container_name(container)
                     .with_allow_http(true);
                 for (config_key, value) in options {
                     builder = builder.with_config(*config_key, value);

@@ -63,6 +63,20 @@ def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
             finally:
                 s3.Bucket(bucket).objects.delete()
                 s3.Bucket(bucket).delete()
+        case "abs":
+            from azure.storage.blob import BlobServiceClient
+
+            container = str(uuid.uuid4())
+            blob_service_client = BlobServiceClient.from_connection_string(
+                "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+                "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+                "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+            )
+            container_client = blob_service_client.create_container(container)
+            try:
+                yield f"az://{container}"
+            finally:
+                container_client.delete_container()
         case _:
             raise NotImplementedError
 
