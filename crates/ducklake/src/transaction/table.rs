@@ -728,7 +728,7 @@ impl<'a> Transaction<'a> {
                         EitherOrBoth::Both(old, new) => {
                             self.update_table_column_dtype_recursive(
                                 table_name,
-                                &[column_name, &[old.name.clone()]].concat(),
+                                &[column_name, std::slice::from_ref(&old.name)].concat(),
                                 old.dtype.clone(),
                                 new.dtype.clone(),
                             )
@@ -736,7 +736,9 @@ impl<'a> Transaction<'a> {
                         }
                         EitherOrBoth::Left(old) => self.remove_table_column(
                             table_name,
-                            &[column_name, &[old.name.clone()]].concat().into(),
+                            &[column_name, std::slice::from_ref(&old.name)]
+                                .concat()
+                                .into(),
                         )?,
                         EitherOrBoth::Right(new) => {
                             self.add_table_column(table_name, (*new).clone(), &column_name.into())
