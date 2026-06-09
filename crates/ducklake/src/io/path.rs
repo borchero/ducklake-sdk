@@ -141,6 +141,7 @@ impl Display for DucklakePath {
 
 /* ------------------------------------------ IO PATH ------------------------------------------ */
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug)]
 pub enum Path {
     Local {
@@ -243,6 +244,7 @@ impl Path {
 static OBJECT_STORE_CACHE: LazyLock<Mutex<HashMap<ObjectStoreCacheKey, Arc<dyn ObjectStore>>>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum ObjectStoreCacheKey {
     Local,
