@@ -285,8 +285,7 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
                 ref bucket,
                 ref options,
             } => {
-                let mut builder = GoogleCloudStorageBuilder::new()
-                    .with_bucket_name(bucket);
+                let mut builder = GoogleCloudStorageBuilder::new().with_bucket_name(bucket);
                 for (config_key, value) in options {
                     builder = builder.with_config(*config_key, value);
                 }

@@ -108,13 +108,17 @@ jobs:
           RUSTFS_SECRET_KEY: rustfsadmin
         ports:
           - "9000:9000"
-      fake-gcs-server:
-        image: ${{ case(matrix.storage == 'gcs', 'fsouza/fake-gcs-server:latest', '') }}
-        ports:
-          - "4443:4443"
     steps:
       - name: Checkout branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Start fake GCS server
+        if: matrix.storage == 'gcs'
+        run: |
+          docker run -d --name fake-gcs-server -p 4443:4443 fsouza/fake-gcs-server:latest \
+            -scheme http -port 4443 -external-url http://localhost:4443
+          until curl --silent --fail http://localhost:4443/storage/v1/b?project=test > /dev/null; do
+            sleep 1
+          done
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
         with:

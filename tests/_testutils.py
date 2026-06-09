@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
 import uuid
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import boto3
-from google.cloud import storage
 import sqlalchemy as sa
 from sqlalchemy_utils import create_database, database_exists, drop_database
 
@@ -66,12 +69,25 @@ def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
                 s3.Bucket(bucket).delete()
         case "gcs":
             bucket_name = str(uuid.uuid4())
-            client = storage.Client()
-            bucket = client.create_bucket(bucket_name)
+            endpoint = os.getenv("STORAGE_EMULATOR_HOST", "http://localhost:4443").rstrip("/")
+            request = Request(
+                f"{endpoint}/storage/v1/b?project=test",
+                data=json.dumps({"name": bucket_name}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(request) as response:
+                response.read()
             try:
                 yield f"gs://{bucket_name}"
             finally:
-                bucket.delete(force=True)
+                request = Request(f"{endpoint}/storage/v1/b/{bucket_name}", method="DELETE")
+                try:
+                    with urlopen(request) as response:
+                        response.read()
+                except HTTPError as error:
+                    if error.code != 404:
+                        raise
         case _:
             raise NotImplementedError
 
