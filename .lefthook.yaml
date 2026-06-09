@@ -30,7 +30,7 @@ pre-commit:
             run: cargo fmt
           - name: cargo-clippy
             glob: "*.rs"
-            run: cargo clippy --fix --allow-dirty
+            run: cargo clippy --fix --allow-dirty -- -D warnings
           # ---------------------------------------- MISC --------------------------------------- #
           - name: prettier
             glob: "*.{md,yml,yaml}"
