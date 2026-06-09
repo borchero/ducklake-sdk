@@ -164,36 +164,36 @@ class GCSStorageOptions(StorageOptions):
     """Storage options for Google Cloud Storage."""
 
     endpoint_url: str | None = None
-    service_account_key: str | None = None
+    service_account: str | None = None
 
     @classmethod
     def from_env(cls) -> GCSStorageOptions:
         return cls(
             endpoint_url=os.getenv("STORAGE_EMULATOR_HOST"),
-            service_account_key=os.getenv("GOOGLE_SERVICE_ACCOUNT_KEY"),
+            service_account=os.getenv("GOOGLE_SERVICE_ACCOUNT"),
         )
 
     @classmethod
     def from_dict(cls, options: dict[str, str]) -> GCSStorageOptions:
         return cls(
             endpoint_url=options.get("gcp_endpoint_url"),
-            service_account_key=options.get("gcp_service_account_key"),
+            service_account=options.get("gcp_service_account"),
         )
 
     def to_dict(self) -> dict[str, str]:
         options = {}
         if self.endpoint_url is not None:
             options["gcp_endpoint_url"] = self.endpoint_url
-        if self.service_account_key is not None:
-            options["gcp_service_account_key"] = self.service_account_key
+        if self.service_account is not None:
+            options["gcp_service_account"] = self.service_account
         return options
 
     def apply_to_duckdb_connection(self, connection: duckdb.DuckDBPyConnection) -> None:
         options = []
         if self.endpoint_url is not None:
             options.append(f"ENDPOINT '{self.endpoint_url}'")
-        if self.service_account_key is not None:
-            options.append(f"KEY_ID '{self.service_account_key}'")
+        if self.service_account is not None:
+            options.append(f"ACCOUNT '{self.service_account}'")
 
         if options:
             connection.execute("INSTALL httpfs;")

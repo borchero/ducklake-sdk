@@ -110,7 +110,6 @@ jobs:
           - "9000:9000"
       fake-gcs-server:
         image: ${{ case(matrix.storage == 'gcs', 'fsouza/fake-gcs-server:latest', '') }}
-        options: ${{ case(matrix.storage == 'gcs', '-scheme http -port 4443 -external-url http://localhost:4443', '') }}
         ports:
           - "4443:4443"
     steps:
