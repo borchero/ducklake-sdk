@@ -199,44 +199,33 @@ impl Path {
         let cache_key = match self {
             Path::Local { path: _ } => ObjectStoreCacheKey::Local,
             #[cfg(feature = "aws")]
-            Path::S3 { bucket, path: _ } => {
-                // Aggregate all valid options from the provided ones
-                let mut s3_options = Vec::new();
-                if let Some(options) = options {
-                    for (key, value) in options {
-                        if let Ok(config_key) = key.to_lowercase().parse() {
-                            s3_options.push((config_key, value));
-                        }
-                    }
-                }
-
-                // Then, build the cache key based on these options and the bucket
-                ObjectStoreCacheKey::S3 {
-                    bucket: bucket.clone(),
-                    options: s3_options,
-                }
-            }
+            Path::S3 { bucket, path: _ } => ObjectStoreCacheKey::S3 {
+                bucket: bucket.clone(),
+                options: parse_config_options(options),
+            },
             #[cfg(feature = "gcp")]
-            Path::GCS { bucket, path: _ } => {
-                // Aggregate all valid options from the provided ones
-                let mut gcs_options = Vec::new();
-                if let Some(options) = options {
-                    for (key, value) in options {
-                        if let Ok(config_key) = key.to_lowercase().parse() {
-                            gcs_options.push((config_key, value));
-                        }
-                    }
-                }
-
-                // Then, build the cache key based on these options and the bucket
-                ObjectStoreCacheKey::GCS {
-                    bucket: bucket.clone(),
-                    options: gcs_options,
-                }
-            }
+            Path::GCS { bucket, path: _ } => ObjectStoreCacheKey::GCS {
+                bucket: bucket.clone(),
+                options: parse_config_options(options),
+            },
         };
         get_cached_object_store(cache_key)
     }
+}
+
+/// Parses the provided key-value options into the object store's config keys, discarding any
+/// options whose key is not a valid config key.
+#[cfg(any(feature = "aws", feature = "gcp"))]
+fn parse_config_options<K: FromStr>(options: Option<Vec<(String, String)>>) -> Vec<(K, String)> {
+    let mut result = Vec::new();
+    if let Some(options) = options {
+        for (key, value) in options {
+            if let Ok(config_key) = key.to_lowercase().parse() {
+                result.push((config_key, value));
+            }
+        }
+    }
+    result
 }
 
 /* ------------------------------------------- CACHE ------------------------------------------- */

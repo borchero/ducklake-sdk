@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 import boto3
 import sqlalchemy as sa
@@ -68,26 +65,34 @@ def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
                 s3.Bucket(bucket).objects.delete()
                 s3.Bucket(bucket).delete()
         case "gcs":
-            bucket_name = str(uuid.uuid4())
-            endpoint = os.getenv("STORAGE_EMULATOR_HOST", "http://localhost:4443").rstrip("/")
-            request = Request(
-                f"{endpoint}/storage/v1/b?project=test",
-                data=json.dumps({"name": bucket_name}).encode(),
-                headers={"Content-Type": "application/json"},
-                method="POST",
+            # GCS writes use object_store's XML multipart upload API, which no GCS emulator
+            # implements. We instead proxy those requests to rustfs (S3) via nginx, stripping the
+            # auth header so they are anonymous. Hence the bucket is managed through the S3 API and
+            # made public so the anonymous requests are accepted.
+            bucket = str(uuid.uuid4())
+            s3 = boto3.resource("s3")
+            s3.create_bucket(Bucket=bucket)
+            s3.meta.client.put_bucket_policy(
+                Bucket=bucket,
+                Policy=json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": "*",
+                                "Action": "s3:*",
+                                "Resource": [f"arn:aws:s3:::{bucket}", f"arn:aws:s3:::{bucket}/*"],
+                            }
+                        ],
+                    }
+                ),
             )
-            with urlopen(request) as response:
-                response.read()
             try:
-                yield f"gs://{bucket_name}"
+                yield f"gs://{bucket}"
             finally:
-                request = Request(f"{endpoint}/storage/v1/b/{bucket_name}", method="DELETE")
-                try:
-                    with urlopen(request) as response:
-                        response.read()
-                except HTTPError as error:
-                    if error.code != 404:
-                        raise
+                s3.Bucket(bucket).objects.delete()
+                s3.Bucket(bucket).delete()
         case _:
             raise NotImplementedError
 

@@ -101,7 +101,7 @@ jobs:
         ports:
           - "3306:3306"
       rustfs:
-        image: ${{ case(matrix.storage == 's3', 'rustfs/rustfs:latest', '') }}
+        image: ${{ case(matrix.storage == 's3' || matrix.storage == 'gcs', 'rustfs/rustfs:latest', '') }}
         env:
           RUSTFS_ADDRESS: ":9000"
           RUSTFS_ACCESS_KEY: rustfsadmin
@@ -111,14 +111,6 @@ jobs:
     steps:
       - name: Checkout branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Start fake GCS server
-        if: matrix.storage == 'gcs'
-        run: |
-          docker run -d --name fake-gcs-server -p 4443:4443 fsouza/fake-gcs-server:latest \
-            -scheme http -port 4443 -external-url http://localhost:4443
-          until curl --silent --fail http://localhost:4443/storage/v1/b?project=test > /dev/null; do
-            sleep 1
-          done
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
         with:
@@ -134,6 +126,13 @@ jobs:
         run: cargo llvm-cov clean --workspace
       - name: Install Python package
         run: pixi run install-py
+      - name: Start GCS proxy (nginx in front of rustfs)
+        if: matrix.storage == 'gcs'
+        run: |
+          docker run -d --name gcs-proxy --network host \
+            --add-host rustfs:127.0.0.1 \
+            -v ./dev/gcs-proxy.nginx.conf:/etc/nginx/conf.d/default.conf:ro \
+            nginx:latest
       - name: Run tests with coverage
         run: pixi run test-py-coverage -v --catalog ${{ matrix.database }} --storage ${{ matrix.storage }}
         env:
@@ -141,6 +140,9 @@ jobs:
           AWS_ACCESS_KEY_ID: rustfsadmin
           AWS_SECRET_ACCESS_KEY: rustfsadmin
           STORAGE_EMULATOR_HOST: http://localhost:4443
+          GOOGLE_SERVICE_ACCOUNT_KEY:
+            '{"gcs_base_url": "http://localhost:4443", "disable_oauth": true, "client_email": "", "private_key_id": "",
+            "private_key": ""}'
       - name: Collect Rust coverage
         run: cargo llvm-cov report -p ducklake -p ducklake-python --lcov --output-path coverage-rs.lcov
       - name: Upload coverage

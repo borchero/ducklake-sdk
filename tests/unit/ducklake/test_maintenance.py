@@ -112,6 +112,9 @@ def test_cleanup_old_files(ducklake: dl.Ducklake, random_table_name: str) -> Non
 @pytest.mark.skip_config(
     storage="s3", reason="Orphaned-file cleanup test requires direct filesystem access."
 )
+@pytest.mark.skip_config(
+    storage="gcs", reason="Orphaned-file cleanup test requires direct filesystem access."
+)
 def test_delete_orphaned_files(
     ducklake: dl.Ducklake, random_table_name: str, storage_path: str
 ) -> None:
@@ -160,7 +163,9 @@ def test_rewrite_data_files(ducklake: dl.Ducklake, random_table_name: str) -> No
     assert len(files_after) == 1
     assert files_after[0].path != files_before[0].path
     assert not files_after[0].delete_files
-    assert pl.read_parquet(files_after[0].path)["x"].to_list() == [9]
+    assert pl.read_parquet(
+        files_after[0].path, storage_options=ducklake._storage_options.to_dict()
+    )["x"].to_list() == [9]
 
 
 def test_checkpoint(ducklake: dl.Ducklake, random_table_name: str) -> None:
