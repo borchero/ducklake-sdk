@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import boto3
+from google.cloud import storage
 import sqlalchemy as sa
 from sqlalchemy_utils import create_database, database_exists, drop_database
 
@@ -63,6 +64,14 @@ def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
             finally:
                 s3.Bucket(bucket).objects.delete()
                 s3.Bucket(bucket).delete()
+        case "gcs":
+            bucket_name = str(uuid.uuid4())
+            client = storage.Client()
+            bucket = client.create_bucket(bucket_name)
+            try:
+                yield f"gs://{bucket_name}"
+            finally:
+                bucket.delete(force=True)
         case _:
             raise NotImplementedError
 

@@ -39,10 +39,18 @@ services:
     volumes:
       - rustfs_data:/data
 
+  fake-gcs-server:
+    image: fsouza/fake-gcs-server:latest
+    command: -scheme http -port 4443 -external-url http://localhost:4443
+    ports:
+      - "4443:4443"
+    volumes:
+      - gcs_data:/data
+
   # azurite
-  # fake-gcs-server
 
 volumes:
   postgres_data:
   mysql_data:
   rustfs_data:
+  gcs_data:

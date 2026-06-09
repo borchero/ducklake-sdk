@@ -32,6 +32,13 @@ class StorageOptionSet:
         if s3_options.to_dict():
             all_options.append(s3_options)
 
+        # GCS
+        gcs_options_env = GCSStorageOptions.from_env()
+        gcs_options_user = GCSStorageOptions.from_dict(user_options or {})
+        gcs_options = gcs_options_env.merge(gcs_options_user)
+        if gcs_options.to_dict():
+            all_options.append(gcs_options)
+
         self.options = all_options
 
     def to_dict(self) -> dict[str, str]:
@@ -146,4 +153,50 @@ class S3StorageOptions(StorageOptions):
             connection.execute("INSTALL httpfs;")
             connection.execute(
                 f"CREATE OR REPLACE SECRET s3_credentials (TYPE S3, {', '.join(options)});"
+            )
+
+
+# ---------------------------------------------- GCS --------------------------------------------- #
+
+
+@dataclass(kw_only=True)
+class GCSStorageOptions(StorageOptions):
+    """Storage options for Google Cloud Storage."""
+
+    endpoint_url: str | None = None
+    service_account_key: str | None = None
+
+    @classmethod
+    def from_env(cls) -> GCSStorageOptions:
+        return cls(
+            endpoint_url=os.getenv("STORAGE_EMULATOR_HOST"),
+            service_account_key=os.getenv("GOOGLE_SERVICE_ACCOUNT_KEY"),
+        )
+
+    @classmethod
+    def from_dict(cls, options: dict[str, str]) -> GCSStorageOptions:
+        return cls(
+            endpoint_url=options.get("gcp_endpoint_url"),
+            service_account_key=options.get("gcp_service_account_key"),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        options = {}
+        if self.endpoint_url is not None:
+            options["gcp_endpoint_url"] = self.endpoint_url
+        if self.service_account_key is not None:
+            options["gcp_service_account_key"] = self.service_account_key
+        return options
+
+    def apply_to_duckdb_connection(self, connection: duckdb.DuckDBPyConnection) -> None:
+        options = []
+        if self.endpoint_url is not None:
+            options.append(f"ENDPOINT '{self.endpoint_url}'")
+        if self.service_account_key is not None:
+            options.append(f"KEY_ID '{self.service_account_key}'")
+
+        if options:
+            connection.execute("INSTALL httpfs;")
+            connection.execute(
+                f"CREATE OR REPLACE SECRET gcs_credentials (TYPE GCS, {', '.join(options)});"
             )

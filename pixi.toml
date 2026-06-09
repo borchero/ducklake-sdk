@@ -46,6 +46,7 @@ lint-staged = "lefthook run pre-commit"
 
 [feature.test-py.dependencies]
 boto3 = ">=1.43"
+google-cloud-storage = ">=2.10"
 mysql-client = "*"
 mysqlclient = "*"
 postgresql = "*"

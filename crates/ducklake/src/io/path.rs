@@ -6,6 +6,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 use object_store::ObjectStore;
 #[cfg(feature = "aws")]
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
+#[cfg(feature = "gcp")]
+use object_store::gcp::{GoogleCloudStorageBuilder, GoogleConfigKey};
 use object_store::local::LocalFileSystem;
 use object_store::path::Path as ObjectStorePath;
 use url::Url;
@@ -149,6 +151,11 @@ pub enum Path {
         bucket: String,
         path: String,
     },
+    #[cfg(feature = "gcp")]
+    GCS {
+        bucket: String,
+        path: String,
+    },
 }
 
 impl Path {
@@ -159,6 +166,11 @@ impl Path {
             }),
             #[cfg(feature = "aws")]
             "s3" => Ok(Path::S3 {
+                bucket: url.host_str().unwrap().to_string(),
+                path: url.path().to_string(),
+            }),
+            #[cfg(feature = "gcp")]
+            "gs" => Ok(Path::GCS {
                 bucket: url.host_str().unwrap().to_string(),
                 path: url.path().to_string(),
             }),
@@ -173,6 +185,8 @@ impl Path {
             Path::Local { path } => path,
             #[cfg(feature = "aws")]
             Path::S3 { path, .. } => path,
+            #[cfg(feature = "gcp")]
+            Path::GCS { path, .. } => path,
         };
         ObjectStorePath::parse(path).unwrap()
     }
@@ -201,6 +215,24 @@ impl Path {
                     options: s3_options,
                 }
             }
+            #[cfg(feature = "gcp")]
+            Path::GCS { bucket, path: _ } => {
+                // Aggregate all valid options from the provided ones
+                let mut gcs_options = Vec::new();
+                if let Some(options) = options {
+                    for (key, value) in options {
+                        if let Ok(config_key) = key.to_lowercase().parse() {
+                            gcs_options.push((config_key, value));
+                        }
+                    }
+                }
+
+                // Then, build the cache key based on these options and the bucket
+                ObjectStoreCacheKey::GCS {
+                    bucket: bucket.clone(),
+                    options: gcs_options,
+                }
+            }
         };
         get_cached_object_store(cache_key)
     }
@@ -219,6 +251,11 @@ enum ObjectStoreCacheKey {
         bucket: String,
         options: Vec<(AmazonS3ConfigKey, String)>,
     },
+    #[cfg(feature = "gcp")]
+    GCS {
+        bucket: String,
+        options: Vec<(GoogleConfigKey, String)>,
+    },
 }
 
 fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
@@ -236,6 +273,18 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
                 let mut builder = AmazonS3Builder::new()
                     .with_bucket_name(bucket)
                     .with_allow_http(true);
+                for (config_key, value) in options {
+                    builder = builder.with_config(*config_key, value);
+                }
+                Arc::new(builder.build().unwrap())
+            }
+            #[cfg(feature = "gcp")]
+            ObjectStoreCacheKey::GCS {
+                ref bucket,
+                ref options,
+            } => {
+                let mut builder = GoogleCloudStorageBuilder::new()
+                    .with_bucket_name(bucket);
                 for (config_key, value) in options {
                     builder = builder.with_config(*config_key, value);
                 }
@@ -386,6 +435,21 @@ mod tests {
                 assert_eq!(path, "/prefix/file.parquet");
             }
             _ => panic!("expected S3 path"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "gcp")]
+    fn test_resolve_gcs() {
+        let path = absolute("gs://bucket/prefix/file.parquet")
+            .resolve()
+            .unwrap();
+        match path {
+            Path::GCS { bucket, path } => {
+                assert_eq!(bucket, "bucket");
+                assert_eq!(path, "/prefix/file.parquet");
+            }
+            _ => panic!("expected GCS path"),
         }
     }
 

@@ -46,6 +46,7 @@ sqlite = ["sea-query-sqlx/sqlx-sqlite", "sqlx/sqlite"]
 
 # IO Backends
 aws = ["object_store/aws"]
+gcp = ["object_store/gcp"]
 
 # High-level SDKs
 python = []
