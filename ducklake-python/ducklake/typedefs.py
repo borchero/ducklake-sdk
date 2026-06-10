@@ -137,9 +137,12 @@ class Schema:
     columns: list[Column]
 
     def __init__(
-        self, columns: Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable
+        self,
+        columns: Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable,
     ) -> None:
-        if isinstance(columns, ArrowSchemaExportable):
+        if isinstance(columns, Schema):
+            self.columns = list(columns.columns)
+        elif isinstance(columns, ArrowSchemaExportable):
             self.columns = schema_from_arrow(columns)
         elif isinstance(columns, Sequence):
             self.columns = list(columns)
