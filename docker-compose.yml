@@ -39,8 +39,20 @@ services:
     volumes:
       - rustfs_data:/data
 
+  # GCS is emulated by proxying to rustfs (S3). No GCS emulator implements the
+  # S3-style XML multipart upload API that object_store uses for `gs://` writes,
+  # but rustfs does. The nginx proxy strips the empty `Authorization: Bearer `
+  # header object_store sends so rustfs accepts the request anonymously.
+  gcs:
+    image: nginx:latest
+    depends_on:
+      - rustfs
+    ports:
+      - "4443:4443"
+    volumes:
+      - ./dev/gcs-proxy.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
   # azurite
-  # fake-gcs-server
 
 volumes:
   postgres_data:

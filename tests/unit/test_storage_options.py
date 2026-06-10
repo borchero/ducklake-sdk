@@ -1,6 +1,6 @@
 import pytest
 
-from ducklake._storage import S3StorageOptions, StorageOptionSet
+from ducklake._storage import GCSStorageOptions, S3StorageOptions, StorageOptionSet
 
 
 @pytest.fixture()
@@ -16,11 +16,20 @@ def clean_aws_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(var, raising=False)
 
 
+@pytest.fixture()
+def clean_gcs_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in [
+        "GOOGLE_SERVICE_ACCOUNT_KEY",
+        "GOOGLE_SERVICE_ACCOUNT",
+    ]:
+        monkeypatch.delenv(var, raising=False)
+
+
 # ------------------------------------- S3StorageOptions ---------------------------------------- #
 
 
+@pytest.mark.usefixtures("clean_aws_env")
 def test_s3_options_from_env(
-    clean_aws_env: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
@@ -39,8 +48,8 @@ def test_s3_options_from_env(
     assert options.region == "us-east-1"
 
 
+@pytest.mark.usefixtures("clean_aws_env")
 def test_s3_options_from_env_fallback_aliases(
-    clean_aws_env: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
@@ -55,9 +64,8 @@ def test_s3_options_from_env_fallback_aliases(
     assert options.region == "eu-west-1"
 
 
-def test_s3_options_from_env_empty(
-    clean_aws_env: None,  # noqa: ARG001
-) -> None:
+@pytest.mark.usefixtures("clean_aws_env")
+def test_s3_options_from_env_empty() -> None:
     # Act
     options = S3StorageOptions.from_env()
 
@@ -110,12 +118,78 @@ def test_s3_options_merge_overrides_only_when_set() -> None:
     assert merged.secret_access_key is None
 
 
+# ------------------------------------- GCSStorageOptions --------------------------------------- #
+
+
+@pytest.mark.usefixtures("clean_gcs_env")
+def test_gcs_options_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_KEY", '{"key": "value"}')
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT", "sa@example.com")
+
+    # Act
+    options = GCSStorageOptions.from_env()
+
+    # Assert
+    assert options.service_account_key == '{"key": "value"}'
+    assert options.service_account == "sa@example.com"
+
+
+@pytest.mark.usefixtures("clean_gcs_env")
+def test_gcs_options_from_env_empty() -> None:
+    # Act
+    options = GCSStorageOptions.from_env()
+
+    # Assert
+    assert options.to_dict() == {}
+
+
+def test_gcs_options_from_dict() -> None:
+    # Act
+    options = GCSStorageOptions.from_dict(
+        {
+            "google_service_account_key": '{"key": "value"}',
+            "google_service_account": "sa@example.com",
+            "ignored_key": "value",
+        }
+    )
+
+    # Assert
+    assert options.service_account_key == '{"key": "value"}'
+    assert options.service_account == "sa@example.com"
+
+
+def test_gcs_options_to_dict_filters_none() -> None:
+    # Arrange
+    options = GCSStorageOptions(service_account="sa@example.com", service_account_key=None)
+
+    # Act
+    result = options.to_dict()
+
+    # Assert
+    assert result == {"google_service_account": "sa@example.com"}
+
+
+def test_gcs_options_merge_overrides_only_when_set() -> None:
+    # Arrange
+    base = GCSStorageOptions(service_account_key="env_key", service_account="env_sa")
+    override = GCSStorageOptions(service_account="user_sa")
+
+    # Act
+    merged = base.merge(override)
+
+    # Assert
+    assert merged.service_account_key == "env_key"
+    assert merged.service_account == "user_sa"
+
+
 # -------------------------------------- StorageOptionSet --------------------------------------- #
 
 
-def test_storage_option_set_empty(
-    clean_aws_env: None,  # noqa: ARG001
-) -> None:
+@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env")
+def test_storage_option_set_empty() -> None:
     # Act
     option_set = StorageOptionSet()
 
@@ -124,9 +198,8 @@ def test_storage_option_set_empty(
     assert option_set.to_dict() == {}
 
 
-def test_storage_option_set_user_options(
-    clean_aws_env: None,  # noqa: ARG001
-) -> None:
+@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env")
+def test_storage_option_set_user_options() -> None:
     # Act
     option_set = StorageOptionSet({"aws_access_key_id": "key", "aws_region": "us-east-1"})
 
@@ -134,8 +207,8 @@ def test_storage_option_set_user_options(
     assert option_set.to_dict() == {"aws_access_key_id": "key", "aws_region": "us-east-1"}
 
 
+@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env")
 def test_storage_option_set_merges_env_and_user(
-    clean_aws_env: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange

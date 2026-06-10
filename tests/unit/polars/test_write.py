@@ -40,7 +40,12 @@ def test_sink_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     assert data_file.statistics.file_size_bytes > data_file.statistics.footer_size_bytes > 0
 
     # -- Data itself
-    assert_frame_equal(lf, pl.scan_parquet(data_file.path))
+    assert_frame_equal(
+        lf,
+        pl.scan_parquet(
+            data_file.path, storage_options=shared_ducklake._storage_options.to_dict()
+        ),
+    )
 
     # -- Table stats
     table_stats = read_table_stats(str(shared_ducklake._connection_args), random_table_name)
