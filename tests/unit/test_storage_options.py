@@ -238,7 +238,7 @@ def test_azure_options_from_dict() -> None:
         {
             "azure_storage_account_name": "myaccount",
             "azure_storage_account_key": "mykey",
-            "azure_storage_endpoint": "http://localhost:10000",
+            "azure_storage_endpoint": "http://localhost:10000/devstoreaccount1",
             "ignored_key": "value",
         }
     )
@@ -246,7 +246,7 @@ def test_azure_options_from_dict() -> None:
     # Assert
     assert options.account_name == "myaccount"
     assert options.account_key == "mykey"
-    assert options.endpoint_url == "http://localhost:10000"
+    assert options.endpoint_url == "http://localhost:10000/devstoreaccount1"
 
 
 def test_azure_options_to_dict_filters_none() -> None:
