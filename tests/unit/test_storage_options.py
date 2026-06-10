@@ -211,7 +211,7 @@ def test_azure_options_from_env(
     # Arrange
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "myaccount")
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_KEY", "mykey")
-    monkeypatch.setenv("AZURE_STORAGE_ENDPOINT", "http://localhost:10000")
+    monkeypatch.setenv("AZURE_STORAGE_ENDPOINT", "http://localhost:10000/devstoreaccount1")
 
     # Act
     options = AzureStorageOptions.from_env()
@@ -219,7 +219,7 @@ def test_azure_options_from_env(
     # Assert
     assert options.account_name == "myaccount"
     assert options.account_key == "mykey"
-    assert options.endpoint_url == "http://localhost:10000"
+    assert options.endpoint_url == "http://localhost:10000/devstoreaccount1"
 
 
 def test_azure_options_from_env_empty(
