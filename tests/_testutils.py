@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import boto3
 import sqlalchemy as sa
+from azure.storage.blob import BlobServiceClient
 from sqlalchemy_utils import create_database, database_exists, drop_database
 
 if TYPE_CHECKING:
@@ -93,6 +95,19 @@ def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
             finally:
                 s3.Bucket(bucket).objects.delete()
                 s3.Bucket(bucket).delete()
+        case "azure":
+            container = str(uuid.uuid4())
+            blob_service_client = BlobServiceClient.from_connection_string(
+                "DefaultEndpointsProtocol=http;"
+                f"AccountName={os.environ['AZURE_STORAGE_ACCOUNT_NAME']};"
+                f"AccountKey={os.environ['AZURE_STORAGE_ACCOUNT_KEY']};"
+                f"BlobEndpoint={os.environ['AZURE_STORAGE_ENDPOINT']};"
+            )
+            container_client = blob_service_client.create_container(container)
+            try:
+                yield f"az://{container}"
+            finally:
+                container_client.delete_container()
         case _:
             raise NotImplementedError
 

@@ -1,6 +1,11 @@
 import pytest
 
-from ducklake._storage import GCSStorageOptions, S3StorageOptions, StorageOptionSet
+from ducklake._storage import (
+    AzureStorageOptions,
+    GCSStorageOptions,
+    S3StorageOptions,
+    StorageOptionSet,
+)
 
 
 @pytest.fixture()
@@ -21,6 +26,17 @@ def clean_gcs_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for var in [
         "GOOGLE_SERVICE_ACCOUNT_KEY",
         "GOOGLE_SERVICE_ACCOUNT",
+    ]:
+        monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture()
+def clean_azure_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in [
+        "AZURE_STORAGE_ACCOUNT_NAME",
+        "AZURE_STORAGE_ACCOUNT_KEY",
+        "AZURE_STORAGE_ENDPOINT",
+        "AZURE_STORAGE_USE_EMULATOR",
     ]:
         monkeypatch.delenv(var, raising=False)
 
@@ -185,10 +201,85 @@ def test_gcs_options_merge_overrides_only_when_set() -> None:
     assert merged.service_account == "user_sa"
 
 
+# ----------------------------------- AzureStorageOptions --------------------------------------- #
+
+
+def test_azure_options_from_env(
+    clean_azure_env: None,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "myaccount")
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_KEY", "mykey")
+    monkeypatch.setenv("AZURE_STORAGE_ENDPOINT", "http://localhost:10000/devstoreaccount1")
+
+    # Act
+    options = AzureStorageOptions.from_env()
+
+    # Assert
+    assert options.account_name == "myaccount"
+    assert options.account_key == "mykey"
+    assert options.endpoint_url == "http://localhost:10000/devstoreaccount1"
+
+
+def test_azure_options_from_env_empty(
+    clean_azure_env: None,  # noqa: ARG001
+) -> None:
+    # Act
+    options = AzureStorageOptions.from_env()
+
+    # Assert
+    assert options.to_dict() == {}
+
+
+def test_azure_options_from_dict() -> None:
+    # Act
+    options = AzureStorageOptions.from_dict(
+        {
+            "azure_storage_account_name": "myaccount",
+            "azure_storage_account_key": "mykey",
+            "azure_storage_endpoint": "http://localhost:10000/devstoreaccount1",
+            "ignored_key": "value",
+        }
+    )
+
+    # Assert
+    assert options.account_name == "myaccount"
+    assert options.account_key == "mykey"
+    assert options.endpoint_url == "http://localhost:10000/devstoreaccount1"
+
+
+def test_azure_options_to_dict_filters_none() -> None:
+    # Arrange
+    options = AzureStorageOptions(account_name="myaccount", account_key=None)
+
+    # Act
+    result = options.to_dict()
+
+    # Assert
+    assert result == {"azure_storage_account_name": "myaccount"}
+
+
+def test_azure_options_merge_overrides_only_when_set() -> None:
+    # Arrange
+    base = AzureStorageOptions(
+        account_name="env_account", account_key="env_key", endpoint_url="env_endpoint"
+    )
+    override = AzureStorageOptions(account_key="user_key")
+
+    # Act
+    merged = base.merge(override)
+
+    # Assert
+    assert merged.account_name == "env_account"
+    assert merged.account_key == "user_key"
+    assert merged.endpoint_url == "env_endpoint"
+
+
 # -------------------------------------- StorageOptionSet --------------------------------------- #
 
 
-@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env")
+@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env", "clean_azure_env")
 def test_storage_option_set_empty() -> None:
     # Act
     option_set = StorageOptionSet()
@@ -198,7 +289,7 @@ def test_storage_option_set_empty() -> None:
     assert option_set.to_dict() == {}
 
 
-@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env")
+@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env", "clean_azure_env")
 def test_storage_option_set_user_options() -> None:
     # Act
     option_set = StorageOptionSet({"aws_access_key_id": "key", "aws_region": "us-east-1"})
@@ -207,7 +298,7 @@ def test_storage_option_set_user_options() -> None:
     assert option_set.to_dict() == {"aws_access_key_id": "key", "aws_region": "us-east-1"}
 
 
-@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env")
+@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env", "clean_azure_env")
 def test_storage_option_set_merges_env_and_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

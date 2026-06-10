@@ -6,6 +6,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 use object_store::ObjectStore;
 #[cfg(feature = "aws")]
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
+#[cfg(feature = "azure")]
+use object_store::azure::{AzureConfigKey, MicrosoftAzureBuilder};
 #[cfg(feature = "gcp")]
 use object_store::gcp::{GoogleCloudStorageBuilder, GoogleConfigKey};
 use object_store::local::LocalFileSystem;
@@ -157,6 +159,11 @@ pub enum Path {
         bucket: String,
         path: String,
     },
+    #[cfg(feature = "azure")]
+    Azure {
+        container: String,
+        path: String,
+    },
 }
 
 impl Path {
@@ -175,6 +182,11 @@ impl Path {
                 bucket: url.host_str().unwrap().to_string(),
                 path: url.path().to_string(),
             }),
+            #[cfg(feature = "azure")]
+            "az" | "abfs" => Ok(Path::Azure {
+                container: url.host_str().unwrap().to_string(),
+                path: url.path().to_string(),
+            }),
             _ => Err(DucklakeError::UnsupportedUrlScheme(
                 url.scheme().to_string(),
             )),
@@ -186,6 +198,8 @@ impl Path {
             Path::Local { path } => path,
             #[cfg(feature = "aws")]
             Path::S3 { path, .. } => path,
+            #[cfg(feature = "azure")]
+            Path::Azure { path, .. } => path,
             #[cfg(feature = "gcp")]
             Path::GCS { path, .. } => path,
         };
@@ -208,6 +222,11 @@ impl Path {
                 bucket: bucket.clone(),
                 options: parse_config_options(options),
             },
+            #[cfg(feature = "azure")]
+            Path::Azure { container, path: _ } => ObjectStoreCacheKey::Azure {
+                container: container.clone(),
+                options: parse_config_options(options),
+            },
         };
         get_cached_object_store(cache_key)
     }
@@ -215,7 +234,7 @@ impl Path {
 
 /// Parses the provided key-value options into the object store's config keys, discarding any
 /// options whose key is not a valid config key.
-#[cfg(any(feature = "aws", feature = "gcp"))]
+#[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
 fn parse_config_options<K: FromStr>(options: Option<Vec<(String, String)>>) -> Vec<(K, String)> {
     let mut result = Vec::new();
     if let Some(options) = options {
@@ -247,6 +266,11 @@ enum ObjectStoreCacheKey {
         bucket: String,
         options: Vec<(GoogleConfigKey, String)>,
     },
+    #[cfg(feature = "azure")]
+    Azure {
+        container: String,
+        options: Vec<(AzureConfigKey, String)>,
+    },
 }
 
 fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
@@ -275,6 +299,19 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
                 ref options,
             } => {
                 let mut builder = GoogleCloudStorageBuilder::new().with_bucket_name(bucket);
+                for (config_key, value) in options {
+                    builder = builder.with_config(*config_key, value);
+                }
+                Arc::new(builder.build().unwrap())
+            }
+            #[cfg(feature = "azure")]
+            ObjectStoreCacheKey::Azure {
+                ref container,
+                ref options,
+            } => {
+                let mut builder = MicrosoftAzureBuilder::new()
+                    .with_container_name(container)
+                    .with_allow_http(true);
                 for (config_key, value) in options {
                     builder = builder.with_config(*config_key, value);
                 }
@@ -414,6 +451,7 @@ mod tests {
         assert_eq!(DucklakePath::default(), relative(""));
     }
 
+    #[cfg(feature = "aws")]
     #[test]
     fn test_resolve_s3() {
         let path = absolute("s3://bucket/prefix/file.parquet")
@@ -440,6 +478,21 @@ mod tests {
                 assert_eq!(path, "/prefix/file.parquet");
             }
             _ => panic!("expected GCS path"),
+        }
+    }
+
+    #[rstest]
+    #[case("az://container/prefix/file.parquet")]
+    #[case("abfs://container/prefix/file.parquet")]
+    #[cfg(feature = "azure")]
+    fn test_resolve_azure(#[case] input: &str) {
+        let path = absolute(input).resolve().unwrap();
+        match path {
+            Path::Azure { container, path } => {
+                assert_eq!(container, "container");
+                assert_eq!(path, "/prefix/file.parquet");
+            }
+            _ => panic!("expected Azure path"),
         }
     }
 

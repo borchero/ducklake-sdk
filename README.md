@@ -123,7 +123,7 @@ The Python SDK additionally provides:
 | Local / NFS          | ✅     |
 | AWS S3-compatible    | ✅     |
 | Google Cloud Storage | ✅     |
-| Azure Blob Storage   | ❌     |
+| Azure Blob Storage   | ✅     |
 
 **DuckLake Specification Versions**
 

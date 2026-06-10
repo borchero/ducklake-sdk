@@ -52,9 +52,16 @@ services:
     volumes:
       - ./dev/gcs-proxy.nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
-  # azurite
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite_data:/data
 
 volumes:
   postgres_data:
   mysql_data:
   rustfs_data:
+  azurite_data:

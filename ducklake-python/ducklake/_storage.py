@@ -40,6 +40,13 @@ class StorageOptionSet:
         if gcs_options.to_dict():
             all_options.append(gcs_options)
 
+        # Azure
+        azure_options_env = AzureStorageOptions.from_env()
+        azure_options_user = AzureStorageOptions.from_dict(user_options or {})
+        azure_options = azure_options_env.merge(azure_options_user)
+        if azure_options.to_dict():
+            all_options.append(azure_options)
+
         self.options = all_options
 
     def to_dict(self) -> dict[str, str]:
@@ -208,4 +215,74 @@ class GCSStorageOptions(StorageOptions):
             connection.execute("INSTALL httpfs;")
             connection.execute(
                 f"CREATE OR REPLACE SECRET gcs_credentials (TYPE GCS, {', '.join(options)});"
+            )
+
+
+# -------------------------------------------- AZURE -------------------------------------------- #
+
+
+@dataclass(kw_only=True)
+class AzureStorageOptions(StorageOptions):
+    """Storage options for Azure Blob Storage."""
+
+    account_name: str | None = None
+    account_key: str | None = None
+    endpoint_url: str | None = None
+    use_emulator: bool | None = None
+
+    @classmethod
+    def from_env(cls) -> AzureStorageOptions:
+        return cls(
+            account_name=os.getenv("AZURE_STORAGE_ACCOUNT_NAME"),
+            account_key=os.getenv("AZURE_STORAGE_ACCOUNT_KEY"),
+            endpoint_url=os.getenv("AZURE_STORAGE_ENDPOINT"),
+            use_emulator=(
+                None
+                if (use := os.getenv("AZURE_STORAGE_USE_EMULATOR")) is None
+                else use.lower() in ("1", "true", "yes")
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, options: dict[str, str]) -> AzureStorageOptions:
+        return cls(
+            account_name=options.get("azure_storage_account_name"),
+            account_key=options.get("azure_storage_account_key"),
+            endpoint_url=options.get("azure_storage_endpoint"),
+            use_emulator=(
+                None
+                if (use := options.get("azure_storage_use_emulator")) is None
+                else use.lower() in ("1", "true", "yes")
+            ),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        options = {}
+        if self.account_name is not None:
+            options["azure_storage_account_name"] = self.account_name
+        if self.account_key is not None:
+            options["azure_storage_account_key"] = self.account_key
+        if self.endpoint_url is not None:
+            options["azure_storage_endpoint"] = self.endpoint_url
+        if self.use_emulator is not None:
+            options["azure_storage_use_emulator"] = "1" if self.use_emulator else "0"
+        return options
+
+    def apply_to_duckdb_connection(self, connection: duckdb.DuckDBPyConnection) -> None:
+        options = []
+        if self.account_name is not None:
+            options.append(f"AccountName={self.account_name}")
+        if self.account_key is not None:
+            options.append(f"AccountKey={self.account_key}")
+        if self.endpoint_url is not None:
+            url = urlparse(self.endpoint_url)
+            options.append(f"BlobEndpoint={url.geturl()}")
+            if url.scheme == "http":
+                options.append("DefaultEndpointsProtocol=http")
+
+        if options:
+            connection.execute("INSTALL azure;")
+            connection.execute(
+                "CREATE OR REPLACE SECRET azure_credentials "
+                f"(TYPE AZURE, CONNECTION_STRING '{';'.join(options)}');"
             )
