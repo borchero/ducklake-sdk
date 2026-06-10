@@ -228,6 +228,7 @@ class AzureStorageOptions(StorageOptions):
     account_name: str | None = None
     account_key: str | None = None
     endpoint_url: str | None = None
+    use_emulator: bool | None = None
 
     @classmethod
     def from_env(cls) -> AzureStorageOptions:
@@ -235,6 +236,11 @@ class AzureStorageOptions(StorageOptions):
             account_name=os.getenv("AZURE_STORAGE_ACCOUNT_NAME"),
             account_key=os.getenv("AZURE_STORAGE_ACCOUNT_KEY"),
             endpoint_url=os.getenv("AZURE_STORAGE_ENDPOINT"),
+            use_emulator=(
+                None
+                if (use := os.getenv("AZURE_STORAGE_USE_EMULATOR")) is None
+                else use.lower() in ("1", "true", "yes")
+            ),
         )
 
     @classmethod
@@ -243,6 +249,11 @@ class AzureStorageOptions(StorageOptions):
             account_name=options.get("azure_storage_account_name"),
             account_key=options.get("azure_storage_account_key"),
             endpoint_url=options.get("azure_storage_endpoint"),
+            use_emulator=(
+                None
+                if (use := options.get("azure_storage_use_emulator")) is None
+                else use.lower() in ("1", "true", "yes")
+            ),
         )
 
     def to_dict(self) -> dict[str, str]:
@@ -253,22 +264,25 @@ class AzureStorageOptions(StorageOptions):
             options["azure_storage_account_key"] = self.account_key
         if self.endpoint_url is not None:
             options["azure_storage_endpoint"] = self.endpoint_url
+        if self.use_emulator is not None:
+            options["azure_storage_use_emulator"] = "1" if self.use_emulator else "0"
         return options
 
     def apply_to_duckdb_connection(self, connection: duckdb.DuckDBPyConnection) -> None:
         options = []
         if self.account_name is not None:
-            options.append(f"ACCOUNT_NAME '{self.account_name}'")
+            options.append(f"AccountName={self.account_name}")
         if self.account_key is not None:
-            options.append(f"ACCOUNT_KEY '{self.account_key}'")
+            options.append(f"AccountKey={self.account_key}")
         if self.endpoint_url is not None:
             url = urlparse(self.endpoint_url)
-            options.append(f"ENDPOINT '{url.netloc}'")
+            options.append(f"BlobEndpoint={url.geturl()}")
             if url.scheme == "http":
-                options.append("USE_SSL 'false'")
+                options.append("DefaultEndpointsProtocol=http")
 
         if options:
             connection.execute("INSTALL azure;")
             connection.execute(
-                f"CREATE OR REPLACE SECRET azure_credentials (TYPE AZURE, {', '.join(options)});"
+                "CREATE OR REPLACE SECRET azure_credentials "
+                f"(TYPE AZURE, CONNECTION_STRING '{';'.join(options)}');"
             )

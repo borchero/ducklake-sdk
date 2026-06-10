@@ -16,7 +16,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     parser.addoption(
         "--storage",
-        choices=["local", "s3", "gcs", "abs"],
+        choices=["local", "s3", "gcs", "azure"],
         default="local",
         help="The storage backend to run tests against.",
     )

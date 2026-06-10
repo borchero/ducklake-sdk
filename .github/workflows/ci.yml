@@ -71,7 +71,7 @@ jobs:
       matrix:
         python-version: [py314]
         database: [sqlite, postgres, mysql]
-        storage: [local, s3, gcs, abs]
+        storage: [local, s3, gcs, azure]
         include:
           - python-version: py313
             database: sqlite
@@ -109,7 +109,7 @@ jobs:
         ports:
           - "9000:9000"
       azurite:
-        image: ${{ case(matrix.storage == 'abs', 'mcr.microsoft.com/azure-storage/azurite:latest', '') }}
+        image: ${{ case(matrix.storage == 'azure', 'mcr.microsoft.com/azure-storage/azurite:latest', '') }}
         command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
         ports:
           - "10000:10000"

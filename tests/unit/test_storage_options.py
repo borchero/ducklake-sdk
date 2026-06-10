@@ -36,6 +36,7 @@ def clean_azure_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "AZURE_STORAGE_ACCOUNT_NAME",
         "AZURE_STORAGE_ACCOUNT_KEY",
         "AZURE_STORAGE_ENDPOINT",
+        "AZURE_STORAGE_USE_EMULATOR",
     ]:
         monkeypatch.delenv(var, raising=False)
 
@@ -200,46 +201,6 @@ def test_gcs_options_merge_overrides_only_when_set() -> None:
     assert merged.service_account == "user_sa"
 
 
-# -------------------------------------- StorageOptionSet --------------------------------------- #
-
-
-@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env", "clean_azure_env")
-def test_storage_option_set_empty() -> None:
-    # Act
-    option_set = StorageOptionSet()
-
-    # Assert
-    assert option_set.options == []
-    assert option_set.to_dict() == {}
-
-
-@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env", "clean_azure_env")
-def test_storage_option_set_user_options() -> None:
-    # Act
-    option_set = StorageOptionSet({"aws_access_key_id": "key", "aws_region": "us-east-1"})
-
-    # Assert
-    assert option_set.to_dict() == {"aws_access_key_id": "key", "aws_region": "us-east-1"}
-
-
-@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env", "clean_azure_env")
-def test_storage_option_set_merges_env_and_user(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Arrange
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "env_key")
-    monkeypatch.setenv("AWS_REGION", "env_region")
-
-    # Act
-    option_set = StorageOptionSet({"aws_access_key_id": "user_key"})
-
-    # Assert: user overrides env, but env-only values are preserved
-    assert option_set.to_dict() == {
-        "aws_access_key_id": "user_key",
-        "aws_region": "env_region",
-    }
-
-
 # ----------------------------------- AzureStorageOptions --------------------------------------- #
 
 
@@ -313,3 +274,43 @@ def test_azure_options_merge_overrides_only_when_set() -> None:
     assert merged.account_name == "env_account"
     assert merged.account_key == "user_key"
     assert merged.endpoint_url == "env_endpoint"
+
+
+# -------------------------------------- StorageOptionSet --------------------------------------- #
+
+
+@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env", "clean_azure_env")
+def test_storage_option_set_empty() -> None:
+    # Act
+    option_set = StorageOptionSet()
+
+    # Assert
+    assert option_set.options == []
+    assert option_set.to_dict() == {}
+
+
+@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env", "clean_azure_env")
+def test_storage_option_set_user_options() -> None:
+    # Act
+    option_set = StorageOptionSet({"aws_access_key_id": "key", "aws_region": "us-east-1"})
+
+    # Assert
+    assert option_set.to_dict() == {"aws_access_key_id": "key", "aws_region": "us-east-1"}
+
+
+@pytest.mark.usefixtures("clean_aws_env", "clean_gcs_env", "clean_azure_env")
+def test_storage_option_set_merges_env_and_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "env_key")
+    monkeypatch.setenv("AWS_REGION", "env_region")
+
+    # Act
+    option_set = StorageOptionSet({"aws_access_key_id": "user_key"})
+
+    # Assert: user overrides env, but env-only values are preserved
+    assert option_set.to_dict() == {
+        "aws_access_key_id": "user_key",
+        "aws_region": "env_region",
+    }

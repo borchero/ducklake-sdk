@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
@@ -93,14 +94,15 @@ def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
             finally:
                 s3.Bucket(bucket).objects.delete()
                 s3.Bucket(bucket).delete()
-        case "abs":
+        case "azure":
             from azure.storage.blob import BlobServiceClient
 
             container = str(uuid.uuid4())
             blob_service_client = BlobServiceClient.from_connection_string(
-                "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-                "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-                "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+                "DefaultEndpointsProtocol=http;"
+                f"AccountName={os.environ['AZURE_STORAGE_ACCOUNT_NAME']};"
+                f"AccountKey={os.environ['AZURE_STORAGE_ACCOUNT_KEY']};"
+                f"BlobEndpoint={os.environ['AZURE_STORAGE_ENDPOINT']};"
             )
             container_client = blob_service_client.create_container(container)
             try:

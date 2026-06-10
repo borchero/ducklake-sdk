@@ -115,6 +115,9 @@ def test_cleanup_old_files(ducklake: dl.Ducklake, random_table_name: str) -> Non
 @pytest.mark.skip_config(
     storage="gcs", reason="Orphaned-file cleanup test requires direct filesystem access."
 )
+@pytest.mark.skip_config(
+    storage="azure", reason="Orphaned-file cleanup test requires direct filesystem access."
+)
 def test_delete_orphaned_files(
     ducklake: dl.Ducklake, random_table_name: str, storage_path: str
 ) -> None:
