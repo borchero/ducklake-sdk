@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import boto3
 import sqlalchemy as sa
+from azure.storage.blob import BlobServiceClient
 from sqlalchemy_utils import create_database, database_exists, drop_database
 
 if TYPE_CHECKING:
@@ -95,8 +96,6 @@ def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
                 s3.Bucket(bucket).objects.delete()
                 s3.Bucket(bucket).delete()
         case "azure":
-            from azure.storage.blob import BlobServiceClient
-
             container = str(uuid.uuid4())
             blob_service_client = BlobServiceClient.from_connection_string(
                 "DefaultEndpointsProtocol=http;"
