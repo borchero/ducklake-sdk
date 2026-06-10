@@ -65,10 +65,10 @@ def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
                 s3.Bucket(bucket).objects.delete()
                 s3.Bucket(bucket).delete()
         case "gcs":
-            # GCS writes use object_store's XML multipart upload API, which no GCS emulator
-            # implements. We instead proxy those requests to rustfs (S3) via nginx, stripping the
-            # auth header so they are anonymous. Hence the bucket is managed through the S3 API and
-            # made public so the anonymous requests are accepted.
+            # For local testing, GCS writes use object_store's XML multipart upload API, which no
+            # GCS emulator implements. We instead proxy those requests to rustfs (S3) via nginx,
+            # stripping the auth header so they are anonymous. Hence the bucket is managed through
+            # the S3 API and made public so the anonymous requests are accepted.
             bucket = str(uuid.uuid4())
             s3 = boto3.resource("s3")
             s3.create_bucket(Bucket=bucket)
