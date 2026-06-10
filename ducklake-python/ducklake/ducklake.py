@@ -243,12 +243,14 @@ class Ducklake:
     # ----------------------------------------- METADATA ---------------------------------------- #
 
     @overload
-    def set_metadata(
+    def set_metadata(  # ty: ignore[invalid-overload]
         self, *, schema: str | None = None, **options: Unpack[TableMetadataUpdate]
     ) -> None: ...
 
     @overload
-    def set_metadata(self, **options: Unpack[GlobalMetadataUpdate]) -> None: ...
+    def set_metadata(  # ty: ignore[invalid-overload]
+        self, **options: Unpack[GlobalMetadataUpdate]
+    ) -> None: ...
 
     def set_metadata(
         self,

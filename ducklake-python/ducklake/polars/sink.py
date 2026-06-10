@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Literal, cast, overload
+from typing import Literal, overload
 
 import polars as pl
 from polars._typing import EngineType

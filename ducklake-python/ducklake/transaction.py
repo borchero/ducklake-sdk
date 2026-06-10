@@ -181,7 +181,7 @@ class TransactionTable:
     @overload
     def sink_polars(
         self,
-        df: pl.DataFrame,
+        lf: pl.LazyFrame,
         *,
         engine: EngineType = "auto",
         optimizations: pl.QueryOptFlags | None = None,
