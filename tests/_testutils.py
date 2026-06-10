@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
@@ -60,6 +61,35 @@ def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
             s3.create_bucket(Bucket=bucket)
             try:
                 yield f"s3://{bucket}"
+            finally:
+                s3.Bucket(bucket).objects.delete()
+                s3.Bucket(bucket).delete()
+        case "gcs":
+            # GCS writes use object_store's XML multipart upload API, which no GCS emulator
+            # implements. We instead proxy those requests to rustfs (S3) via nginx, stripping the
+            # auth header so they are anonymous. Hence the bucket is managed through the S3 API and
+            # made public so the anonymous requests are accepted.
+            bucket = str(uuid.uuid4())
+            s3 = boto3.resource("s3")
+            s3.create_bucket(Bucket=bucket)
+            s3.meta.client.put_bucket_policy(
+                Bucket=bucket,
+                Policy=json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": "*",
+                                "Action": "s3:*",
+                                "Resource": [f"arn:aws:s3:::{bucket}", f"arn:aws:s3:::{bucket}/*"],
+                            }
+                        ],
+                    }
+                ),
+            )
+            try:
+                yield f"gs://{bucket}"
             finally:
                 s3.Bucket(bucket).objects.delete()
                 s3.Bucket(bucket).delete()

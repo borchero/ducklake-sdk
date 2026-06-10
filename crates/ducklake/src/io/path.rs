@@ -8,6 +8,8 @@ use object_store::ObjectStore;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
 #[cfg(feature = "azure")]
 use object_store::azure::{AzureConfigKey, MicrosoftAzureBuilder};
+#[cfg(feature = "gcp")]
+use object_store::gcp::{GoogleCloudStorageBuilder, GoogleConfigKey};
 use object_store::local::LocalFileSystem;
 use object_store::path::Path as ObjectStorePath;
 use url::Url;
@@ -141,6 +143,7 @@ impl Display for DucklakePath {
 
 /* ------------------------------------------ IO PATH ------------------------------------------ */
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug)]
 pub enum Path {
     Local {
@@ -148,6 +151,11 @@ pub enum Path {
     },
     #[cfg(feature = "aws")]
     S3 {
+        bucket: String,
+        path: String,
+    },
+    #[cfg(feature = "gcp")]
+    GCS {
         bucket: String,
         path: String,
     },
@@ -169,6 +177,11 @@ impl Path {
                 bucket: url.host_str().unwrap().to_string(),
                 path: url.path().to_string(),
             }),
+            #[cfg(feature = "gcp")]
+            "gs" => Ok(Path::GCS {
+                bucket: url.host_str().unwrap().to_string(),
+                path: url.path().to_string(),
+            }),
             #[cfg(feature = "azure")]
             "az" | "abfs" => Ok(Path::Azure {
                 container: url.host_str().unwrap().to_string(),
@@ -187,6 +200,8 @@ impl Path {
             Path::S3 { path, .. } => path,
             #[cfg(feature = "azure")]
             Path::Azure { path, .. } => path,
+            #[cfg(feature = "gcp")]
+            Path::GCS { path, .. } => path,
         };
         ObjectStorePath::parse(path).unwrap()
     }
@@ -198,44 +213,38 @@ impl Path {
         let cache_key = match self {
             Path::Local { path: _ } => ObjectStoreCacheKey::Local,
             #[cfg(feature = "aws")]
-            Path::S3 { bucket, path: _ } => {
-                // Aggregate all valid options from the provided ones
-                let mut s3_options = Vec::new();
-                if let Some(options) = options {
-                    for (key, value) in options {
-                        if let Ok(config_key) = key.to_lowercase().parse() {
-                            s3_options.push((config_key, value));
-                        }
-                    }
-                }
-
-                // Then, build the cache key based on these options and the bucket
-                ObjectStoreCacheKey::S3 {
-                    bucket: bucket.clone(),
-                    options: s3_options,
-                }
-            }
+            Path::S3 { bucket, path: _ } => ObjectStoreCacheKey::S3 {
+                bucket: bucket.clone(),
+                options: parse_config_options(options),
+            },
+            #[cfg(feature = "gcp")]
+            Path::GCS { bucket, path: _ } => ObjectStoreCacheKey::GCS {
+                bucket: bucket.clone(),
+                options: parse_config_options(options),
+            },
             #[cfg(feature = "azure")]
-            Path::Azure { container, path: _ } => {
-                // Aggregate all valid options from the provided ones
-                let mut azure_options = Vec::new();
-                if let Some(options) = options {
-                    for (key, value) in options {
-                        if let Ok(config_key) = key.to_lowercase().parse() {
-                            azure_options.push((config_key, value));
-                        }
-                    }
-                }
-
-                // Then, build the cache key based on these options and the container
-                ObjectStoreCacheKey::Azure {
-                    container: container.clone(),
-                    options: azure_options,
-                }
-            }
+            Path::Azure { container, path: _ } => ObjectStoreCacheKey::Azure {
+                container: container.clone(),
+                options: parse_config_options(options),
+            },
         };
         get_cached_object_store(cache_key)
     }
+}
+
+/// Parses the provided key-value options into the object store's config keys, discarding any
+/// options whose key is not a valid config key.
+#[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
+fn parse_config_options<K: FromStr>(options: Option<Vec<(String, String)>>) -> Vec<(K, String)> {
+    let mut result = Vec::new();
+    if let Some(options) = options {
+        for (key, value) in options {
+            if let Ok(config_key) = key.to_lowercase().parse() {
+                result.push((config_key, value));
+            }
+        }
+    }
+    result
 }
 
 /* ------------------------------------------- CACHE ------------------------------------------- */
@@ -243,6 +252,7 @@ impl Path {
 static OBJECT_STORE_CACHE: LazyLock<Mutex<HashMap<ObjectStoreCacheKey, Arc<dyn ObjectStore>>>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum ObjectStoreCacheKey {
     Local,
@@ -250,6 +260,11 @@ enum ObjectStoreCacheKey {
     S3 {
         bucket: String,
         options: Vec<(AmazonS3ConfigKey, String)>,
+    },
+    #[cfg(feature = "gcp")]
+    GCS {
+        bucket: String,
+        options: Vec<(GoogleConfigKey, String)>,
     },
     #[cfg(feature = "azure")]
     Azure {
@@ -273,6 +288,17 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
                 let mut builder = AmazonS3Builder::new()
                     .with_bucket_name(bucket)
                     .with_allow_http(true);
+                for (config_key, value) in options {
+                    builder = builder.with_config(*config_key, value);
+                }
+                Arc::new(builder.build().unwrap())
+            }
+            #[cfg(feature = "gcp")]
+            ObjectStoreCacheKey::GCS {
+                ref bucket,
+                ref options,
+            } => {
+                let mut builder = GoogleCloudStorageBuilder::new().with_bucket_name(bucket);
                 for (config_key, value) in options {
                     builder = builder.with_config(*config_key, value);
                 }
@@ -437,6 +463,21 @@ mod tests {
                 assert_eq!(path, "/prefix/file.parquet");
             }
             _ => panic!("expected S3 path"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "gcp")]
+    fn test_resolve_gcs() {
+        let path = absolute("gs://bucket/prefix/file.parquet")
+            .resolve()
+            .unwrap();
+        match path {
+            Path::GCS { bucket, path } => {
+                assert_eq!(bucket, "bucket");
+                assert_eq!(path, "/prefix/file.parquet");
+            }
+            _ => panic!("expected GCS path"),
         }
     }
 

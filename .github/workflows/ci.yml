@@ -71,7 +71,7 @@ jobs:
       matrix:
         python-version: [py314]
         database: [sqlite, postgres, mysql]
-        storage: [local, s3, abs]
+        storage: [local, s3, gcs, abs]
         include:
           - python-version: py313
             database: sqlite
@@ -101,7 +101,7 @@ jobs:
         ports:
           - "3306:3306"
       rustfs:
-        image: ${{ case(matrix.storage == 's3', 'rustfs/rustfs:latest', '') }}
+        image: ${{ case(matrix.storage == 's3' || matrix.storage == 'gcs', 'rustfs/rustfs:latest', '') }}
         env:
           RUSTFS_ADDRESS: ":9000"
           RUSTFS_ACCESS_KEY: rustfsadmin
@@ -126,6 +126,13 @@ jobs:
         run: cargo llvm-cov clean --workspace
       - name: Install Python package
         run: pixi run install-py
+      - name: Start GCS proxy (nginx in front of rustfs)
+        if: matrix.storage == 'gcs'
+        run: |
+          docker run -d --name gcs-proxy --network host \
+            --add-host rustfs:127.0.0.1 \
+            -v ./dev/gcs-proxy.nginx.conf:/etc/nginx/conf.d/default.conf:ro \
+            nginx:latest
       - name: Start Azurite
         if: matrix.storage == 'abs'
         run: >
@@ -138,6 +145,10 @@ jobs:
           AWS_ENDPOINT_URL: http://localhost:9000
           AWS_ACCESS_KEY_ID: rustfsadmin
           AWS_SECRET_ACCESS_KEY: rustfsadmin
+          STORAGE_EMULATOR_HOST: http://localhost:4443
+          GOOGLE_SERVICE_ACCOUNT_KEY:
+            '{"gcs_base_url": "http://localhost:4443", "disable_oauth": true, "client_email": "", "private_key_id": "",
+            "private_key": ""}'
           AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
           AZURE_STORAGE_ACCOUNT_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
           AZURE_STORAGE_ENDPOINT: http://localhost:10000

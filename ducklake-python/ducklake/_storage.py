@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from abc import ABC, abstractmethod
@@ -31,6 +32,13 @@ class StorageOptionSet:
         s3_options = s3_options_env.merge(s3_options_user)
         if s3_options.to_dict():
             all_options.append(s3_options)
+
+        # GCS
+        gcs_options_env = GCSStorageOptions.from_env()
+        gcs_options_user = GCSStorageOptions.from_dict(user_options or {})
+        gcs_options = gcs_options_env.merge(gcs_options_user)
+        if gcs_options.to_dict():
+            all_options.append(gcs_options)
 
         # Azure
         azure_options_env = AzureStorageOptions.from_env()
@@ -153,6 +161,60 @@ class S3StorageOptions(StorageOptions):
             connection.execute("INSTALL httpfs;")
             connection.execute(
                 f"CREATE OR REPLACE SECRET s3_credentials (TYPE S3, {', '.join(options)});"
+            )
+
+
+# ---------------------------------------------- GCS --------------------------------------------- #
+
+
+@dataclass(kw_only=True)
+class GCSStorageOptions(StorageOptions):
+    """Storage options for Google Cloud Storage."""
+
+    service_account_key: str | None = None
+    service_account: str | None = None
+
+    @classmethod
+    def from_env(cls) -> GCSStorageOptions:
+        return cls(
+            service_account_key=os.getenv("GOOGLE_SERVICE_ACCOUNT_KEY"),
+            service_account=os.getenv("GOOGLE_SERVICE_ACCOUNT"),
+        )
+
+    @classmethod
+    def from_dict(cls, options: dict[str, str]) -> GCSStorageOptions:
+        return cls(
+            service_account_key=options.get("google_service_account_key"),
+            service_account=options.get("google_service_account"),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        options = {}
+        if self.service_account_key is not None:
+            options["google_service_account_key"] = self.service_account_key
+        if self.service_account is not None:
+            options["google_service_account"] = self.service_account
+        return options
+
+    def apply_to_duckdb_connection(self, connection: duckdb.DuckDBPyConnection) -> None:
+        options = []
+        # When targeting a local emulator, the service account key carries a `gcs_base_url`.
+        # DuckDB accesses GCS through its S3-compatible interface, so we point it at that endpoint
+        # with placeholder credentials (the emulator accepts anonymous requests).
+        if self.service_account_key is not None:
+            if (base_url := json.loads(self.service_account_key).get("gcs_base_url")) is not None:
+                url = urlparse(base_url)
+                options.append(f"ENDPOINT '{url.netloc}'")
+                options.append("URL_STYLE 'path'")
+                if url.scheme == "http":
+                    options.append("USE_SSL 'false'")
+                options.append("KEY_ID 'gcs'")
+                options.append("SECRET 'gcs'")
+
+        if options:
+            connection.execute("INSTALL httpfs;")
+            connection.execute(
+                f"CREATE OR REPLACE SECRET gcs_credentials (TYPE GCS, {', '.join(options)});"
             )
 
 

@@ -12,7 +12,7 @@ name = "ducklake_python"
 arrow-array = { workspace = true }
 arrow-schema = { workspace = true }
 chrono = { workspace = true }
-ducklake = { workspace = true, features = ["aws", "azure", "mysql", "postgres", "python", "sqlite"] }
+ducklake = { workspace = true, features = ["aws", "azure", "gcp", "mysql", "postgres", "python", "sqlite"] }
 indexmap = { workspace = true }
 parquet = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "extension-module"] }
