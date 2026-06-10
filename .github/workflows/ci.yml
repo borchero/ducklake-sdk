@@ -108,6 +108,11 @@ jobs:
           RUSTFS_SECRET_KEY: rustfsadmin
         ports:
           - "9000:9000"
+      azurite:
+        image: ${{ case(matrix.storage == 'abs', 'mcr.microsoft.com/azure-storage/azurite:latest', '') }}
+        command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
+        ports:
+          - "10000:10000"
     steps:
       - name: Checkout branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -133,12 +138,6 @@ jobs:
             --add-host rustfs:127.0.0.1 \
             -v ./dev/gcs-proxy.nginx.conf:/etc/nginx/conf.d/default.conf:ro \
             nginx:latest
-      - name: Start Azurite
-        if: matrix.storage == 'abs'
-        run: >
-          docker run -d --name azurite -p 10000:10000
-          mcr.microsoft.com/azure-storage/azurite:latest
-          azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
       - name: Run tests with coverage
         run: pixi run test-py-coverage -v --catalog ${{ matrix.database }} --storage ${{ matrix.storage }}
         env:

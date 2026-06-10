@@ -232,10 +232,8 @@ impl Path {
     }
 }
 
-/// Parses the provided key-value options into typed object store config keys.
-///
-/// Invalid option keys are ignored so callers can forward mixed storage option maps without
-/// needing to pre-filter them per backend.
+/// Parses the provided key-value options into the object store's config keys, discarding any
+/// options whose key is not a valid config key.
 #[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
 fn parse_config_options<K: FromStr>(options: Option<Vec<(String, String)>>) -> Vec<(K, String)> {
     let mut result = Vec::new();
