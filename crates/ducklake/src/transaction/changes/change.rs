@@ -467,18 +467,22 @@ impl Change {
             CreateTable { table_ref, .. }
             | RenameTable { table_ref, .. }
             | UpdateTablePartitioning { table_ref, .. }
-            | DeleteTable { table_ref, .. }
-            | AddTableTag { table_ref, .. }
-            | RemoveTableTag { table_ref, .. } => Some(*table_ref),
-            UpdateTableColumn { column_ref, .. }
-            | RemoveTableColumn { column_ref }
-            | AddTableColumnTag { column_ref, .. }
-            | RemoveTableColumnTag { column_ref, .. } => Some(column_ref.table_ref),
+            | DeleteTable { table_ref, .. } => Some(*table_ref),
+            UpdateTableColumn { column_ref, .. } | RemoveTableColumn { column_ref } => {
+                Some(column_ref.table_ref)
+            }
             AddTableColumn { column_refs, .. } => column_refs.first().map(|r| r.table_ref),
             CreateSchema { .. }
             | DeleteSchema { .. }
             | WriteTableDataFiles { .. }
-            | WriteTableInlineData { .. } => None,
+            | WriteTableInlineData { .. }
+            // NOTE: As opposed to `changes_schema` where we have to consider ALL items that
+            //  affect caching of the catalog, we do not want to consider changes that do not
+            //  affect the schema (i.e. how data is stored) of individual tables here.
+            | AddTableColumnTag { .. }
+            | RemoveTableColumnTag { .. }
+            | AddTableTag { .. }
+            | RemoveTableTag { .. } => None,
         }
     }
 

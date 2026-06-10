@@ -21,6 +21,28 @@ def test_match_reference_table_creation(
 
 
 @pytest.mark.differential
+def test_match_reference_comment(
+    ducklake: dl.Ducklake,
+    catalog_url: str,
+    reference_catalog_url: str,
+    reference_duckdb_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    # Act
+    table = ducklake.create_table("test", {"x": dl.Int64()})
+    table.add_tag("comment", "test")
+    table.update_partitioning(dl.Partitioning(["x"]))
+    table.rename("test_rename")
+
+    reference_duckdb_connection.execute("CREATE TABLE test (x BIGINT)")
+    reference_duckdb_connection.execute("COMMENT ON TABLE test IS 'test'")
+    reference_duckdb_connection.execute("ALTER TABLE test SET PARTITIONED BY (x)")
+    reference_duckdb_connection.execute("ALTER TABLE test RENAME TO test_rename")
+
+    # Assert
+    assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)
+
+
+@pytest.mark.differential
 def test_match_reference_nested_types(
     ducklake: dl.Ducklake,
     catalog_url: str,
