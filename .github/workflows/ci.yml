@@ -151,6 +151,7 @@ jobs:
           AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
           AZURE_STORAGE_ACCOUNT_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
           AZURE_STORAGE_ENDPOINT: http://localhost:10000/devstoreaccount1
+          AZURE_STORAGE_USE_EMULATOR: "1"
       - name: Collect Rust coverage
         run: cargo llvm-cov report -p ducklake -p ducklake-python --lcov --output-path coverage-rs.lcov
       - name: Upload coverage

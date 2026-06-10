@@ -481,6 +481,21 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case("az://container/prefix/file.parquet")]
+    #[case("abfs://container/prefix/file.parquet")]
+    #[cfg(feature = "azure")]
+    fn test_resolve_azure(#[case] input: &str) {
+        let path = absolute(input).resolve().unwrap();
+        match path {
+            Path::Azure { container, path } => {
+                assert_eq!(container, "container");
+                assert_eq!(path, "/prefix/file.parquet");
+            }
+            _ => panic!("expected Azure path"),
+        }
+    }
+
     #[test]
     fn test_resolve_local() {
         let path = absolute("file:///tmp/file.parquet").resolve().unwrap();
