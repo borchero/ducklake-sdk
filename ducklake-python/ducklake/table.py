@@ -142,7 +142,7 @@ class Table:
     @overload
     def sink_polars(
         self,
-        df: pl.DataFrame,
+        lf: pl.LazyFrame,
         *,
         engine: EngineType = "auto",
         optimizations: pl.QueryOptFlags | None = None,
@@ -394,7 +394,10 @@ class Table:
             scope.
         """
         for key, value in options.items():
-            self._pytable.set_metadata(key, _serialize_metadata_value(value))
+            self._pytable.set_metadata(
+                key,
+                _serialize_metadata_value(value),  # ty: ignore[invalid-argument-type]
+            )
 
     # ------------------------------------------------------------------------------------------- #
     #                                         MAINTENANCE                                         #

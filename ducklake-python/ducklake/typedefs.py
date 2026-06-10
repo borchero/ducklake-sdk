@@ -137,7 +137,7 @@ class Schema:
 
     def __init__(self, columns: Sequence[Column] | Mapping[str, DataType]) -> None:
         if isinstance(columns, Sequence):
-            self.columns = list(columns)
+            self.columns = list(columns)  # ty: ignore[invalid-assignment]
         else:
             self.columns = [Column(name, dtype) for name, dtype in columns.items()]
 
@@ -371,8 +371,10 @@ class List(DataType):
 class Struct(DataType):
     """Structured data type containing named fields."""
 
+    fields: list[Column]
+
     def __init__(self, fields: Sequence[Column] | Mapping[str, DataType]) -> None:
-        self.fields = (
+        self.fields = (  # ty: ignore[invalid-assignment]
             list(fields)
             if isinstance(fields, Sequence)
             else [Column(name, dtype) for name, dtype in fields.items()]

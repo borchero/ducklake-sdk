@@ -102,10 +102,7 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
     table_metadata, _ = table._get_write_info()
     if df.height <= table_metadata["data_inlining_row_limit"]:
         # Inline the data
-        df = cast(
-            pl.DataFrame,  # Remove once https://github.com/astral-sh/ty/issues/2278 is fixed
-            df.lazy().pipe(_prepare_frame, table).collect(optimizations=pl.QueryOptFlags._eager()),
-        )
+        df = df.lazy().pipe(_prepare_frame, table).collect(optimizations=pl.QueryOptFlags._eager())
         table._write_inline_data(df)
     else:
         # Write data files
