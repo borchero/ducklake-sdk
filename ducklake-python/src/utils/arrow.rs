@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 use pyo3_arrow::PySchema as ArrowPySchema;
 
 use crate::conversion::Wrap;
+use crate::error;
 
 /// Convert a list of columns to an object implementing the Arrow PyCapsule.
 #[pyfunction]
@@ -14,6 +15,18 @@ pub fn schema_to_arrow(columns: Vec<Wrap<ducklake::Column>>) -> PyResult<ArrowPy
     let fields: Vec<_> = columns.into_iter().map(|c| c.0.to_arrow_field()).collect();
     let schema = Schema::new(fields);
     Ok(Arc::new(schema).into())
+}
+
+#[pyfunction]
+pub fn schema_from_arrow(schema: ArrowPySchema) -> PyResult<Vec<Wrap<ducklake::Column>>> {
+    let schema = schema.into_inner();
+    let columns = schema
+        .fields()
+        .iter()
+        .map(|f| ducklake::Column::try_from(&**f).map(Wrap))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(error::into_pyerr)?;
+    Ok(columns)
 }
 
 /// Extract a mapping from parquet field IDs to column names from an Arrow schema.

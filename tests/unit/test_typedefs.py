@@ -1,5 +1,6 @@
 from typing import Any
 
+import polars as pl
 import pytest
 
 import ducklake as dl
@@ -43,6 +44,22 @@ def test_schema_from_mapping_equals_from_sequence() -> None:
 def test_schema_eq_non_schema() -> None:
     # Act & Assert
     assert dl.Schema({"x": dl.Int64()}) != "not a schema"
+
+
+def test_schema_from_arrow() -> None:
+    # Arrange
+    polars_schema = pl.Schema(
+        {"a": pl.Int64(), "b": pl.Struct({"x": pl.Float32(), "y": pl.Decimal(10, 5)})}
+    )
+
+    # Act
+    schema = dl.Schema(polars_schema)
+
+    # Assert
+    assert schema.columns == [
+        dl.Column("a", dl.Int64()),
+        dl.Column("b", dl.Struct({"x": dl.Float32(), "y": dl.Decimal(10, 5)})),
+    ]
 
 
 # ------------------------------------------- COLUMN -------------------------------------------- #
