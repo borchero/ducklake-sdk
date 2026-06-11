@@ -2,5 +2,9 @@
   "comment-divider.length": 99,
   "python.languageServer": "None",
   "python-envs.defaultEnvManager": "ms-python.python:system",
-  "rust-analyzer.cargo.features": "all"
+  "rust-analyzer.cargo.features": "all",
+  "ty.path": [
+    "${workspaceFolder}/.pixi/envs/default/bin/ty",
+    "${workspaceFolder}/.pixi/envs/default/Scripts/ty.exe"
+  ]
 }

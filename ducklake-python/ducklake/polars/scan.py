@@ -157,11 +157,8 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
 
 
 def read_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.DataFrame:
-    return cast(
-        pl.DataFrame,  # Remove once https://github.com/astral-sh/ty/issues/2278 is fixed
-        scan_ducklake(table, include_file_paths=include_file_paths).collect(
-            optimizations=pl.QueryOptFlags._eager()
-        ),
+    return scan_ducklake(table, include_file_paths=include_file_paths).collect(
+        optimizations=pl.QueryOptFlags._eager()
     )
 
 
