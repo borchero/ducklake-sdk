@@ -14,9 +14,10 @@ from typing import (
     TypedDict,
     Union,
     overload,
+    runtime_checkable,
 )
 
-from ._native import schema_to_arrow
+from ._native import schema_from_arrow, schema_to_arrow
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -135,8 +136,15 @@ class Schema:
 
     columns: list[Column]
 
-    def __init__(self, columns: Sequence[Column] | Mapping[str, DataType]) -> None:
-        if isinstance(columns, Sequence):
+    def __init__(
+        self,
+        columns: Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable,
+    ) -> None:
+        if isinstance(columns, Schema):
+            self.columns = list(columns.columns)
+        elif isinstance(columns, ArrowSchemaExportable):
+            self.columns = schema_from_arrow(columns)
+        elif isinstance(columns, Sequence):
             self.columns = list(columns)
         else:
             self.columns = [Column(name, dtype) for name, dtype in columns.items()]
@@ -653,6 +661,7 @@ class ScanResult:
 # -------------------------------------------- ARROW -------------------------------------------- #
 
 
+@runtime_checkable
 class ArrowSchemaExportable(Protocol):
     """Type protocol for Arrow C Schema Interface via Arrow PyCapsule Interface."""
 
