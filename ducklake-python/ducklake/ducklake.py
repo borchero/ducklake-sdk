@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import warnings
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from .table import Table
 from .transaction import Transaction
@@ -160,8 +160,19 @@ class Ducklake:
         name: str,
         *,
         data_path: str | None = None,
+        if_exists: Literal["fail", "skip"] = "fail",
     ) -> None:
-        self._pyducklake.create_schema(name, data_path=data_path)
+        """Create a new schema in the catalog.
+
+        Args:
+            name: The name of the new schema.
+            data_path: Optional data path for the schema. If not provided, it defaults to the
+                schema name.
+            if_exists: The strategy to apply if a schema with the same name already exists.
+                "fail" raises an :class:`~ducklake.exceptions.AlreadyExistsError`, while "skip"
+                leaves the existing schema unchanged.
+        """
+        self._pyducklake.create_schema(name, data_path=data_path, if_exists=if_exists)
 
     def list_schemas(self) -> list[str]:
         """List all schema names in the catalog.
@@ -180,12 +191,29 @@ class Ducklake:
         self,
         name: str | tuple[str, str] | TableName,
         schema: Schema | Sequence[Column] | Mapping[str, DataType],
+        *,
         partition_by: (
             Partitioning | Sequence[PartitionColumn] | Sequence[str] | PartitionColumn | str | None
         ) = None,
         data_path: str | None = None,
         tags: Mapping[str, str] | None = None,
+        if_exists: Literal["fail", "skip"] = "fail",
     ) -> Table:
+        """Create a new table in the catalog.
+
+        Args:
+            name: The fully qualified name of the new table.
+            schema: The schema of the new table.
+            partition_by: Optional partitioning for the table.
+            data_path: Optional data path for the table.
+            tags: Optional tags to attach to the table.
+            if_exists: The strategy to apply if a table with the same name already exists.
+                "fail" raises an :class:`~ducklake.exceptions.AlreadyExistsError`, while "skip"
+                returns the existing table unchanged.
+
+        Returns:
+            The newly created :class:`Table`.
+        """
         schema_cls = schema if isinstance(schema, Schema) else Schema(schema)
         partition_cls = (
             partition_by
@@ -202,6 +230,7 @@ class Ducklake:
             ),
             data_path=data_path,
             tags=list(tags.items()) if tags else None,
+            if_exists=if_exists,
         )
         return Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
 

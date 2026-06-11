@@ -5,7 +5,7 @@ use ducklake_macros::visibility_if;
 use itertools::EitherOrBoth;
 
 use super::changes::Change;
-use super::{CommitDataFile, CommitInlineData, Transaction};
+use super::{CommitDataFile, CommitInlineData, IfExistsStrategy, Transaction};
 use crate::{
     Column,
     ColumnName,
@@ -98,8 +98,17 @@ impl<'a> Transaction<'a> {
         partition_columns: Option<Vec<PartitionColumn>>,
         path: Option<String>,
         tags: Option<Vec<Tag>>,
+        if_exists: IfExistsStrategy,
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
         let name = name.try_into().map_err(|e| e.into())?;
+
+        // If the table already exists and the strategy is specified accordingly, simply
+        // return the existing table
+        if matches!(if_exists, IfExistsStrategy::Skip) && self.catalog().table(&name).is_ok() {
+            return Ok(TransactionTable::new(self, name));
+        }
+
+        // Prepare the path
         let path: io::DucklakePath = path.unwrap_or_else(|| name.name.clone()).parse()?;
         let path = path.ensure_directory();
 

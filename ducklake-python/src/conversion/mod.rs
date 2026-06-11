@@ -3,6 +3,7 @@ mod column_default;
 mod column_name;
 mod column_stats;
 mod data_type;
+mod nominal_enums;
 mod partition;
 mod scan;
 mod snapshot;

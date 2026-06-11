@@ -39,8 +39,14 @@ class Transaction:
         transaction._storage_options = storage_options
         return transaction
 
-    def create_schema(self, name: str, *, data_path: str | None = None) -> None:
-        self._pytx.create_schema(name, data_path)
+    def create_schema(
+        self,
+        name: str,
+        *,
+        data_path: str | None = None,
+        if_exists: Literal["fail", "skip"] = "fail",
+    ) -> None:
+        self._pytx.create_schema(name, data_path, if_exists)
 
     def delete_schema(self, name: str) -> None:
         self._pytx.delete_schema(name)
@@ -55,11 +61,13 @@ class Transaction:
         self,
         name: str | tuple[str, str] | TableName,
         schema: Schema | Sequence[Column] | Mapping[str, DataType],
+        *,
         partition_by: (
             Partitioning | Sequence[PartitionColumn] | Sequence[str] | PartitionColumn | str | None
         ) = None,
         data_path: str | None = None,
         tags: Mapping[str, str] | None = None,
+        if_exists: Literal["fail", "skip"] = "fail",
     ) -> TransactionTable:
         """Create a new table as part of this transaction.
 
@@ -92,6 +100,7 @@ class Transaction:
             ),
             data_path=data_path,
             tags=list(tags.items()) if tags else None,
+            if_exists=if_exists,
         )
         return TransactionTable._from_pytransaction_table(
             pytransaction_table, self._storage_options

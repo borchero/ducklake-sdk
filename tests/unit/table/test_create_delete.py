@@ -87,3 +87,26 @@ def test_create_existing_table_raises(
     # Act & Assert
     with pytest.raises(dlexc.AlreadyExistsError):
         shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+
+
+def test_create_existing_table_skip(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+
+    # Act
+    table = shared_ducklake.create_table(random_table_name, {"y": dl.Varchar()}, if_exists="skip")
+
+    # Assert
+    assert table.name == ("main", random_table_name)
+    assert table.schema.columns == [dl.Column("x", dl.Int64(), field_id=1)]
+
+
+def test_create_table_skip_when_missing(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Act
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()}, if_exists="skip")
+
+    # Assert
+    assert table.name == ("main", random_table_name)
+    assert table.schema.columns == [dl.Column("x", dl.Int64(), field_id=1)]

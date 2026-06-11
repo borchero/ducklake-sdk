@@ -4,6 +4,7 @@ use sea_query::{Asterisk, ExprTrait, Iden, Query};
 
 use super::caches::{Metadata, MetadataCache, Snapshot, SnapshotCache};
 use crate::caches::SnapshotInfo;
+use crate::catalog::Catalog;
 use crate::spec::*;
 use crate::*;
 
@@ -243,9 +244,21 @@ impl Ducklake {
         let name = name.try_into().map_err(|e| e.into())?;
         let snapshot = self.conn.latest_snapshot(true).await?;
         let catalog = snapshot.catalog().await?;
-        let schema_id = catalog.schema(&name.schema)?.id().unwrap();
-        let table_id = catalog.table(&name)?.id().unwrap();
-        Ok(Table::new(self.conn.clone(), schema_id, table_id))
+        Ok(self.maybe_table_from_catalog(catalog, &name)?.unwrap())
+    }
+
+    fn maybe_table_from_catalog(
+        &self,
+        catalog: &Catalog,
+        name: &TableName,
+    ) -> DucklakeResult<Option<Table>> {
+        let Some(schema_id) = catalog.schema(&name.schema)?.id() else {
+            return Ok(None);
+        };
+        let Some(table_id) = catalog.table(name)?.id() else {
+            return Ok(None);
+        };
+        Ok(Some(Table::new(self.conn.clone(), schema_id, table_id)))
     }
 
     /// List all tables in the catalog, optionally restricted to a specific schema.
@@ -384,7 +397,7 @@ macro_rules! within_transaction {
 
 within_transaction! {
     /// Create a new schema in the catalog.
-    fn create_schema(name: &str, path: Option<String>) -> DucklakeResult<()>;
+    fn create_schema(name: &str, path: Option<String>, if_exists: IfExistsStrategy) -> DucklakeResult<()>;
     /// Delete an existing schema from the catalog.
     fn delete_schema(name: &str) -> DucklakeResult<()>;
 }
@@ -398,11 +411,28 @@ impl Ducklake {
         partition_columns: Option<Vec<PartitionColumn>>,
         path: Option<String>,
         tags: Option<Vec<Tag>>,
-    ) -> DucklakeResult<()> {
+        if_exists: IfExistsStrategy,
+    ) -> DucklakeResult<Table> {
+        let name = name.try_into().map_err(|e| e.into())?;
         let mut tx = self.transaction().await?;
-        tx.create_table(name, columns, partition_columns, path, tags)?;
+        tx.create_table(
+            name.clone(),
+            columns,
+            partition_columns,
+            path,
+            tags,
+            if_exists,
+        )?;
+        let table = self.maybe_table_from_catalog(tx.catalog(), &name)?;
         tx.commit().await?;
-        Ok(())
+
+        // `table` is `Some` if the table already had an ID in the catalog. Otherwise, it is `None`
+        // and we will need to fetch the table again.
+        if let Some(table) = table {
+            Ok(table)
+        } else {
+            self.table(name).await
+        }
     }
 }
 
