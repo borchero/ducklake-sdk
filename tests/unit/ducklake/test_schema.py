@@ -37,6 +37,29 @@ def test_create_existing_schema_raises(
         shared_ducklake.create_schema(random_schema_name)
 
 
+def test_create_existing_schema_skip(
+    shared_ducklake: dl.Ducklake, random_schema_name: str
+) -> None:
+    # Arrange
+    shared_ducklake.create_schema(random_schema_name)
+
+    # Act
+    shared_ducklake.create_schema(random_schema_name, if_exists="skip")
+
+    # Assert
+    assert random_schema_name in shared_ducklake.list_schemas()
+
+
+def test_create_schema_skip_when_missing(
+    shared_ducklake: dl.Ducklake, random_schema_name: str
+) -> None:
+    # Act
+    shared_ducklake.create_schema(random_schema_name, if_exists="skip")
+
+    # Assert
+    assert random_schema_name in shared_ducklake.list_schemas()
+
+
 def test_delete_missing_schema_raises(
     shared_ducklake: dl.Ducklake, random_schema_name: str
 ) -> None:

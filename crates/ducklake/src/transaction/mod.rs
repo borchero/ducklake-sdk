@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use changes::{AppliedChangeSet, Change, ChangeSet};
-pub use commit_state::CommitState;
+use commit_state::CommitState;
 use sea_query::{Asterisk, ExprTrait, Query};
 pub use table::TransactionTable;
 use typedefs::*;
@@ -45,6 +45,8 @@ pub struct Transaction<'a> {
     author_info: AuthorInfo,
 }
 
+/* ------------------------------------------ TYPEDEFS ----------------------------------------- */
+
 /// Information about the author of a transaction. The fields are attached to the snapshot
 /// created when the transaction is committed.
 #[derive(Clone, Default)]
@@ -56,6 +58,14 @@ pub struct AuthorInfo {
     /// Additional information to attach to the snapshot.
     pub extra_info: Option<String>,
 }
+
+/// Strategy to apply when creating entities.
+pub enum IfExistsStrategy {
+    Fail,
+    Skip,
+}
+
+/* -------------------------------------------- NEW -------------------------------------------- */
 
 impl<'a> Transaction<'a> {
     pub(crate) async fn new(

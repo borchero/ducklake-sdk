@@ -52,9 +52,14 @@ impl TransactionInner {
 
 #[pymethods]
 impl PyTransaction {
-    fn create_schema(&mut self, name: String, data_path: Option<String>) -> PyResult<()> {
+    fn create_schema(
+        &mut self,
+        name: String,
+        data_path: Option<String>,
+        if_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<()> {
         self.tx()
-            .create_schema(&name, data_path)
+            .create_schema(&name, data_path, if_exists.0)
             .map_err(error::into_pyerr)
     }
 
@@ -79,6 +84,7 @@ impl PyTransaction {
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
         data_path: Option<String>,
         tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<PyTransactionTable> {
         self.tx()
             .create_table(
@@ -87,6 +93,7 @@ impl PyTransaction {
                 partition.map(|v| v.into_iter().map(|p| p.0).collect()),
                 data_path,
                 tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                if_exists.0,
             )
             .map_err(error::into_pyerr)?;
         Ok(PyTransactionTable {

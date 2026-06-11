@@ -24,6 +24,6 @@ pub use error::{DucklakeError, DucklakeResult};
 pub use options::*;
 pub use primitives::{Interval, TimeWithTimezone};
 pub use table::*;
-pub use transaction::{AuthorInfo, Transaction, TransactionTable};
+pub use transaction::{AuthorInfo, IfExistsStrategy, Transaction, TransactionTable};
 pub use typedefs::*;
 pub use utils::DataFilePathGenerator;

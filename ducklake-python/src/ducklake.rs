@@ -80,8 +80,10 @@ impl PyDucklake {
         py: Python,
         name: String,
         data_path: Option<String>,
+        if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {
-        block_on(py, self.0.create_schema(&name, data_path)).map_err(error::into_pyerr)
+        block_on(py, self.0.create_schema(&name, data_path, if_exists.0))
+            .map_err(error::into_pyerr)
     }
 
     pub fn delete_schema(&self, py: Python, name: String) -> PyResult<()> {
@@ -96,19 +98,20 @@ impl PyDucklake {
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
         data_path: Option<String>,
         tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<PyTable> {
-        block_on(py, async {
-            self.0
-                .create_table(
-                    name.0.clone(),
-                    schema.into_iter().map(|c| c.0).collect(),
-                    partition.map(|v| v.into_iter().map(|p| p.0).collect()),
-                    data_path,
-                    tags.map(|v| v.into_iter().map(|t| t.0).collect()),
-                )
-                .await?;
-            self.0.table(name.0).await.map(PyTable::new)
-        })
+        block_on(
+            py,
+            self.0.create_table(
+                name.0.clone(),
+                schema.into_iter().map(|c| c.0).collect(),
+                partition.map(|v| v.into_iter().map(|p| p.0).collect()),
+                data_path,
+                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                if_exists.0,
+            ),
+        )
+        .map(PyTable::new)
         .map_err(error::into_pyerr)
     }
 
