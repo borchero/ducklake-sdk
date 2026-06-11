@@ -191,12 +191,12 @@ class Ducklake:
         self,
         name: str | tuple[str, str] | TableName,
         schema: Schema | Sequence[Column] | Mapping[str, DataType],
+        *,
         partition_by: (
             Partitioning | Sequence[PartitionColumn] | Sequence[str] | PartitionColumn | str | None
         ) = None,
         data_path: str | None = None,
         tags: Mapping[str, str] | None = None,
-        *,
         if_exists: Literal["fail", "skip"] = "fail",
     ) -> Table:
         """Create a new table in the catalog.
