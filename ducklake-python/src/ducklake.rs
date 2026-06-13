@@ -1,4 +1,4 @@
-use ducklake::{AuthorInfo, ConnectOptions, CreateOptions, Ducklake, SnapshotMetadata};
+use ducklake::{AuthorInfo, ConnectOptions, CreateOptions, DryRun, Ducklake, SnapshotMetadata};
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
@@ -170,5 +170,25 @@ impl PyDucklake {
 
     pub fn disconnect(&mut self, py: Python) {
         block_on(py, self.0.disconnect());
+    }
+
+    pub fn expire_snapshots(
+        &self,
+        py: Python,
+        versions: Option<Vec<i64>>,
+        older_than: Option<chrono::DateTime<chrono::Utc>>,
+        dry_run: bool,
+    ) -> PyResult<Vec<Wrap<SnapshotMetadata>>> {
+        let dry_run = if dry_run { DryRun::Yes } else { DryRun::No };
+        let result = if let Some(versions) = versions {
+            block_on(py, self.0.expire_snapshots_versions(&versions, dry_run))
+        } else if let Some(timestamp) = older_than {
+            block_on(py, self.0.expire_snapshots_older_than(timestamp, dry_run))
+        } else {
+            block_on(py, self.0.expire_snapshots(dry_run))
+        };
+        result
+            .map(|snapshots| snapshots.into_iter().map(Wrap).collect())
+            .map_err(error::into_pyerr)
     }
 }

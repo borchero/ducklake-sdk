@@ -66,6 +66,10 @@ impl DucklakePath {
         matches!(self, DucklakePath::Relative(_))
     }
 
+    pub fn is_absolute(&self) -> bool {
+        matches!(self, DucklakePath::Absolute(_))
+    }
+
     pub fn ensure_directory(&self) -> Self {
         match self {
             DucklakePath::Absolute(url) => {

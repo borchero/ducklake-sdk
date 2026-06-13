@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use sea_query::{Asterisk, ExprTrait, Query};
 
 use crate::spec::*;
-use crate::{DucklakeError, DucklakeResult, db, io, spec};
+use crate::{DucklakeError, DucklakeResult, Interval, db, io, spec};
 
 pub struct MetadataCache {
     pool: db::Pool,
@@ -134,6 +134,12 @@ impl Metadata {
             .get(spec::metadata::DATA_PATH)
             .map(|s| s.parse().unwrap())
             .unwrap_or_default()
+    }
+
+    pub fn expire_older_than(&self) -> Option<Interval> {
+        self.global
+            .get(spec::metadata::EXPIRE_OLDER_THAN)
+            .and_then(|s| literals::parse(s).ok().flatten())
     }
 
     pub fn table_metadata(&self, schema_id: Option<i64>, table_id: Option<i64>) -> TableMetadata {

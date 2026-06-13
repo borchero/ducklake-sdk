@@ -19,6 +19,7 @@ use sea_query::{
     SelectStatement,
     TableAlterStatement,
     TableCreateStatement,
+    TableDropStatement,
     TableRenameStatement,
     UpdateStatement,
 };
@@ -46,6 +47,16 @@ impl Dialect {
             Dialect::MySql => unimplemented!("data inlining is not yet implemented for MySQL"),
             #[cfg(feature = "sqlite")]
             Dialect::Sqlite => sqlite::column_type_for_data_type(data_type),
+        }
+    }
+
+    /// Whether this dialect supports a `RETURNING` clause.
+    pub fn supports_returning(&self) -> bool {
+        match self {
+            #[cfg(feature = "mysql")]
+            Dialect::MySql => false,
+            #[cfg(any(feature = "postgres", feature = "sqlite"))]
+            _ => true,
         }
     }
 
@@ -181,6 +192,7 @@ impl_sql_convertible_sqlx_binder!(InsertStatement);
 impl_sql_convertible_sqlx_binder!(UpdateStatement);
 impl_sql_convertible_sqlx_binder!(DeleteStatement);
 impl_sql_convertible_other!(TableCreateStatement);
+impl_sql_convertible_other!(TableDropStatement);
 impl_sql_convertible_other!(TableAlterStatement);
 impl_sql_convertible_other!(TableRenameStatement);
 

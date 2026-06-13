@@ -16,6 +16,36 @@ pub use types::uuid::UuidText;
 
 use crate::{DucklakeError, DucklakeResult};
 
+/* ------------------------------------------ DISPATCH ----------------------------------------- */
+
+/// Dispatches an operation over the concrete database backend behind a [`Pool`].
+macro_rules! dispatch_pool {
+    ($self:ident, $pool:ident => $call:expr) => {
+        match &$self.0 {
+            #[cfg(feature = "postgres")]
+            AnyPool::Postgres($pool) => $call,
+            #[cfg(feature = "mysql")]
+            AnyPool::MySql($pool) => $call,
+            #[cfg(feature = "sqlite")]
+            AnyPool::Sqlite($pool) => $call,
+        }
+    };
+}
+
+/// Dispatches an operation over the concrete database backend behind a [`Transaction`].
+macro_rules! dispatch_tx {
+    ($self:ident, $tx:ident => $call:expr) => {
+        match &mut $self.0 {
+            #[cfg(feature = "postgres")]
+            AnyTransaction::Postgres($tx) => $call,
+            #[cfg(feature = "mysql")]
+            AnyTransaction::MySql($tx) => $call,
+            #[cfg(feature = "sqlite")]
+            AnyTransaction::Sqlite($tx) => $call,
+        }
+    };
+}
+
 /* -------------------------------------------- POOL ------------------------------------------- */
 
 /// Single-connection pool to a dynamic database backend (Postgres, MySQL, SQLite).
@@ -92,14 +122,9 @@ impl Pool {
     }
 
     pub async fn close(&self) {
-        match &self.0 {
-            #[cfg(feature = "postgres")]
-            AnyPool::Postgres(pool) => pool.close().await,
-            #[cfg(feature = "mysql")]
-            AnyPool::MySql(pool) => pool.close().await,
-            #[cfg(feature = "sqlite")]
-            AnyPool::Sqlite(pool) => pool.close().await,
-        }
+        dispatch_pool!(self, pool => {
+            pool.close().await
+        })
     }
 
     pub async fn table_exists(&self, table_name: &str) -> DucklakeResult<bool> {
@@ -130,80 +155,47 @@ impl Pool {
         Ok(result.0)
     }
 
-    pub async fn fetch_one<O, Q>(&self, query: &Q) -> DucklakeResult<O>
+    pub async fn fetch_one<O>(&self, query: &impl SqlConvertible) -> DucklakeResult<O>
     where
         O: RowType,
-        Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
         log_sql(sql.as_str(), Some(&values));
-        let result = match &self.0 {
-            #[cfg(feature = "postgres")]
-            AnyPool::Postgres(pool) => sqlx::query_as_with(sql, values).fetch_one(pool).await?,
-            #[cfg(feature = "mysql")]
-            AnyPool::MySql(pool) => sqlx::query_as_with(sql, values).fetch_one(pool).await?,
-            #[cfg(feature = "sqlite")]
-            AnyPool::Sqlite(pool) => sqlx::query_as_with(sql, values).fetch_one(pool).await?,
-        };
+        let result = dispatch_pool!(self, pool => {
+            sqlx::query_as_with(sql, values).fetch_one(pool).await?
+        });
         Ok(result)
     }
 
-    pub async fn fetch_all<O, Q>(&self, query: &Q) -> DucklakeResult<Vec<O>>
+    pub async fn fetch_all<O>(&self, query: &impl SqlConvertible) -> DucklakeResult<Vec<O>>
     where
         O: RowType,
-        Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
         log_sql(sql.as_str(), Some(&values));
-        let result = match &self.0 {
-            #[cfg(feature = "postgres")]
-            AnyPool::Postgres(pool) => sqlx::query_as_with(sql, values).fetch_all(pool).await?,
-            #[cfg(feature = "mysql")]
-            AnyPool::MySql(pool) => sqlx::query_as_with(sql, values).fetch_all(pool).await?,
-            #[cfg(feature = "sqlite")]
-            AnyPool::Sqlite(pool) => sqlx::query_as_with(sql, values).fetch_all(pool).await?,
-        };
+        let result = dispatch_pool!(self, pool => {
+            sqlx::query_as_with(sql, values).fetch_all(pool).await?
+        });
         Ok(result)
     }
 
-    pub async fn fetch_optional<O, Q>(&self, query: &Q) -> DucklakeResult<Option<O>>
+    pub async fn fetch_optional<O>(&self, query: &impl SqlConvertible) -> DucklakeResult<Option<O>>
     where
         O: RowType,
-        Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
         log_sql(sql.as_str(), Some(&values));
-        let result = match &self.0 {
-            #[cfg(feature = "postgres")]
-            AnyPool::Postgres(pool) => {
-                sqlx::query_as_with(sql, values)
-                    .fetch_optional(pool)
-                    .await?
-            }
-            #[cfg(feature = "mysql")]
-            AnyPool::MySql(pool) => {
-                sqlx::query_as_with(sql, values)
-                    .fetch_optional(pool)
-                    .await?
-            }
-            #[cfg(feature = "sqlite")]
-            AnyPool::Sqlite(pool) => {
-                sqlx::query_as_with(sql, values)
-                    .fetch_optional(pool)
-                    .await?
-            }
-        };
+        let result = dispatch_pool!(self, pool => {
+            sqlx::query_as_with(sql, values).fetch_optional(pool).await?
+        });
         Ok(result)
     }
 
-    pub async fn fetch_all_arrow<Q>(
+    pub async fn fetch_all_arrow(
         &self,
-        query: &Q,
+        query: &impl SqlConvertible,
         schema: &Schema,
-    ) -> DucklakeResult<RecordBatch>
-    where
-        Q: SqlConvertible,
-    {
+    ) -> DucklakeResult<RecordBatch> {
         let (sql, values) = query.to_sql(self.dialect());
         log_sql(sql.as_str(), Some(&values));
         match &self.0 {
@@ -272,28 +264,15 @@ impl Transaction {
         }
     }
 
-    pub async fn execute<Q>(&mut self, query: &Q) -> DucklakeResult<()>
-    where
-        Q: SqlConvertible,
-    {
+    pub async fn execute(&mut self, query: &impl SqlConvertible) -> DucklakeResult<()> {
         let (sql, values) = query.to_sql(self.dialect());
         log_sql(sql.as_str(), Some(&values));
-        match &mut self.0 {
-            #[cfg(feature = "postgres")]
-            AnyTransaction::Postgres(tx) => {
-                sqlx::query_with(sql, values).execute(&mut **tx).await?;
-            }
-            #[cfg(feature = "mysql")]
-            AnyTransaction::MySql(tx) => {
-                sqlx::query_with(sql, values).execute(&mut **tx).await?;
-            }
-            #[cfg(feature = "sqlite")]
-            AnyTransaction::Sqlite(tx) => {
-                sqlx::query_with(sql, values).execute(&mut **tx).await?;
-            }
-        };
+        dispatch_tx!(self, tx => {
+            sqlx::query_with(sql, values).execute(&mut **tx).await?;
+        });
         Ok(())
     }
+
     /// Insert a single entity into its backing table.
     pub async fn insert_entity(
         &mut self,
@@ -389,33 +368,27 @@ impl Transaction {
         Ok(())
     }
 
-    pub async fn fetch_one<O, Q>(&mut self, query: &Q) -> DucklakeResult<O>
+    pub async fn fetch_one<O>(&mut self, query: &impl SqlConvertible) -> DucklakeResult<O>
     where
         O: RowType,
-        Q: SqlConvertible,
     {
         let (sql, values) = query.to_sql(self.dialect());
         log_sql(sql.as_str(), Some(&values));
-        let result = match &mut self.0 {
-            #[cfg(feature = "postgres")]
-            AnyTransaction::Postgres(pool) => {
-                sqlx::query_as_with(sql, values)
-                    .fetch_one(&mut **pool)
-                    .await?
-            }
-            #[cfg(feature = "mysql")]
-            AnyTransaction::MySql(pool) => {
-                sqlx::query_as_with(sql, values)
-                    .fetch_one(&mut **pool)
-                    .await?
-            }
-            #[cfg(feature = "sqlite")]
-            AnyTransaction::Sqlite(pool) => {
-                sqlx::query_as_with(sql, values)
-                    .fetch_one(&mut **pool)
-                    .await?
-            }
-        };
+        let result = dispatch_tx!(self, tx => {
+            sqlx::query_as_with(sql, values).fetch_one(&mut **tx).await?
+        });
+        Ok(result)
+    }
+
+    pub async fn fetch_all<O>(&mut self, query: &impl SqlConvertible) -> DucklakeResult<Vec<O>>
+    where
+        O: RowType,
+    {
+        let (sql, values) = query.to_sql(self.dialect());
+        log_sql(sql.as_str(), Some(&values));
+        let result = dispatch_tx!(self, tx => {
+            sqlx::query_as_with(sql, values).fetch_all(&mut **tx).await?
+        });
         Ok(result)
     }
 

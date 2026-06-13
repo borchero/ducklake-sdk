@@ -104,6 +104,13 @@ impl SnapshotCache {
             .or_insert(snapshot.clone());
         snapshot
     }
+
+    pub fn remove_snapshots(&self, snapshot_ids: &[i64]) {
+        let mut snapshots = self.snapshots.write().unwrap();
+        for snapshot_id in snapshot_ids {
+            snapshots.remove(snapshot_id);
+        }
+    }
 }
 
 /* --------------------------------------------------------------------------------------------- */

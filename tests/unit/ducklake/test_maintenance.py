@@ -63,7 +63,7 @@ def test_expire_snapshots_dry_run(ducklake: dl.Ducklake, random_table_name: str)
 
     # Assert
     assert len(result) == snapshots_before - 1
-    assert latest_snapshot_before not in result
+    assert latest_snapshot_before not in [snapshot.id for snapshot in result]
     assert len(ducklake.list_snapshots()) == snapshots_before
 
 
@@ -83,7 +83,7 @@ def test_expire_snapshots(ducklake: dl.Ducklake, random_table_name: str) -> None
 
     # Assert
     assert len(result) == snapshots_before - 1
-    assert latest_snapshot_before not in result
+    assert latest_snapshot_before not in [snapshot.id for snapshot in result]
     assert len(ducklake.list_snapshots()) == 1
     assert ducklake.get_latest_snapshot().id == latest_snapshot_before
 
