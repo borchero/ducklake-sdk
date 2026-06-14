@@ -73,6 +73,7 @@ const DEFAULT_PARQUET_VERSION: i64 = 1;
 const DEFAULT_HIVE_FILE_PATTERN: bool = true;
 const DEFAULT_REWRITE_DELETE_THRESHOLD: f64 = 0.95;
 const DEFAULT_AUTO_COMPACT: bool = true;
+const DEFAULT_DELETE_OLDER_THAN: &str = "2 days";
 
 /* -------------------------------------------- LOAD ------------------------------------------- */
 
@@ -140,6 +141,19 @@ impl Metadata {
         self.global
             .get(spec::metadata::EXPIRE_OLDER_THAN)
             .and_then(|s| literals::parse(s).ok().flatten())
+    }
+
+    pub(crate) fn delete_older_than(&self) -> Interval {
+        self.global
+            .get(spec::metadata::DELETE_OLDER_THAN)
+            .and_then(|s| literals::parse(s).ok().flatten())
+            .unwrap_or_else(|| {
+                // SAFETY: `DEFAULT_DELETE_OLDER_THAN` is a valid interval literal.
+                literals::parse(DEFAULT_DELETE_OLDER_THAN)
+                    .ok()
+                    .flatten()
+                    .unwrap()
+            })
     }
 
     pub(crate) fn table_metadata(

@@ -425,39 +425,23 @@ class Ducklake:
     ) -> list[str]:
         """Delete files that have been scheduled for deletion.
 
-        Dispatches to `ducklake_cleanup_old_files`. Files are only scheduled for deletion when
-        the snapshots referencing them are expired (see :meth:`expire_snapshots`).
+        Files are only scheduled for deletion when the snapshots referencing them are expired
+        (see :meth:`expire_snapshots`).
+
+        If neither `cleanup_all` nor `older_than` is provided, files are deleted according to the
+        `"delete_older_than"` metadata option (defaulting to two days).
 
         Args:
             cleanup_all: If `True`, delete all files scheduled for deletion regardless of age.
             older_than: If provided, only delete files scheduled for deletion before this
                 timestamp.
-            dry_run: If `True`, no files are actually deleted.
+            dry_run: If `True`, no files are actually deleted and the returned paths merely
+                indicate what would be deleted.
 
         Returns:
             The paths that were deleted, or would be deleted when `dry_run` is `True`.
-
-        Note:
-            This requires :mod:`duckdb` to be installed.
         """
-        from .duckdb.utils import (
-            build_named_query_params,
-            fetch_result_dicts,
-            parse_cleanup_path_result,
-        )
-
-        params, args = build_named_query_params(
-            cleanup_all=cleanup_all if cleanup_all else None,
-            older_than=older_than,
-            dry_run=dry_run if dry_run else None,
-        )
-        return parse_cleanup_path_result(
-            fetch_result_dicts(
-                self._duckdb_connection,
-                f"CALL ducklake_cleanup_old_files('my_ducklake'{params});",
-                args,
-            )
-        )
+        return self._pyducklake.cleanup_old_files(cleanup_all, older_than, dry_run)
 
     def delete_orphaned_files(
         self,

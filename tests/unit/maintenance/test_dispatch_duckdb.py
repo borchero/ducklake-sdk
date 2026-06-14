@@ -48,27 +48,6 @@ def test_merge_adjacent_files_skipped(ducklake: dl.Ducklake, random_table_name: 
     assert len(table.scan().data_files) == 3
 
 
-def test_cleanup_old_files(ducklake: dl.Ducklake, random_table_name: str) -> None:
-    # Arrange
-    table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    table.set_metadata(data_inlining_row_limit=0)
-    for i in range(3):
-        table.write_polars(pl.DataFrame({"x": [i]}))
-    ducklake.merge_adjacent_files(min_file_size=0)
-    ducklake.expire_snapshots(older_than=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1))
-    assert len(table.scan().data_files) == 1  # the compacted file is the only live one
-
-    # Act
-    dry_run_result = ducklake.cleanup_old_files(cleanup_all=True, dry_run=True)
-    result = ducklake.cleanup_old_files(cleanup_all=True)
-
-    # Assert
-    assert dry_run_result
-    assert set(result) == set(dry_run_result)
-    assert table.read_arrow().num_rows == 3
-    assert len(table.scan().data_files) == 1
-
-
 @pytest.mark.skip_config(
     storage="s3", reason="Orphaned-file cleanup test requires direct filesystem access."
 )
