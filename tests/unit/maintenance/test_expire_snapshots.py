@@ -64,8 +64,8 @@ def test_no_expire_latest_snapshot(ducklake: dl.Ducklake, random_table_name: str
 def test_expire_global_metadata(ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     ducklake.set_metadata(expire_older_than="00:00:00.001")
-    ducklake.create_table(random_table_name, {"x": dl.Int64()})
     time.sleep(0.01)
+    ducklake.create_table(random_table_name, {"x": dl.Int64()})
     assert len(ducklake.list_snapshots()) == 2
     assert ducklake.get_latest_snapshot().id == 1
 
