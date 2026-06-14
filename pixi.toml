@@ -183,11 +183,11 @@ default = ["build-py", "dev", "ducklake", "ducklake-v1-0", "install-py", "lint",
 
 build = { features = ["build-py", "install-py"], no-default-feature = true }
 docs = { features = ["docs-py", "install-py", "optionals"] }
-test-py310 = ["install-py", "optionals", "py310", "test-py", "test-rs"]
-test-py311 = ["install-py", "optionals", "py311", "test-py", "test-rs"]
-test-py312 = ["install-py", "optionals", "py312", "test-py", "test-rs"]
-test-py313 = ["install-py", "optionals", "py313", "test-py", "test-rs"]
-test-py314 = ["install-py", "optionals", "py314", "test-py", "test-rs"]
+test-py310 = ["ducklake", "ducklake-v1-0", "install-py", "optionals", "py310", "test-py", "test-rs"]
+test-py311 = ["ducklake", "ducklake-v1-0", "install-py", "optionals", "py311", "test-py", "test-rs"]
+test-py312 = ["ducklake", "ducklake-v1-0", "install-py", "optionals", "py312", "test-py", "test-rs"]
+test-py313 = ["ducklake", "ducklake-v1-0", "install-py", "optionals", "py313", "test-py", "test-rs"]
+test-py314 = ["ducklake", "ducklake-v1-0", "install-py", "optionals", "py314", "test-py", "test-rs"]
 test-py314-minimal = ["install-py", "py314", "test-py-minimal"]
 test-rs = { features = ["test-rs"], no-default-feature = true }
 
