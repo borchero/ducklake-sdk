@@ -1,5 +1,6 @@
 import datetime as dt
 from pathlib import Path
+from urllib.parse import urlparse
 
 import polars as pl
 import pytest
@@ -35,17 +36,19 @@ def orphan_file(ducklake: dl.Ducklake, random_table_name: str, storage_path: str
 
 def test_delete_orphaned_files(ducklake: dl.Ducklake, orphan_file: Path) -> None:
     # Arrange
-    live_files = {Path(file.path) for file in ducklake.list_tables()[0].scan().data_files}
+    table = ducklake.list_tables()[0]
+    live_files = {Path(urlparse(file.path).path) for file in table.scan().data_files}
 
     # Act
     dry_run_result = ducklake.delete_orphaned_files(cleanup_all=True, dry_run=True)
     result = ducklake.delete_orphaned_files(cleanup_all=True)
 
-    # Assert
+    # Assert: the orphan is deleted while the live data file is preserved
     assert orphan_file in {Path(path) for path in dry_run_result}
     assert orphan_file in {Path(path) for path in result}
     assert not orphan_file.exists()
-    assert live_files.isdisjoint({Path(path) for path in result})
+    assert len(table.scan().data_files) == 1
+    assert all(path.exists() for path in live_files)
 
 
 def test_delete_orphaned_files_dry_run_keeps_files(
