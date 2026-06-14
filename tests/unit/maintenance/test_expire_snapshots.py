@@ -9,8 +9,8 @@ import ducklake as dl
 def test_expire_snapshots_dry_run(ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    table.write_polars(pl.DataFrame({"x": [1]}))
-    table.write_polars(pl.DataFrame({"x": [2]}))
+    table.sink_polars(pl.LazyFrame({"x": [1]}))
+    table.sink_polars(pl.LazyFrame({"x": [2]}))
     snapshots_before = len(ducklake.list_snapshots())
     latest_snapshot_before = ducklake.get_latest_snapshot().id
 
@@ -28,8 +28,8 @@ def test_expire_snapshots_dry_run(ducklake: dl.Ducklake, random_table_name: str)
 def test_expire_snapshots(ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    table.write_polars(pl.DataFrame({"x": [1]}))
-    table.write_polars(pl.DataFrame({"x": [2]}))
+    table.sink_polars(pl.LazyFrame({"x": [1]}))
+    table.sink_polars(pl.LazyFrame({"x": [2]}))
     snapshots_before = ducklake.list_snapshots()
     latest_snapshot_before = ducklake.get_latest_snapshot().id
     assert len(snapshots_before) > 1
