@@ -123,6 +123,7 @@ _IGNORED_COLUMNS: dict[str, list[str]] = {
     "ducklake_data_file": ["path", "file_order", "file_size_bytes", "footer_size"],
     "ducklake_file_column_stats": ["column_size_bytes", "value_count"],
     "ducklake_table_stats": ["file_size_bytes"],
+    "ducklake_files_scheduled_for_deletion": ["path", "schedule_start"],
 }
 _CONDITIONAL_IGNORED_COLUMNS: dict[str, dict[tuple[str, Any], list[str]]] = {
     "ducklake_metadata": {

@@ -20,6 +20,7 @@ def test_match_reference_expire_snapshot_versions(
     second_table.delete()  # snapshot 4
     first_table.sink_polars(pl.LazyFrame({"x": range(100)}))  # snapshot 5
     first_table.delete()  # snapshot 6
+    ducklake.create_table("third", schema={"x": dl.Int64()})  # snapshot 7
 
     reference_duckdb_connection.execute("CREATE TABLE first (x BIGINT)")
     reference_duckdb_connection.execute("CREATE TABLE second (x BIGINT)")
@@ -27,11 +28,12 @@ def test_match_reference_expire_snapshot_versions(
     reference_duckdb_connection.execute("DROP TABLE second")
     reference_duckdb_connection.execute("INSERT INTO first SELECT * FROM range(100)")
     reference_duckdb_connection.execute("DROP TABLE first")
+    reference_duckdb_connection.execute("CREATE TABLE third (x BIGINT)")
 
     # Act
-    ducklake.expire_snapshots(versions=[2, 3, 4])
+    ducklake.expire_snapshots(versions=[2, 3, 4, 5])
     reference_duckdb_connection.execute(
-        "CALL ducklake_expire_snapshots('my_ducklake', versions => [2, 3, 4])"
+        "CALL ducklake_expire_snapshots('my_ducklake', versions => [2, 3, 4, 5])"
     )
 
     # Assert

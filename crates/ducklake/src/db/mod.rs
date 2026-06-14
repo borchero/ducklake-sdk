@@ -410,6 +410,19 @@ impl Transaction {
         };
         Ok(())
     }
+
+    pub(crate) async fn rollback(self) -> DucklakeResult<()> {
+        log_sql("ROLLBACK", None);
+        match self.0 {
+            #[cfg(feature = "postgres")]
+            AnyTransaction::Postgres(tx) => tx.rollback().await?,
+            #[cfg(feature = "mysql")]
+            AnyTransaction::MySql(tx) => tx.rollback().await?,
+            #[cfg(feature = "sqlite")]
+            AnyTransaction::Sqlite(tx) => tx.rollback().await?,
+        };
+        Ok(())
+    }
 }
 
 /* ------------------------------------------- UTILS ------------------------------------------- */

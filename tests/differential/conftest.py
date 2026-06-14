@@ -18,7 +18,7 @@ def reference_catalog_url(catalog: str, tmp_path: Path) -> Iterator[str]:
 
 @pytest.fixture()
 def reference_duckdb_connection(
-    catalog: str, reference_catalog_url: str, storage: str, tmp_path: Path
+    reference_catalog_url: str, storage: str, tmp_path: Path
 ) -> Iterator[duckdb.DuckDBPyConnection]:
     with make_storage_path(storage, tmp_path) as storage_path:
         args = _sanitize_url(reference_catalog_url)
