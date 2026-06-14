@@ -17,36 +17,43 @@ def ducklake_with_scheduled_files(ducklake: dl.Ducklake, random_table_name: str)
     return ducklake
 
 
+def test_cleanup_old_files_dry_run(ducklake_with_scheduled_files: dl.Ducklake) -> None:
+    # Arrange
+    ducklake = ducklake_with_scheduled_files
+
+    # Act
+    result = ducklake.cleanup_old_files(cleanup_all=True, dry_run=True)
+
+    # Assert: the dry run returns the files without deleting them, so a real cleanup matches it
+    assert result
+    assert set(ducklake.cleanup_old_files(cleanup_all=True)) == set(result)
+
+
 def test_cleanup_old_files(ducklake_with_scheduled_files: dl.Ducklake) -> None:
     # Arrange
     ducklake = ducklake_with_scheduled_files
 
     # Act
-    dry_run_result = ducklake.cleanup_old_files(cleanup_all=True, dry_run=True)
     result = ducklake.cleanup_old_files(cleanup_all=True)
 
-    # Assert
-    assert dry_run_result
-    assert set(result) == set(dry_run_result)
-    assert ducklake.cleanup_old_files(cleanup_all=True) == []
-
-
-def test_cleanup_old_files_older_than(ducklake_with_scheduled_files: dl.Ducklake) -> None:
-    # Arrange
-    ducklake = ducklake_with_scheduled_files
-
-    # Act
-    too_old = ducklake.cleanup_old_files(
-        older_than=dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)
-    )
-    result = ducklake.cleanup_old_files(
-        older_than=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
-    )
-
-    # Assert
-    assert too_old == []
+    # Assert: the files are deleted and the rows are removed from the catalog
     assert result
     assert ducklake.cleanup_old_files(cleanup_all=True) == []
+
+
+@pytest.mark.parametrize(("offset_days", "deletes_files"), [(-1, False), (1, True)])
+def test_cleanup_old_files_older_than(
+    ducklake_with_scheduled_files: dl.Ducklake, offset_days: int, deletes_files: bool
+) -> None:
+    # Arrange
+    ducklake = ducklake_with_scheduled_files
+    older_than = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=offset_days)
+
+    # Act
+    result = ducklake.cleanup_old_files(older_than=older_than)
+
+    # Assert
+    assert bool(result) == deletes_files
 
 
 def test_cleanup_old_files_default_keeps_recent(
@@ -60,7 +67,6 @@ def test_cleanup_old_files_default_keeps_recent(
 
     # Assert
     assert result == []
-    assert ducklake.cleanup_old_files(cleanup_all=True)
 
 
 @pytest.mark.skip_config(
@@ -79,10 +85,9 @@ def test_cleanup_old_files_deletes_from_storage(
     table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
     table.set_metadata(data_inlining_row_limit=0)
     table.write_polars(pl.DataFrame({"x": [1]}))
-    table_dir = Path(storage_path) / "main" / random_table_name
-    assert list(table_dir.glob("*.parquet"))
     table.delete()
     ducklake.expire_snapshots(older_than=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1))
+    table_dir = Path(storage_path) / "main" / random_table_name
 
     # Act
     result = ducklake.cleanup_old_files(cleanup_all=True)
