@@ -17,7 +17,7 @@ pub(crate) struct Schema {
 }
 
 impl Schema {
-    pub fn columns_by_id(&self) -> HashMap<i64, &Column> {
+    pub(crate) fn columns_by_id(&self) -> HashMap<i64, &Column> {
         fn walk<'a>(column: &'a Column, result: &mut HashMap<i64, &'a Column>) {
             if let Some(id) = column.field_id {
                 result.insert(id, column);

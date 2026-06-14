@@ -6,14 +6,14 @@ use crate::catalog::typedefs::CatalogDataType;
 use crate::catalog::{ArenaIdx, Catalog, CatalogColumn, CatalogTable, ColumnRef, TableRef};
 use crate::{DucklakeError, DucklakeResult};
 
-pub struct ColumnView<'a, C = &'a Catalog> {
+pub(crate) struct ColumnView<'a, C = &'a Catalog> {
     catalog: C,
     table_ref: TableRef,
     column_arena_idx: ArenaIdx,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-pub type ColumnViewMut<'a> = ColumnView<'a, &'a mut Catalog>;
+pub(crate) type ColumnViewMut<'a> = ColumnView<'a, &'a mut Catalog>;
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                              INIT                                             */
@@ -31,7 +31,7 @@ impl<'a, C: Deref<Target = Catalog>> ColumnView<'a, C> {
 }
 
 impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
-    pub fn column<R: TryIntoRef<ColumnRef, TableView<'a, C>>>(
+    pub(crate) fn column<R: TryIntoRef<ColumnRef, TableView<'a, C>>>(
         &self,
         column_ref: R,
     ) -> Result<ColumnView<'_, &Catalog>, R::Error> {
@@ -42,7 +42,7 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
 }
 
 impl<'a> TableViewMut<'a> {
-    pub fn column_mut<R: TryIntoRef<ColumnRef, TableViewMut<'a>>>(
+    pub(crate) fn column_mut<R: TryIntoRef<ColumnRef, TableViewMut<'a>>>(
         &mut self,
         column_ref: R,
     ) -> Result<ColumnViewMut<'_>, R::Error> {
@@ -120,28 +120,28 @@ impl<'a> ColumnViewMut<'a> {
 /* ----------------------------------------- ACCESSORS ----------------------------------------- */
 
 impl<'a, C: Deref<Target = Catalog>> ColumnView<'a, C> {
-    pub fn ref_(&self) -> ColumnRef {
+    pub(crate) fn ref_(&self) -> ColumnRef {
         ColumnRef {
             table_ref: self.table_ref,
             column_idx: self.column_arena_idx,
         }
     }
 
-    pub fn id(&self) -> i64 {
+    pub(crate) fn id(&self) -> i64 {
         self.inner().id
     }
 
-    pub fn info(&self) -> crate::Column {
+    pub(crate) fn info(&self) -> crate::Column {
         self.table()
             .columns
             .schema_column_from_arena_index(self.column_arena_idx)
     }
 
-    pub fn nullable(&self) -> bool {
+    pub(crate) fn nullable(&self) -> bool {
         self.inner().nullable
     }
 
-    pub fn parent_ref(&self) -> Option<ColumnRef> {
+    pub(crate) fn parent_ref(&self) -> Option<ColumnRef> {
         self.inner()
             .parent_column
             .as_ref()
@@ -152,37 +152,37 @@ impl<'a, C: Deref<Target = Catalog>> ColumnView<'a, C> {
 /* ------------------------------------------ MUTATION ----------------------------------------- */
 
 impl<'a> ColumnViewMut<'a> {
-    pub fn update_primitive_data_type(&mut self, data_type: crate::DataType) {
+    pub(crate) fn update_primitive_data_type(&mut self, data_type: crate::DataType) {
         self.inner_mut().dtype = CatalogDataType::Primitive(data_type);
     }
 
-    pub fn update_default_value(&mut self, default_value: crate::ColumnDefault) {
+    pub(crate) fn update_default_value(&mut self, default_value: crate::ColumnDefault) {
         self.inner_mut().default_value = default_value;
     }
 
-    pub fn update_nullability(&mut self, nullable: bool) {
+    pub(crate) fn update_nullability(&mut self, nullable: bool) {
         self.inner_mut().nullable = nullable;
     }
 
-    pub fn rename(&mut self, new_name: &str) -> DucklakeResult<()> {
+    pub(crate) fn rename(&mut self, new_name: &str) -> DucklakeResult<()> {
         let column_idx = self.column_arena_idx;
         let table = self.table_mut();
         table.columns.rename_column(column_idx, new_name)?;
         Ok(())
     }
 
-    pub fn add_tag(&mut self, tag: crate::Tag) {
+    pub(crate) fn add_tag(&mut self, tag: crate::Tag) {
         let tags = &mut self.inner_mut().tags;
         super::upsert_tag(tags, tag);
     }
 
-    pub fn remove_tag(&mut self, key: &str) -> DucklakeResult<()> {
+    pub(crate) fn remove_tag(&mut self, key: &str) -> DucklakeResult<()> {
         let tags = &mut self.inner_mut().tags;
         super::remove_tag(tags, key)?;
         Ok(())
     }
 
-    pub fn remove(&mut self) -> DucklakeResult<Vec<ColumnRef>> {
+    pub(crate) fn remove(&mut self) -> DucklakeResult<Vec<ColumnRef>> {
         let column_idx = self.column_arena_idx;
         let table = self.table_mut();
         if let Some(partition) = table.partition.as_ref()

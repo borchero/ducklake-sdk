@@ -11,14 +11,14 @@ use crate::error;
 
 /// Convert a list of columns to an object implementing the Arrow PyCapsule.
 #[pyfunction]
-pub fn schema_to_arrow(columns: Vec<Wrap<ducklake::Column>>) -> PyResult<ArrowPySchema> {
+pub(crate) fn schema_to_arrow(columns: Vec<Wrap<ducklake::Column>>) -> PyResult<ArrowPySchema> {
     let fields: Vec<_> = columns.into_iter().map(|c| c.0.to_arrow_field()).collect();
     let schema = Schema::new(fields);
     Ok(Arc::new(schema).into())
 }
 
 #[pyfunction]
-pub fn schema_from_arrow(schema: ArrowPySchema) -> PyResult<Vec<Wrap<ducklake::Column>>> {
+pub(crate) fn schema_from_arrow(schema: ArrowPySchema) -> PyResult<Vec<Wrap<ducklake::Column>>> {
     let schema = schema.into_inner();
     let columns = schema
         .fields()
@@ -31,7 +31,7 @@ pub fn schema_from_arrow(schema: ArrowPySchema) -> PyResult<Vec<Wrap<ducklake::C
 
 /// Extract a mapping from parquet field IDs to column names from an Arrow schema.
 #[pyfunction]
-pub fn arrow_schema_field_ids(schema: ArrowPySchema) -> PyResult<HashMap<i64, String>> {
+pub(crate) fn arrow_schema_field_ids(schema: ArrowPySchema) -> PyResult<HashMap<i64, String>> {
     let schema = schema.into_inner();
     let mut result = HashMap::new();
     for field in schema.fields() {

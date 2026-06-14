@@ -4,7 +4,7 @@ mod primitive;
 
 use arrow_array::ArrayRef;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
-pub use factory::make_array_appender;
+pub(in crate::db) use factory::make_array_appender;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -13,11 +13,11 @@ use crate::primitives::{Interval, TimeWithTimezone};
 
 /* ---------------------------------- STEP 1: DATABASE -> RUST --------------------------------- */
 
-pub trait DecodableRow: sqlx::Row {
+pub(in crate::db) trait DecodableRow: sqlx::Row {
     type Decoder: TypeDecoder<Row = Self>;
 }
 
-pub trait TypeDecoder: Send + Sync + 'static {
+pub(in crate::db) trait TypeDecoder: Send + Sync + 'static {
     type Row: sqlx::Row;
 
     fn decode_bool(row: &Self::Row, name: &str) -> DucklakeResult<Option<bool>>;
@@ -52,7 +52,7 @@ pub trait TypeDecoder: Send + Sync + 'static {
 
 /* ----------------------------------- STEP 2: RUST -> ARROW ----------------------------------- */
 
-pub trait ArrayAppender<D: TypeDecoder>: Send + Sync {
+pub(in crate::db) trait ArrayAppender<D: TypeDecoder>: Send + Sync {
     fn append(&mut self, row: &D::Row, name: &str) -> DucklakeResult<()>;
     fn append_text(&mut self, text: &str) -> DucklakeResult<()>;
     fn append_null(&mut self);

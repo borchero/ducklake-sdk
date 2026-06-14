@@ -2,7 +2,7 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 
-pub fn ducklake_table_impl(input: TokenStream) -> TokenStream {
+pub(crate) fn ducklake_table_impl(input: TokenStream) -> TokenStream {
     let mut ast = syn::parse(input).unwrap();
     let ducklake_table = ducklake_table_blocks(&mut ast);
     let result = quote! {
@@ -38,15 +38,15 @@ fn ducklake_table_blocks(ast: &mut syn::DeriveInput) -> proc_macro2::TokenStream
         #visibility mod #snake_name {
             #[derive(sea_query::Iden)]
             #[iden = #snake_name_str]
-            pub struct Table;
+            #visibility struct Table;
 
             #[derive(sea_query::Iden, strum::EnumIter, Clone, Copy, PartialEq, Eq)]
-            pub enum Column {
+            #visibility enum Column {
                 #(#column_camel_names,)*
             }
 
             impl Column {
-                pub fn col(self) -> sea_query::Expr {
+                #visibility fn col(self) -> sea_query::Expr {
                     sea_query::Expr::col(self)
                 }
             }

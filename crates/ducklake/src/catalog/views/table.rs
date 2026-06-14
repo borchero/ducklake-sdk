@@ -12,13 +12,13 @@ use crate::catalog::{
 };
 use crate::{DucklakeError, DucklakeResult, db, io};
 
-pub struct TableView<'a, C = &'a Catalog> {
+pub(crate) struct TableView<'a, C = &'a Catalog> {
     pub(super) catalog: C,
     pub(super) arena_idx: ArenaIdx,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-pub type TableViewMut<'a> = TableView<'a, &'a mut Catalog>;
+pub(crate) type TableViewMut<'a> = TableView<'a, &'a mut Catalog>;
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                              INIT                                             */
@@ -35,12 +35,15 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
 }
 
 impl Catalog {
-    pub fn table<R: TryIntoRef<TableRef>>(&self, table_ref: R) -> Result<TableView<'_>, R::Error> {
+    pub(crate) fn table<R: TryIntoRef<TableRef>>(
+        &self,
+        table_ref: R,
+    ) -> Result<TableView<'_>, R::Error> {
         let table_ref = table_ref.try_into_ref(self)?;
         Ok(TableView::new(self, table_ref))
     }
 
-    pub fn table_mut<R: TryIntoRef<TableRef>>(
+    pub(crate) fn table_mut<R: TryIntoRef<TableRef>>(
         &mut self,
         table_ref: R,
     ) -> Result<TableViewMut<'_>, R::Error> {
@@ -86,7 +89,7 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
         self.catalog.table_by_idx(self.arena_idx)
     }
 
-    pub fn parent_schema(&self) -> super::schema::SchemaView<'_> {
+    pub(crate) fn parent_schema(&self) -> super::schema::SchemaView<'_> {
         self.catalog.schema(&self.name().schema).unwrap()
     }
 }
@@ -96,7 +99,7 @@ impl<'a> TableViewMut<'a> {
         self.catalog.table_by_idx_mut(self.arena_idx)
     }
 
-    pub fn parent_schema_mut(&mut self) -> super::schema::SchemaViewMut<'_> {
+    pub(crate) fn parent_schema_mut(&mut self) -> super::schema::SchemaViewMut<'_> {
         let schema_view = self.catalog.schema(&self.name().schema).unwrap();
         self.catalog.schema_mut(schema_view.ref_()).unwrap()
     }
@@ -115,19 +118,19 @@ impl Catalog {
 /* ----------------------------------------- ACCESSORS ----------------------------------------- */
 
 impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
-    pub fn ref_(&self) -> TableRef {
+    pub(crate) fn ref_(&self) -> TableRef {
         self.arena_idx.into()
     }
 
-    pub fn id(&self) -> Option<i64> {
+    pub(crate) fn id(&self) -> Option<i64> {
         self.inner().id
     }
 
-    pub fn partition_id(&self) -> Option<i64> {
+    pub(crate) fn partition_id(&self) -> Option<i64> {
         self.inner().partition.as_ref().and_then(|p| p.id)
     }
 
-    pub fn info(&self) -> crate::TableInfo {
+    pub(crate) fn info(&self) -> crate::TableInfo {
         crate::TableInfo {
             name: self.name().clone(),
             schema: self.schema(),
@@ -136,19 +139,19 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
         }
     }
 
-    pub fn name(&self) -> &crate::TableName {
+    pub(crate) fn name(&self) -> &crate::TableName {
         &self.inner().name
     }
 
-    pub fn schema(&self) -> crate::Schema {
+    pub(crate) fn schema(&self) -> crate::Schema {
         crate::Schema::from(&self.inner().columns)
     }
 
-    pub fn column_data_types(&self) -> HashMap<i64, crate::DataType> {
+    pub(crate) fn column_data_types(&self) -> HashMap<i64, crate::DataType> {
         HashMap::from(&self.inner().columns)
     }
 
-    pub fn partitioning(&self) -> Option<crate::Partition> {
+    pub(crate) fn partitioning(&self) -> Option<crate::Partition> {
         let table = self.inner();
         table
             .partition
@@ -156,12 +159,12 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
             .map(|p| p.into_partition(&table.columns))
     }
 
-    pub fn data_path(&self, root_data_path: &io::DucklakePath) -> io::DucklakePath {
+    pub(crate) fn data_path(&self, root_data_path: &io::DucklakePath) -> io::DucklakePath {
         let data_path = root_data_path.join(&self.parent_schema().inner().path);
         data_path.join(&self.inner().path)
     }
 
-    pub fn tags(&self) -> Vec<crate::Tag> {
+    pub(crate) fn tags(&self) -> Vec<crate::Tag> {
         self.inner().tags.clone()
     }
 }
@@ -169,7 +172,7 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
 /* ------------------------------------------ MUTATION ----------------------------------------- */
 
 impl<'a> TableViewMut<'a> {
-    pub fn resolve_id(&mut self, id: i64) {
+    pub(crate) fn resolve_id(&mut self, id: i64) {
         let table = self.inner_mut();
         match table.id {
             None => {
@@ -180,7 +183,7 @@ impl<'a> TableViewMut<'a> {
         }
     }
 
-    pub fn resolve_partition_id(&mut self, id: i64) {
+    pub(crate) fn resolve_partition_id(&mut self, id: i64) {
         let table = self.inner_mut();
         let partition = table
             .partition
@@ -194,7 +197,7 @@ impl<'a> TableViewMut<'a> {
         }
     }
 
-    pub async fn ensure_next_column_id(&mut self, pool: &db::Pool) -> DucklakeResult<()> {
+    pub(crate) async fn ensure_next_column_id(&mut self, pool: &db::Pool) -> DucklakeResult<()> {
         if self.inner().columns.next_column_id.is_none() {
             let next_column_id = self
                 .catalog
@@ -205,7 +208,7 @@ impl<'a> TableViewMut<'a> {
         Ok(())
     }
 
-    pub fn rename(&mut self, new_name: &str) -> DucklakeResult<()> {
+    pub(crate) fn rename(&mut self, new_name: &str) -> DucklakeResult<()> {
         let name = self.name().clone();
 
         // Ensure that the new name does not already exist
@@ -233,7 +236,7 @@ impl<'a> TableViewMut<'a> {
         Ok(())
     }
 
-    pub fn add_column(
+    pub(crate) fn add_column(
         &mut self,
         path: &[String],
         column: crate::Column,
@@ -253,7 +256,7 @@ impl<'a> TableViewMut<'a> {
         Ok((parent_ref, column_refs))
     }
 
-    pub fn update_partitioning(
+    pub(crate) fn update_partitioning(
         &mut self,
         partitioning: Option<crate::Partition>,
     ) -> DucklakeResult<Option<Vec<ColumnRef>>> {
@@ -275,19 +278,19 @@ impl<'a> TableViewMut<'a> {
         Ok(partition_refs)
     }
 
-    pub fn add_tag(&mut self, tag: crate::Tag) {
+    pub(crate) fn add_tag(&mut self, tag: crate::Tag) {
         let tags = &mut self.inner_mut().tags;
         super::upsert_tag(tags, tag);
     }
 
-    pub fn remove_tag(&mut self, key: &str) -> DucklakeResult<()> {
+    pub(crate) fn remove_tag(&mut self, key: &str) -> DucklakeResult<()> {
         let tags = &mut self.inner_mut().tags;
         super::remove_tag(tags, key)?;
         Ok(())
     }
 
     /// Delete the table with the given identifier.
-    pub fn delete(&mut self) {
+    pub(crate) fn delete(&mut self) {
         let table = self.inner_mut();
         let name = table.name.name.clone();
         self.parent_schema_mut().inner_mut().tables.remove(&name);

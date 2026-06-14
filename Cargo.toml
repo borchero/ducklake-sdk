@@ -40,3 +40,7 @@ ducklake-macros = { path = "crates/ducklake-macros", version = "0.0.0" }
 codegen-units = 1
 lto = true
 strip = "symbols"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+unreachable_pub = "deny"

@@ -88,7 +88,7 @@ async fn set_version(tx: &mut db::Transaction, version: &str) -> DucklakeResult<
 /* ----------------------------------------- MIGRATION ----------------------------------------- */
 
 /// Migrate the catalog database to the most up-to-date DuckLake schema.
-pub async fn migrate_catalog(pool: &db::Pool, current_version: &str) -> DucklakeResult<()> {
+pub(crate) async fn migrate_catalog(pool: &db::Pool, current_version: &str) -> DucklakeResult<()> {
     let current_semver = current_version.parse::<DucklakeVersion>()?;
     for migration in Migrations::iter() {
         let migration_semver = migration.version().parse::<DucklakeVersion>()?;

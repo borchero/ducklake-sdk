@@ -64,7 +64,7 @@ impl Parse for VisibilityIfArgs {
     }
 }
 
-pub fn visibility_if_impl(args: TokenStream, input: TokenStream) -> TokenStream {
+pub(crate) fn visibility_if_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as VisibilityIfArgs);
     let func = parse_macro_input!(input as ItemFn);
 

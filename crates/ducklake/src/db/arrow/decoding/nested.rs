@@ -10,12 +10,12 @@ use crate::spec::literals;
 
 /* -------------------------------------------- LIST ------------------------------------------- */
 
-pub struct LargeListArrayAppender<D: TypeDecoder> {
+pub(super) struct LargeListArrayAppender<D: TypeDecoder> {
     builder: arrow_builder::LargeListBuilder<ColumnArrayBuilder<D>>,
 }
 
 impl<D: TypeDecoder> LargeListArrayAppender<D> {
-    pub fn new(field: arrow_schema::FieldRef) -> DucklakeResult<Self> {
+    pub(super) fn new(field: arrow_schema::FieldRef) -> DucklakeResult<Self> {
         let inner_builder = ColumnArrayBuilder::new(factory::make_array_appender::<D>(&field)?);
         let builder = Self {
             builder: arrow_builder::LargeListBuilder::new(inner_builder).with_field(field),
@@ -57,14 +57,14 @@ impl<D: TypeDecoder> ArrayAppender<D> for LargeListArrayAppender<D> {
 
 /* ------------------------------------------- STRUCT ------------------------------------------ */
 
-pub struct StructArrayAppender<D: TypeDecoder> {
+pub(super) struct StructArrayAppender<D: TypeDecoder> {
     builder: arrow_builder::StructBuilder,
     field_indices: HashMap<String, usize>,
     _marker: std::marker::PhantomData<D>,
 }
 
 impl<D: TypeDecoder> StructArrayAppender<D> {
-    pub fn new(fields: &arrow_schema::Fields) -> DucklakeResult<Self> {
+    pub(super) fn new(fields: &arrow_schema::Fields) -> DucklakeResult<Self> {
         let field_indices = fields
             .iter()
             .enumerate()
@@ -131,12 +131,12 @@ impl<D: TypeDecoder> ArrayAppender<D> for StructArrayAppender<D> {
 
 /* -------------------------------------------- MAP -------------------------------------------- */
 
-pub struct MapArrayAppender<D: TypeDecoder> {
+pub(super) struct MapArrayAppender<D: TypeDecoder> {
     builder: arrow_builder::MapBuilder<ColumnArrayBuilder<D>, ColumnArrayBuilder<D>>,
 }
 
 impl<D: TypeDecoder> MapArrayAppender<D> {
-    pub fn new(entries_field: arrow_schema::FieldRef) -> DucklakeResult<Self> {
+    pub(super) fn new(entries_field: arrow_schema::FieldRef) -> DucklakeResult<Self> {
         let arrow_schema::DataType::Struct(fields) = entries_field.data_type() else {
             panic!("map entries field must have a struct data type")
         };

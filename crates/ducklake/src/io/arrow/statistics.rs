@@ -7,7 +7,7 @@ use arrow_schema::DataType as ArrowDataType;
 use super::aggregate;
 use crate::{ArrayColumnStats, DataType, RecordBatchStatistics};
 
-pub fn compute_record_batch_statistics(
+pub(crate) fn compute_record_batch_statistics(
     schema: &crate::Schema,
     record_batch: &RecordBatch,
 ) -> RecordBatchStatistics {

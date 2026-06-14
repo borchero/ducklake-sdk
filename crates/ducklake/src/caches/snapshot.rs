@@ -12,7 +12,7 @@ use crate::spec::*;
 use crate::{DucklakeResult, db};
 
 #[derive(Clone)]
-pub struct SnapshotCache {
+pub(crate) struct SnapshotCache {
     pool: db::Pool,
     catalog_cache: CatalogCache,
     table_stats_cache: TableStatsCache,
@@ -20,7 +20,10 @@ pub struct SnapshotCache {
 }
 
 impl SnapshotCache {
-    pub async fn new(pool: db::Pool, snapshot_info: Option<SnapshotInfo>) -> DucklakeResult<Self> {
+    pub(crate) async fn new(
+        pool: db::Pool,
+        snapshot_info: Option<SnapshotInfo>,
+    ) -> DucklakeResult<Self> {
         let cache = Self {
             pool: pool.clone(),
             catalog_cache: CatalogCache::new(pool.clone()),
@@ -40,19 +43,19 @@ impl SnapshotCache {
 
     /* ------------------------------------------ GET ------------------------------------------ */
 
-    pub async fn get_latest(&self) -> DucklakeResult<Arc<Snapshot>> {
+    pub(crate) async fn get_latest(&self) -> DucklakeResult<Arc<Snapshot>> {
         let snapshot_info = SnapshotInfo::load_latest(&self.pool).await?;
         let snapshot = self.insert_snapshot(snapshot_info);
         Ok(snapshot)
     }
 
-    pub fn get_current(&self) -> Arc<Snapshot> {
+    pub(crate) fn get_current(&self) -> Arc<Snapshot> {
         let snapshots = self.snapshots.read().unwrap();
         let (_, snapshot) = snapshots.last_key_value().unwrap();
         snapshot.clone()
     }
 
-    pub async fn get_for_schema_version(
+    pub(crate) async fn get_for_schema_version(
         &self,
         schema_version: i64,
     ) -> DucklakeResult<Arc<Snapshot>> {
@@ -91,7 +94,7 @@ impl SnapshotCache {
 
     /* ----------------------------------------- MODIFY ---------------------------------------- */
 
-    pub fn insert_snapshot(&self, snapshot_info: SnapshotInfo) -> Arc<Snapshot> {
+    pub(crate) fn insert_snapshot(&self, snapshot_info: SnapshotInfo) -> Arc<Snapshot> {
         let snapshot = Arc::new(Snapshot::new(
             snapshot_info.clone(),
             self.catalog_cache.clone(),
@@ -105,7 +108,7 @@ impl SnapshotCache {
         snapshot
     }
 
-    pub fn remove_snapshots(&self, snapshot_ids: &[i64]) {
+    pub(crate) fn remove_snapshots(&self, snapshot_ids: &[i64]) {
         let mut snapshots = self.snapshots.write().unwrap();
         for snapshot_id in snapshot_ids {
             snapshots.remove(snapshot_id);
@@ -117,7 +120,7 @@ impl SnapshotCache {
 /*                                            SNAPSHOT                                           */
 /* --------------------------------------------------------------------------------------------- */
 
-pub struct Snapshot {
+pub(crate) struct Snapshot {
     info: SnapshotInfo,
     catalog: AsyncLazy<Arc<Catalog>>,
     table_stats: AsyncLazy<Arc<HashMap<i64, TableStats>>, Arc<Catalog>>,
@@ -144,15 +147,15 @@ impl Snapshot {
         }
     }
 
-    pub fn info(&self) -> &SnapshotInfo {
+    pub(crate) fn info(&self) -> &SnapshotInfo {
         &self.info
     }
 
-    pub async fn catalog(&self) -> DucklakeResult<&Arc<Catalog>> {
+    pub(crate) async fn catalog(&self) -> DucklakeResult<&Arc<Catalog>> {
         self.catalog.get().await
     }
 
-    pub async fn table_stats(&self) -> DucklakeResult<&Arc<HashMap<i64, TableStats>>> {
+    pub(crate) async fn table_stats(&self) -> DucklakeResult<&Arc<HashMap<i64, TableStats>>> {
         let catalog = self.catalog.get().await?;
         self.table_stats.get_with_arg(catalog.clone()).await
     }
@@ -163,7 +166,7 @@ impl Snapshot {
 /* --------------------------------------------------------------------------------------------- */
 
 #[derive(Debug, Clone)]
-pub struct SnapshotInfo {
+pub(crate) struct SnapshotInfo {
     pub id: i64,
     pub schema_version: i64,
     pub next_catalog_id: i64,
@@ -189,7 +192,7 @@ impl SnapshotInfo {
         Ok(snapshot.into())
     }
 
-    pub async fn load_for_id(pool: &db::Pool, snapshot_id: i64) -> DucklakeResult<Self> {
+    pub(crate) async fn load_for_id(pool: &db::Pool, snapshot_id: i64) -> DucklakeResult<Self> {
         // Read the snapshot for the given ID
         let query = Query::select()
             .column(Asterisk)
@@ -202,7 +205,7 @@ impl SnapshotInfo {
         Ok(snapshot.into())
     }
 
-    pub async fn load_for_timestamp(
+    pub(crate) async fn load_for_timestamp(
         pool: &db::Pool,
         timestamp: chrono::DateTime<chrono::Utc>,
     ) -> DucklakeResult<Self> {

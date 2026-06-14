@@ -5,12 +5,12 @@ use std::ops::Deref;
 /// Zero-cost abstraction for an immutable reference type that can be owned when writing language
 /// bindings that do not support lifetimes (e.g. Python).
 #[cfg(feature = "python")]
-pub struct Borrowed<'a, T: Clone>(Cow<'a, T>);
+pub(crate) struct Borrowed<'a, T: Clone>(Cow<'a, T>);
 #[cfg(not(feature = "python"))]
-pub struct Borrowed<'a, T: Clone>(&'a T);
+pub(crate) struct Borrowed<'a, T: Clone>(&'a T);
 
 impl<'a, T: Clone> Borrowed<'a, T> {
-    pub fn new(value: &'a T) -> Self {
+    pub(crate) fn new(value: &'a T) -> Self {
         #[cfg(feature = "python")]
         return Borrowed(Cow::Borrowed(value));
         #[cfg(not(feature = "python"))]
@@ -31,7 +31,7 @@ impl<'a, T: Clone> Deref for Borrowed<'a, T> {
 
 #[cfg(feature = "python")]
 impl<'a, T: Clone> Borrowed<'a, T> {
-    pub fn into_owned(self) -> Borrowed<'static, T> {
+    pub(crate) fn into_owned(self) -> Borrowed<'static, T> {
         Borrowed(Cow::Owned(self.0.into_owned()))
     }
 }

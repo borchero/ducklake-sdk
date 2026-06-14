@@ -2,7 +2,7 @@ use sea_query::{ColumnDef, Expr, ExprTrait, Query, Table};
 
 use crate::{DucklakeResult, db};
 
-pub async fn migrate(tx: &mut db::Transaction) -> DucklakeResult<()> {
+pub(super) async fn migrate(tx: &mut db::Transaction) -> DucklakeResult<()> {
     update_schema(tx).await?;
     migrate_data(tx).await?;
     Ok(())

@@ -6,7 +6,7 @@ use crate::catalog::{Catalog, ColumnRef, SchemaRef, TableRef};
 use crate::spec::DucklakeSnapshot;
 use crate::{DucklakeResult, db};
 
-pub struct CommitState<'a> {
+pub(crate) struct CommitState<'a> {
     snapshot_id: i64,
     schema_version: i64,
     next_catalog_id: i64,
@@ -17,7 +17,7 @@ pub struct CommitState<'a> {
 }
 
 impl<'a> CommitState<'a> {
-    pub fn new(
+    pub(crate) fn new(
         snapshot_info: &SnapshotInfo,
         catalog: Cow<'a, Catalog>,
         schema_changed: bool,
@@ -39,7 +39,7 @@ impl<'a> CommitState<'a> {
 impl<'a> CommitState<'a> {
     /// Obtain the ID for the schema with the provided name. If the schema does not yet
     /// exist, a new ID is generated from the catalog ID sequence.
-    pub fn schema_id(&mut self, schema_ref: SchemaRef) -> i64 {
+    pub(crate) fn schema_id(&mut self, schema_ref: SchemaRef) -> i64 {
         if let Some(id) = self.catalog.schema(schema_ref).into_ok().id() {
             return id;
         }
@@ -51,7 +51,7 @@ impl<'a> CommitState<'a> {
 
     /// Obtain the ID for the table with the provided identifier. If the table does not yet
     /// exist, a new ID is generated from the catalog ID sequence.
-    pub fn table_id(&mut self, table_ref: TableRef) -> i64 {
+    pub(crate) fn table_id(&mut self, table_ref: TableRef) -> i64 {
         if let Some(id) = self.catalog.table(table_ref).into_ok().id() {
             return id;
         }
@@ -62,7 +62,7 @@ impl<'a> CommitState<'a> {
     }
 
     /// Obtain the IDs for the column with the provided reference.
-    pub fn column_id(&mut self, column_ref: ColumnRef) -> i64 {
+    pub(crate) fn column_id(&mut self, column_ref: ColumnRef) -> i64 {
         let Ok(table) = self.catalog.table(column_ref.table_ref);
         table.column(column_ref).into_ok().id()
     }
@@ -71,7 +71,7 @@ impl<'a> CommitState<'a> {
     /// not yet exist, a new ID is generated from the catalog ID sequence. This panics if the
     /// partition has not been defined for the table (i.e. is neither existing nor pending nor
     /// deleted).
-    pub fn partition_id(&mut self, table_ref: TableRef) -> i64 {
+    pub(crate) fn partition_id(&mut self, table_ref: TableRef) -> i64 {
         if let Some(id) = self.catalog.table(table_ref).into_ok().partition_id() {
             return id;
         }
@@ -84,7 +84,7 @@ impl<'a> CommitState<'a> {
     /// Obtain the table stats for the specified table ID. If the table stats have not been
     /// queried from the database, they are fetched dynamically. If no stats exist for the table,
     /// a new, empty stats object is created and returned.
-    pub async fn table_stats(&mut self, table_id: i64) -> DucklakeResult<&mut TableStats> {
+    pub(crate) async fn table_stats(&mut self, table_id: i64) -> DucklakeResult<&mut TableStats> {
         let stats = self
             .table_stats
             .as_mut()
@@ -96,21 +96,21 @@ impl<'a> CommitState<'a> {
 /* ---------------------------------------- STATE ACCESS --------------------------------------- */
 
 impl<'a> CommitState<'a> {
-    pub fn snapshot_id(&self) -> i64 {
+    pub(crate) fn snapshot_id(&self) -> i64 {
         self.snapshot_id
     }
 
-    pub fn schema_version(&self) -> i64 {
+    pub(crate) fn schema_version(&self) -> i64 {
         self.schema_version
     }
 
-    pub fn file_id(&mut self) -> i64 {
+    pub(crate) fn file_id(&mut self) -> i64 {
         let file_id = self.next_file_id;
         self.next_file_id += 1;
         file_id
     }
 
-    pub fn table_schema(&self, table_ref: TableRef) -> crate::Schema {
+    pub(crate) fn table_schema(&self, table_ref: TableRef) -> crate::Schema {
         self.catalog.table(table_ref).into_ok().schema()
     }
 

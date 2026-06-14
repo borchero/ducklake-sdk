@@ -13,12 +13,12 @@ macro_rules! create_table {
 }
 
 #[derive(Default)]
-pub struct Config {
+pub(crate) struct Config {
     pub data_path: String,
 }
 
 /// Initialize a new catalog database with the most up-to-date DuckLake schema.
-pub async fn init_catalog(pool: &db::Pool, config: Config) -> DucklakeResult<()> {
+pub(crate) async fn init_catalog(pool: &db::Pool, config: Config) -> DucklakeResult<()> {
     let mut tx = pool.begin().await?;
 
     // Create all tables

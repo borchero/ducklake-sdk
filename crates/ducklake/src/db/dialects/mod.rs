@@ -29,7 +29,7 @@ use sqlx::SqlSafeStr;
 use crate::DucklakeError;
 
 #[derive(Clone, Copy)]
-pub enum Dialect {
+pub(crate) enum Dialect {
     #[cfg(feature = "postgres")]
     Postgres,
     #[cfg(feature = "mysql")]
@@ -39,7 +39,7 @@ pub enum Dialect {
 }
 
 impl Dialect {
-    pub fn column_type_for_data_inlining(&self, data_type: &crate::DataType) -> ColumnType {
+    pub(crate) fn column_type_for_data_inlining(&self, data_type: &crate::DataType) -> ColumnType {
         match self {
             #[cfg(feature = "postgres")]
             Dialect::Postgres => postgres::column_type_for_data_type(data_type),
@@ -50,19 +50,9 @@ impl Dialect {
         }
     }
 
-    /// Whether this dialect supports a `RETURNING` clause.
-    pub fn supports_returning(&self) -> bool {
-        match self {
-            #[cfg(feature = "mysql")]
-            Dialect::MySql => false,
-            #[cfg(any(feature = "postgres", feature = "sqlite"))]
-            _ => true,
-        }
-    }
-
     /// The maximum number of bind parameters that may be used within a single statement for this
     /// dialect.
-    pub fn max_bind_params(&self) -> usize {
+    pub(in crate::db) fn max_bind_params(&self) -> usize {
         match self {
             // https://www.postgresql.org/docs/current/limits.html
             #[cfg(feature = "postgres")]
@@ -82,7 +72,7 @@ impl Dialect {
 // we replicate the data types here. Equivalence is ensured through differential tests.
 
 impl Dialect {
-    pub fn column_type_string(&self) -> ColumnType {
+    pub(crate) fn column_type_string(&self) -> ColumnType {
         match self {
             #[cfg(feature = "mysql")]
             Dialect::MySql => ColumnType::Text,
@@ -91,7 +81,7 @@ impl Dialect {
         }
     }
 
-    pub fn column_type_i64(&self) -> ColumnType {
+    pub(crate) fn column_type_i64(&self) -> ColumnType {
         match self {
             #[cfg(feature = "sqlite")]
             Dialect::Sqlite => ColumnType::custom("bigint"),
@@ -100,7 +90,7 @@ impl Dialect {
         }
     }
 
-    pub fn column_type_bool(&self) -> ColumnType {
+    pub(crate) fn column_type_bool(&self) -> ColumnType {
         match self {
             #[cfg(feature = "sqlite")]
             Dialect::Sqlite => ColumnType::custom("bigint"),
@@ -109,7 +99,7 @@ impl Dialect {
         }
     }
 
-    pub fn column_type_date_time_with_time_zone(&self) -> ColumnType {
+    pub(crate) fn column_type_date_time_with_time_zone(&self) -> ColumnType {
         match self {
             #[cfg(feature = "sqlite")]
             Dialect::Sqlite => ColumnType::string(None),
@@ -118,7 +108,7 @@ impl Dialect {
         }
     }
 
-    pub fn column_type_uuid(&self) -> ColumnType {
+    pub(crate) fn column_type_uuid(&self) -> ColumnType {
         match self {
             #[cfg(feature = "sqlite")]
             Dialect::Sqlite => ColumnType::string(None),
@@ -129,7 +119,7 @@ impl Dialect {
         }
     }
 
-    pub fn default_value_string(&self, value: &str) -> Expr {
+    pub(crate) fn default_value_string(&self, value: &str) -> Expr {
         match self {
             #[cfg(feature = "mysql")]
             Dialect::MySql => Expr::cust(format!("'{}'", value.replace('\'', "''"))),
@@ -140,7 +130,7 @@ impl Dialect {
 
 /* -------------------------------------- SQL CONVERTIBLE -------------------------------------- */
 
-pub trait SqlConvertible: Send + Sync {
+pub(crate) trait SqlConvertible: Send + Sync {
     fn to_sql(&self, dialect: Dialect) -> (sqlx::SqlStr, SqlxValues);
 }
 
@@ -199,7 +189,7 @@ impl_sql_convertible_other!(TableRenameStatement);
 /* ------------------------------------------- ERRORS ------------------------------------------ */
 
 impl Dialect {
-    pub fn is_table_not_found_error(&self, err: &DucklakeError) -> bool {
+    pub(crate) fn is_table_not_found_error(&self, err: &DucklakeError) -> bool {
         match err {
             DucklakeError::Database(db_err) => match self {
                 #[cfg(feature = "postgres")]
@@ -219,7 +209,7 @@ impl Dialect {
         }
     }
 
-    pub fn is_table_already_exists_error(&self, err: &DucklakeError) -> bool {
+    pub(crate) fn is_table_already_exists_error(&self, err: &DucklakeError) -> bool {
         match err {
             DucklakeError::Database(db_err) => match self {
                 #[cfg(feature = "postgres")]

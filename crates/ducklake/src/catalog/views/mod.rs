@@ -10,7 +10,7 @@ pub(crate) use table::TableView;
 
 /* ---------------------------------------- TRY INTO REF --------------------------------------- */
 
-pub trait TryIntoRef<Ref, Container = Catalog> {
+pub(crate) trait TryIntoRef<Ref, Container = Catalog> {
     type Error: std::error::Error;
 
     fn try_into_ref(self, container: &Container) -> Result<Ref, Self::Error>;

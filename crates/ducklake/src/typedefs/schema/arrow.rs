@@ -16,7 +16,7 @@ use crate::DucklakeError;
 /* ------------------------------------------- SCHEMA ------------------------------------------ */
 
 impl Schema {
-    pub fn to_arrow(&self) -> ArrowSchema {
+    pub(crate) fn to_arrow(&self) -> ArrowSchema {
         let fields = self
             .columns
             .values()

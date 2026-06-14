@@ -52,5 +52,5 @@ gcp = ["object_store/gcp"]
 # High-level SDKs
 python = []
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+[lints]
+workspace = true

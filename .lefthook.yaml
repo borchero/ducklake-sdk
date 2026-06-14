@@ -28,9 +28,15 @@ pre-commit:
           - name: cargo-fmt
             glob: "*.rs"
             run: cargo fmt
-          - name: cargo-clippy
-            glob: "*.rs"
-            run: cargo clippy --fix --allow-dirty -- -D warnings
+          - group:
+              parallel: false
+              jobs:
+                - name: cargo-clippy-fix
+                  glob: "*.rs"
+                  run: cargo clippy --fix --allow-dirty
+                - name: cargo-clippy-check
+                  glob: "*.rs"
+                  run: cargo clippy -- -D warnings
           # ---------------------------------------- MISC --------------------------------------- #
           - name: prettier
             glob: "*.{md,yml,yaml}"

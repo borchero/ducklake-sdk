@@ -48,7 +48,7 @@ pub(in crate::catalog) enum CatalogDataType {
 /* -------------------------------------------- INFO ------------------------------------------- */
 
 impl CatalogColumns {
-    pub fn root_column_indices(&self) -> Vec<Vec<ArenaIdx>> {
+    pub(in crate::catalog) fn root_column_indices(&self) -> Vec<Vec<ArenaIdx>> {
         let mut result: Vec<Vec<ArenaIdx>> = Vec::new();
         for idx in self.root_columns.values() {
             let mut column_indices = Vec::new();
@@ -77,7 +77,10 @@ impl CatalogColumns {
         }
     }
 
-    pub fn arena_idx_by_path(&self, path: &[String]) -> DucklakeResult<ArenaIdx> {
+    pub(in crate::catalog) fn arena_idx_by_path(
+        &self,
+        path: &[String],
+    ) -> DucklakeResult<ArenaIdx> {
         let mut idx = *self
             .root_columns
             .get(&path[0])
@@ -107,7 +110,11 @@ impl CatalogColumns {
 impl CatalogColumns {
     // --- RENAME ---
 
-    pub fn rename_column(&mut self, idx: ArenaIdx, new_name: &str) -> DucklakeResult<ArenaIdx> {
+    pub(in crate::catalog) fn rename_column(
+        &mut self,
+        idx: ArenaIdx,
+        new_name: &str,
+    ) -> DucklakeResult<ArenaIdx> {
         // Check that the new name is unique among the column's siblings
         let parent = self.arena[idx.0].parent_column;
         self.ensure_column_unique_at_parent(parent, new_name)?;
@@ -138,7 +145,10 @@ impl CatalogColumns {
 
     // --- REMOVE ---
 
-    pub fn remove_column(&mut self, idx: ArenaIdx) -> DucklakeResult<Vec<ArenaIdx>> {
+    pub(in crate::catalog) fn remove_column(
+        &mut self,
+        idx: ArenaIdx,
+    ) -> DucklakeResult<Vec<ArenaIdx>> {
         let mut deletions = Vec::new();
         self.mark_column_deleted(idx, &mut deletions)?;
         Ok(deletions)
@@ -176,7 +186,7 @@ impl CatalogColumns {
 
     // --- ADD ---
 
-    pub fn add_column(
+    pub(in crate::catalog) fn add_column(
         &mut self,
         parent_idx: Option<ArenaIdx>,
         column: crate::Column,
@@ -305,7 +315,7 @@ impl CatalogColumns {
         }
     }
 
-    pub fn from_ducklake(
+    pub(in crate::catalog) fn from_ducklake(
         mut columns: Vec<DucklakeColumn>,
         mut tags: Vec<DucklakeColumnTag>,
     ) -> DucklakeResult<Self> {
@@ -423,7 +433,10 @@ impl CatalogColumns {
 }
 
 impl CatalogColumns {
-    pub fn schema_column_from_arena_index(&self, idx: ArenaIdx) -> crate::Column {
+    pub(in crate::catalog) fn schema_column_from_arena_index(
+        &self,
+        idx: ArenaIdx,
+    ) -> crate::Column {
         let col = &self.arena[idx.0];
         crate::Column {
             name: col.name.clone(),

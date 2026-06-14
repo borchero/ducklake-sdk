@@ -3,11 +3,11 @@
 use crate::db::Dialect;
 
 /// Simple trait to simplify the creation of ducklake tables.
-pub trait CreateTable {
+pub(crate) trait CreateTable {
     fn create_entity<E: CreatableEntity>(dialect: Dialect) -> sea_query::TableCreateStatement;
 }
 
-pub trait CreatableEntity {
+pub(crate) trait CreatableEntity {
     fn create_table(dialect: Dialect) -> sea_query::TableCreateStatement;
 }
 
@@ -19,7 +19,7 @@ impl CreateTable for sea_query::Table {
 
 /* ------------------------------------- INSERT ------------------------------------- */
 
-pub trait InsertableEntity {
+pub(crate) trait InsertableEntity {
     /// The number of columns that are inserted for each entity. This is used to determine how
     /// many entities can be inserted within a single statement without exceeding the bind
     /// parameter limit of the underlying database backend.

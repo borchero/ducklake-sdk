@@ -11,7 +11,7 @@ pub struct PyDucklake(Ducklake);
 /* ------------------------------------------ CONNECT ------------------------------------------ */
 
 #[pyfunction]
-pub fn create(
+pub(crate) fn create(
     py: Python,
     url: &str,
     data_path: &str,
@@ -23,7 +23,7 @@ pub fn create(
 }
 
 #[pyfunction]
-pub fn connect(
+pub(crate) fn connect(
     py: Python,
     url: &str,
     snapshot_id: Option<i64>,
@@ -90,6 +90,7 @@ impl PyDucklake {
         block_on(py, self.0.delete_schema(&name)).map_err(error::into_pyerr)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_table(
         &self,
         py: Python,

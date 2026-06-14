@@ -1,18 +1,18 @@
 mod arrow;
 mod dialects;
-pub mod sea_query_ext;
+pub(crate) mod sea_query_ext;
 mod types;
 
 use std::sync::OnceLock;
 
 use arrow_array::RecordBatch;
 use arrow_schema::Schema;
-pub use dialects::Dialect;
+pub(crate) use dialects::Dialect;
 use dialects::SqlConvertible;
 use sea_query::Expr;
 use sqlx::prelude::*;
-pub use types::chrono::UtcDateTime;
-pub use types::uuid::UuidText;
+pub(crate) use types::chrono::UtcDateTime;
+pub(crate) use types::uuid::UuidText;
 
 use crate::{DucklakeError, DucklakeResult};
 
@@ -50,7 +50,7 @@ macro_rules! dispatch_tx {
 
 /// Single-connection pool to a dynamic database backend (Postgres, MySQL, SQLite).
 #[derive(Clone)]
-pub struct Pool(AnyPool);
+pub(crate) struct Pool(AnyPool);
 
 #[derive(Clone)]
 enum AnyPool {
@@ -63,7 +63,7 @@ enum AnyPool {
 }
 
 impl Pool {
-    pub fn dialect(&self) -> Dialect {
+    pub(crate) fn dialect(&self) -> Dialect {
         match self.0 {
             #[cfg(feature = "postgres")]
             AnyPool::Postgres(_) => Dialect::Postgres,
@@ -74,7 +74,7 @@ impl Pool {
         }
     }
 
-    pub async fn new(url: &str) -> DucklakeResult<Self> {
+    pub(crate) async fn new(url: &str) -> DucklakeResult<Self> {
         let pool = if url.starts_with("postgresql://") || url.starts_with("postgres://") {
             #[cfg(feature = "postgres")]
             {
@@ -121,13 +121,13 @@ impl Pool {
         Ok(Pool(pool))
     }
 
-    pub async fn close(&self) {
+    pub(crate) async fn close(&self) {
         dispatch_pool!(self, pool => {
             pool.close().await
         })
     }
 
-    pub async fn table_exists(&self, table_name: &str) -> DucklakeResult<bool> {
+    pub(crate) async fn table_exists(&self, table_name: &str) -> DucklakeResult<bool> {
         let result: (bool,) = match &self.0 {
             #[cfg(feature = "postgres")]
             AnyPool::Postgres(pool) => {
@@ -155,7 +155,7 @@ impl Pool {
         Ok(result.0)
     }
 
-    pub async fn fetch_one<O>(&self, query: &impl SqlConvertible) -> DucklakeResult<O>
+    pub(crate) async fn fetch_one<O>(&self, query: &impl SqlConvertible) -> DucklakeResult<O>
     where
         O: RowType,
     {
@@ -167,7 +167,7 @@ impl Pool {
         Ok(result)
     }
 
-    pub async fn fetch_all<O>(&self, query: &impl SqlConvertible) -> DucklakeResult<Vec<O>>
+    pub(crate) async fn fetch_all<O>(&self, query: &impl SqlConvertible) -> DucklakeResult<Vec<O>>
     where
         O: RowType,
     {
@@ -179,7 +179,10 @@ impl Pool {
         Ok(result)
     }
 
-    pub async fn fetch_optional<O>(&self, query: &impl SqlConvertible) -> DucklakeResult<Option<O>>
+    pub(crate) async fn fetch_optional<O>(
+        &self,
+        query: &impl SqlConvertible,
+    ) -> DucklakeResult<Option<O>>
     where
         O: RowType,
     {
@@ -191,7 +194,7 @@ impl Pool {
         Ok(result)
     }
 
-    pub async fn fetch_all_arrow(
+    pub(crate) async fn fetch_all_arrow(
         &self,
         query: &impl SqlConvertible,
         schema: &Schema,
@@ -214,7 +217,7 @@ impl Pool {
         }
     }
 
-    pub async fn begin(&self) -> DucklakeResult<Transaction> {
+    pub(crate) async fn begin(&self) -> DucklakeResult<Transaction> {
         let tx = match &self.0 {
             #[cfg(feature = "postgres")]
             AnyPool::Postgres(pool) => {
@@ -241,7 +244,7 @@ impl Pool {
 
 /* ---------------------------------------- TRANSACTION ---------------------------------------- */
 
-pub struct Transaction(AnyTransaction);
+pub(crate) struct Transaction(AnyTransaction);
 
 enum AnyTransaction {
     #[cfg(feature = "postgres")]
@@ -253,7 +256,7 @@ enum AnyTransaction {
 }
 
 impl Transaction {
-    pub fn dialect(&self) -> Dialect {
+    pub(crate) fn dialect(&self) -> Dialect {
         match self.0 {
             #[cfg(feature = "postgres")]
             AnyTransaction::Postgres(_) => Dialect::Postgres,
@@ -264,7 +267,7 @@ impl Transaction {
         }
     }
 
-    pub async fn execute(&mut self, query: &impl SqlConvertible) -> DucklakeResult<()> {
+    pub(crate) async fn execute(&mut self, query: &impl SqlConvertible) -> DucklakeResult<()> {
         let (sql, values) = query.to_sql(self.dialect());
         log_sql(sql.as_str(), Some(&values));
         dispatch_tx!(self, tx => {
@@ -274,7 +277,7 @@ impl Transaction {
     }
 
     /// Insert a single entity into its backing table.
-    pub async fn insert_entity(
+    pub(crate) async fn insert_entity(
         &mut self,
         entity: impl sea_query_ext::InsertableEntity,
     ) -> DucklakeResult<()> {
@@ -286,7 +289,7 @@ impl Transaction {
     ///
     /// Insertions are automatically batched into multiple statements to prevent exhausting the
     /// underlying database's bind parameter limit.
-    pub async fn insert_entities<E>(
+    pub(crate) async fn insert_entities<E>(
         &mut self,
         entities: impl IntoIterator<Item = E>,
     ) -> DucklakeResult<()>
@@ -323,7 +326,7 @@ impl Transaction {
         Ok(())
     }
 
-    pub async fn insert_all_arrow(
+    pub(crate) async fn insert_all_arrow(
         &mut self,
         table: &str,
         data: RecordBatch,
@@ -368,7 +371,7 @@ impl Transaction {
         Ok(())
     }
 
-    pub async fn fetch_one<O>(&mut self, query: &impl SqlConvertible) -> DucklakeResult<O>
+    pub(crate) async fn fetch_one<O>(&mut self, query: &impl SqlConvertible) -> DucklakeResult<O>
     where
         O: RowType,
     {
@@ -380,7 +383,10 @@ impl Transaction {
         Ok(result)
     }
 
-    pub async fn fetch_all<O>(&mut self, query: &impl SqlConvertible) -> DucklakeResult<Vec<O>>
+    pub(crate) async fn fetch_all<O>(
+        &mut self,
+        query: &impl SqlConvertible,
+    ) -> DucklakeResult<Vec<O>>
     where
         O: RowType,
     {
@@ -392,7 +398,7 @@ impl Transaction {
         Ok(result)
     }
 
-    pub async fn commit(self) -> DucklakeResult<()> {
+    pub(crate) async fn commit(self) -> DucklakeResult<()> {
         log_sql("COMMIT", None);
         match self.0 {
             #[cfg(feature = "postgres")]
@@ -425,37 +431,40 @@ fn log_sql(sql: &str, values: Option<&sea_query_sqlx::SqlxValues>) {
 /* ------------------------------------------ ROW TYPE ----------------------------------------- */
 
 #[cfg(not(any(feature = "postgres", feature = "mysql", feature = "sqlite")))]
-pub trait RowType = Send + Unpin;
+pub(crate) trait RowType = Send + Unpin;
 
 #[cfg(all(feature = "postgres", not(feature = "mysql"), not(feature = "sqlite")))]
-pub trait RowType = Send + Unpin + for<'r> FromRow<'r, <sqlx::Postgres as sqlx::Database>::Row>;
+pub(crate) trait RowType =
+    Send + Unpin + for<'r> FromRow<'r, <sqlx::Postgres as sqlx::Database>::Row>;
 
 #[cfg(all(not(feature = "postgres"), feature = "mysql", not(feature = "sqlite")))]
-pub trait RowType = Send + Unpin + for<'r> FromRow<'r, <sqlx::MySql as sqlx::Database>::Row>;
+pub(crate) trait RowType =
+    Send + Unpin + for<'r> FromRow<'r, <sqlx::MySql as sqlx::Database>::Row>;
 
 #[cfg(all(not(feature = "postgres"), not(feature = "mysql"), feature = "sqlite"))]
-pub trait RowType = Send + Unpin + for<'r> FromRow<'r, <sqlx::Sqlite as sqlx::Database>::Row>;
+pub(crate) trait RowType =
+    Send + Unpin + for<'r> FromRow<'r, <sqlx::Sqlite as sqlx::Database>::Row>;
 
 #[cfg(all(feature = "postgres", feature = "mysql", not(feature = "sqlite")))]
-pub trait RowType = Send
+pub(crate) trait RowType = Send
     + Unpin
     + for<'r> FromRow<'r, <sqlx::Postgres as sqlx::Database>::Row>
     + for<'r> FromRow<'r, <sqlx::MySql as sqlx::Database>::Row>;
 
 #[cfg(all(feature = "postgres", not(feature = "mysql"), feature = "sqlite"))]
-pub trait RowType = Send
+pub(crate) trait RowType = Send
     + Unpin
     + for<'r> FromRow<'r, <sqlx::Postgres as sqlx::Database>::Row>
     + for<'r> FromRow<'r, <sqlx::Sqlite as sqlx::Database>::Row>;
 
 #[cfg(all(not(feature = "postgres"), feature = "mysql", feature = "sqlite"))]
-pub trait RowType = Send
+pub(crate) trait RowType = Send
     + Unpin
     + for<'r> FromRow<'r, <sqlx::MySql as sqlx::Database>::Row>
     + for<'r> FromRow<'r, <sqlx::Sqlite as sqlx::Database>::Row>;
 
 #[cfg(all(feature = "postgres", feature = "mysql", feature = "sqlite"))]
-pub trait RowType = Send
+pub(crate) trait RowType = Send
     + Unpin
     + for<'r> FromRow<'r, <sqlx::Postgres as sqlx::Database>::Row>
     + for<'r> FromRow<'r, <sqlx::MySql as sqlx::Database>::Row>
