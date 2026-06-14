@@ -63,8 +63,9 @@ def test_no_expire_latest_snapshot(ducklake: dl.Ducklake, random_table_name: str
 
 def test_expire_global_metadata(ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
-    ducklake.set_metadata(expire_older_than="00:00:00.001")
-    time.sleep(0.01)
+    ducklake.set_metadata(expire_older_than="00:00:01")
+    # NOTE: We need to sleep for a full second due to MySQL timestamp resolution of 1s
+    time.sleep(1)
     ducklake.create_table(random_table_name, {"x": dl.Int64()})
     assert len(ducklake.list_snapshots()) == 2
     assert ducklake.get_latest_snapshot().id == 1
