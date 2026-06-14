@@ -121,8 +121,9 @@ _IGNORED_COLUMNS: dict[str, list[str]] = {
     "ducklake_schema": ["schema_uuid"],
     "ducklake_table": ["table_uuid"],
     "ducklake_data_file": ["path", "file_order", "file_size_bytes", "footer_size"],
-    "ducklake_file_column_stats": ["column_size_bytes"],
+    "ducklake_file_column_stats": ["column_size_bytes", "value_count"],
     "ducklake_table_stats": ["file_size_bytes"],
+    "ducklake_files_scheduled_for_deletion": ["path", "schedule_start"],
 }
 _CONDITIONAL_IGNORED_COLUMNS: dict[str, dict[tuple[str, Any], list[str]]] = {
     "ducklake_metadata": {
@@ -155,7 +156,8 @@ def assert_ducklake_catalogs_equal(
         expected_tables = set(expected_metadata.tables)
         actual_tables = set(actual_metadata.tables)
         assert expected_tables == actual_tables, (
-            f"Table sets differ: expected {expected_tables}, got {actual_tables}"
+            f"Table sets differ - missing: {expected_tables - actual_tables}, "
+            f"extra: {actual_tables - expected_tables}"
         )
 
         for table_name in expected_tables:

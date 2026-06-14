@@ -49,7 +49,6 @@ pub(crate) static REWRITE_DELETE_THRESHOLD: &str = "rewrite_delete_threshold";
 pub(crate) static DELETE_OLDER_THAN: &str = "delete_older_than";
 
 // Age threshold for expiring snapshots (duration string, e.g., '30d').
-#[allow(dead_code)]
 pub(crate) static EXPIRE_OLDER_THAN: &str = "expire_older_than";
 
 // Whether a table is included when compaction functions are called without a specific table

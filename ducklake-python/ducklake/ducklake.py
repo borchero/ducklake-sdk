@@ -323,6 +323,55 @@ class Ducklake:
         """
         self._duckdb_connection.execute("CHECKPOINT;")
 
+    # ------------------------------------- EXPIRE SNAPSHOTS ------------------------------------ #
+
+    @overload
+    def expire_snapshots(self, *, dry_run: bool = False) -> list[SnapshotMetadata]: ...
+
+    @overload
+    def expire_snapshots(
+        self, *, versions: Sequence[int], dry_run: bool = False
+    ) -> list[SnapshotMetadata]: ...
+
+    @overload
+    def expire_snapshots(
+        self, *, older_than: dt.datetime, dry_run: bool = False
+    ) -> list[SnapshotMetadata]: ...
+
+    def expire_snapshots(
+        self,
+        *,
+        versions: Sequence[int] | None = None,
+        older_than: dt.datetime | None = None,
+        dry_run: bool = False,
+    ) -> list[SnapshotMetadata]:
+        """Expire snapshots in the catalog so the data they reference can be cleaned up.
+
+        This does not immediately delete the underlying files; call :meth:`cleanup_old_files`
+        afterwards (or use :meth:`checkpoint`).
+
+        The latest snapshot is always retained. If neither `versions` nor `older_than` is
+        provided, snapshots are expired according to the `"expire_older_than"` metadata option.
+        If that option is not set, no snapshots are expired.
+
+        Args:
+            versions: A list of snapshot IDs to expire. Versions that do not exist or refer to the
+                latest snapshot are silently ignored.
+            older_than: If provided, expire all snapshots created before this timestamp.
+            dry_run: If `True`, no snapshots are actually expired and the returned snapshots
+                merely indicate what would be expired.
+
+        Returns:
+            The snapshots that were expired, or would be expired when `dry_run` is `True`.
+        """
+        return self._pyducklake.expire_snapshots(
+            list(versions) if versions is not None else None,
+            older_than,
+            dry_run,
+        )
+
+    # ------------------------------------------ OTHER ------------------------------------------ #
+
     def merge_adjacent_files(
         self,
         *,
@@ -366,45 +415,6 @@ class Ducklake:
                 args,
             )
         )
-
-    def expire_snapshots(
-        self,
-        *,
-        versions: Sequence[int] | None = None,
-        older_than: dt.datetime | None = None,
-        dry_run: bool = False,
-    ) -> list[int]:
-        """Expire snapshots in the catalog so the data they reference can be cleaned up.
-
-        Dispatches to `ducklake_expire_snapshots`. Note that this does not immediately delete
-        the underlying files; call :meth:`cleanup_old_files` afterwards (or use
-        :meth:`checkpoint`).
-
-        Args:
-            versions: Optional list of snapshot ids to expire.
-            older_than: If provided, expire all snapshots created before this timestamp.
-            dry_run: If `True`, no snapshots are actually expired.
-
-        Returns:
-            The IDs of the snapshots that were expired, or would be expired when `dry_run` is
-            `True`.
-
-        Note:
-            This requires :mod:`duckdb` to be installed.
-        """
-        from .duckdb.utils import build_named_query_params, fetch_result_dicts
-
-        params, args = build_named_query_params(
-            versions=list(versions) if versions is not None else None,
-            older_than=older_than,
-            dry_run=dry_run if dry_run else None,
-        )
-        rows = fetch_result_dicts(
-            self._duckdb_connection,
-            f"SELECT snapshot_id FROM ducklake_expire_snapshots('my_ducklake'{params});",
-            args,
-        )
-        return [row["snapshot_id"] for row in rows]
 
     def cleanup_old_files(
         self,

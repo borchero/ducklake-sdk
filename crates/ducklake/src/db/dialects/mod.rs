@@ -19,6 +19,7 @@ use sea_query::{
     SelectStatement,
     TableAlterStatement,
     TableCreateStatement,
+    TableDropStatement,
     TableRenameStatement,
     UpdateStatement,
 };
@@ -181,6 +182,7 @@ impl_sql_convertible_sqlx_binder!(InsertStatement);
 impl_sql_convertible_sqlx_binder!(UpdateStatement);
 impl_sql_convertible_sqlx_binder!(DeleteStatement);
 impl_sql_convertible_other!(TableCreateStatement);
+impl_sql_convertible_other!(TableDropStatement);
 impl_sql_convertible_other!(TableAlterStatement);
 impl_sql_convertible_other!(TableRenameStatement);
 

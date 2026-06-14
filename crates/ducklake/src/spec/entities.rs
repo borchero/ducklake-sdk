@@ -104,7 +104,7 @@ pub(crate) struct DucklakeFilesScheduledForDeletion {
     pub data_file_id: i64,
     pub path: String,
     pub path_is_relative: bool,
-    pub schedule_start: Option<UtcDateTime>,
+    pub schedule_start: UtcDateTime,
 }
 
 /// This table defines which data file belongs to which partition.

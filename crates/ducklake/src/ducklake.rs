@@ -10,7 +10,7 @@ use crate::*;
 
 /// Client for interacting with a DuckLake.
 pub struct Ducklake {
-    conn: DucklakeConnection,
+    pub(crate) conn: DucklakeConnection,
 }
 
 #[derive(Clone)]

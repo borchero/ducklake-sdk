@@ -469,8 +469,7 @@ impl Change {
         match self {
             CreateTable { table_ref, .. }
             | RenameTable { table_ref, .. }
-            | UpdateTablePartitioning { table_ref, .. }
-            | DeleteTable { table_ref, .. } => Some(*table_ref),
+            | UpdateTablePartitioning { table_ref, .. } => Some(*table_ref),
             UpdateTableColumn { column_ref, .. } | RemoveTableColumn { column_ref } => {
                 Some(column_ref.table_ref)
             }
@@ -482,6 +481,7 @@ impl Change {
             // NOTE: As opposed to `changes_schema` where we have to consider ALL items that
             //  affect caching of the catalog, we do not want to consider changes that do not
             //  affect the schema (i.e. how data is stored) of individual tables here.
+            | DeleteTable { .. }
             | AddTableColumnTag { .. }
             | RemoveTableColumnTag { .. }
             | AddTableTag { .. }
