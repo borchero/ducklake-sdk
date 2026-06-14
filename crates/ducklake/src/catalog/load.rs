@@ -36,7 +36,7 @@ impl Catalog {
 
     /// Load the current catalog from the DuckLake catalog database referenced by the pool, at the
     /// given snapshot.
-    pub async fn load(pool: &db::Pool, snapshot_id: i64) -> DucklakeResult<Self> {
+    pub(crate) async fn load(pool: &db::Pool, snapshot_id: i64) -> DucklakeResult<Self> {
         // Fetch all relevant data in parallel. Since we're using snapshot filtering,
         // we don't need a transaction for consistency - each query filters by the same
         // snapshot_id which ensures we get a consistent view of the data.

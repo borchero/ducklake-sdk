@@ -21,7 +21,7 @@ pub(crate) use views::SchemaView;
 /// the transaction) are not immediately assigned an ID. Hence, they can only be referred to by
 /// their name as opposed to an entity ID.
 #[derive(Debug, Clone)]
-pub struct Catalog {
+pub(crate) struct Catalog {
     // Storage of schemas.
     schema_arena: Arena<CatalogSchema>,
     // Storage of tables across schemas.
@@ -37,7 +37,11 @@ impl Catalog {
     ///
     /// This method returns a reference to the newly created schema and errors if the schema
     /// already exists.
-    pub fn add_schema(&mut self, name: &str, path: io::DucklakePath) -> DucklakeResult<SchemaRef> {
+    pub(crate) fn add_schema(
+        &mut self,
+        name: &str,
+        path: io::DucklakePath,
+    ) -> DucklakeResult<SchemaRef> {
         // If the schema exists already, we need to raise some kind of error
         if self.schema(name).is_ok() {
             return Err(DucklakeError::schema_already_exists(name));
@@ -69,7 +73,7 @@ impl Catalog {
     ///
     /// Returns an error if the schema does not exist or the table already exists.
     #[allow(clippy::type_complexity)]
-    pub fn add_table(
+    pub(crate) fn add_table(
         &mut self,
         table: crate::TableInfo,
         path: io::DucklakePath,

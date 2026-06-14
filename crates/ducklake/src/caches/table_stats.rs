@@ -12,20 +12,20 @@ use crate::{DucklakeResult, db};
 /* --------------------------------------------------------------------------------------------- */
 
 #[derive(Clone)]
-pub struct TableStatsCache {
+pub(super) struct TableStatsCache {
     pool: db::Pool,
     table_stats: Arc<RwLock<HashMap<i64, SnapshotTableStats>>>,
 }
 
 impl TableStatsCache {
-    pub fn new(pool: db::Pool) -> Self {
+    pub(super) fn new(pool: db::Pool) -> Self {
         Self {
             pool,
             table_stats: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub async fn get(
+    pub(super) async fn get(
         &self,
         snapshot_id: i64,
         next_file_id: i64,
@@ -54,7 +54,7 @@ impl TableStatsCache {
 struct SnapshotTableStats(Arc<HashMap<i64, TableStats>>);
 
 #[derive(Debug, Clone)]
-pub struct TableStats {
+pub(crate) struct TableStats {
     next_row_id: i64,
     record_count: Option<i64>,
     file_size_bytes: Option<i64>,
@@ -66,7 +66,7 @@ pub struct TableStats {
 }
 
 #[derive(Debug, Clone)]
-pub struct ColumnStats {
+pub(crate) struct ColumnStats {
     contains_null: Option<bool>,
     contains_nan: Option<bool>,
     min_value: Option<crate::Value>,
@@ -224,45 +224,45 @@ impl SnapshotTableStats {
 /* ----------------------------------------- ACCESSORS ----------------------------------------- */
 
 impl TableStats {
-    pub fn next_row_id(&self) -> i64 {
+    pub(crate) fn next_row_id(&self) -> i64 {
         self.next_row_id
     }
 
-    pub fn record_count(&self) -> Option<i64> {
+    pub(crate) fn record_count(&self) -> Option<i64> {
         self.record_count
     }
 
-    pub fn file_size_bytes(&self) -> Option<i64> {
+    pub(crate) fn file_size_bytes(&self) -> Option<i64> {
         self.file_size_bytes
     }
 
-    pub fn is_persisted(&self) -> bool {
+    pub(crate) fn is_persisted(&self) -> bool {
         self.is_persisted
     }
 
-    pub fn column_stats(&self, column_id: i64) -> Option<&ColumnStats> {
+    pub(crate) fn column_stats(&self, column_id: i64) -> Option<&ColumnStats> {
         self.column_stats.get(&column_id)
     }
 }
 
 impl ColumnStats {
-    pub fn contains_null(&self) -> Option<bool> {
+    pub(crate) fn contains_null(&self) -> Option<bool> {
         self.contains_null
     }
 
-    pub fn contains_nan(&self) -> Option<bool> {
+    pub(crate) fn contains_nan(&self) -> Option<bool> {
         self.contains_nan
     }
 
-    pub fn min_value(&self) -> Option<&crate::Value> {
+    pub(crate) fn min_value(&self) -> Option<&crate::Value> {
         self.min_value.as_ref()
     }
 
-    pub fn max_value(&self) -> Option<&crate::Value> {
+    pub(crate) fn max_value(&self) -> Option<&crate::Value> {
         self.max_value.as_ref()
     }
 
-    pub fn is_persisted(&self) -> bool {
+    pub(crate) fn is_persisted(&self) -> bool {
         self.is_persisted
     }
 }
@@ -270,32 +270,32 @@ impl ColumnStats {
 /* ----------------------------------------- EVOLUTION ----------------------------------------- */
 
 impl TableStats {
-    pub fn advance_row_id(&mut self, record_count: i64) {
+    pub(crate) fn advance_row_id(&mut self, record_count: i64) {
         self.next_row_id += record_count;
     }
 
-    pub fn add_record_count(&mut self, record_count: i64) {
+    pub(crate) fn add_record_count(&mut self, record_count: i64) {
         self.record_count = Some(self.record_count.unwrap_or_default() + record_count);
     }
 
-    pub fn add_file_size_bytes(&mut self, file_size_bytes: Option<i64>) {
+    pub(crate) fn add_file_size_bytes(&mut self, file_size_bytes: Option<i64>) {
         self.file_size_bytes = match file_size_bytes {
             Some(n) => Some(self.file_size_bytes.unwrap_or_default() + n),
             None => self.file_size_bytes,
         };
     }
 
-    pub fn set_persisted(&mut self) {
+    pub(crate) fn set_persisted(&mut self) {
         self.is_persisted = true;
     }
 
-    pub fn column_stats_mut(&mut self, column_id: i64) -> &mut ColumnStats {
+    pub(crate) fn column_stats_mut(&mut self, column_id: i64) -> &mut ColumnStats {
         self.column_stats.entry(column_id).or_default()
     }
 }
 
 impl ColumnStats {
-    pub fn update_contains_null(&mut self, contains_null: Option<bool>) {
+    pub(crate) fn update_contains_null(&mut self, contains_null: Option<bool>) {
         self.contains_null = match (self.contains_null, contains_null) {
             (Some(old), Some(new)) => Some(old || new),
             (None, Some(true)) | (Some(true), None) => Some(true),
@@ -303,7 +303,7 @@ impl ColumnStats {
         };
     }
 
-    pub fn update_contains_nan(&mut self, contains_nan: Option<bool>) {
+    pub(crate) fn update_contains_nan(&mut self, contains_nan: Option<bool>) {
         self.contains_nan = match (self.contains_nan, contains_nan) {
             (Some(old), Some(new)) => Some(old || new),
             (None, Some(true)) | (Some(true), None) => Some(true),
@@ -311,7 +311,7 @@ impl ColumnStats {
         };
     }
 
-    pub fn update_min_value(&mut self, min_value: Option<&crate::Value>) {
+    pub(crate) fn update_min_value(&mut self, min_value: Option<&crate::Value>) {
         self.min_value = match (self.min_value.take(), min_value) {
             (Some(old), Some(new)) => old
                 .partial_cmp(new)
@@ -320,7 +320,7 @@ impl ColumnStats {
         };
     }
 
-    pub fn update_max_value(&mut self, max_value: Option<&crate::Value>) {
+    pub(crate) fn update_max_value(&mut self, max_value: Option<&crate::Value>) {
         self.max_value = match (self.max_value.take(), max_value) {
             (Some(old), Some(new)) => old
                 .partial_cmp(new)
@@ -329,7 +329,7 @@ impl ColumnStats {
         };
     }
 
-    pub fn set_persisted(&mut self) {
+    pub(crate) fn set_persisted(&mut self) {
         self.is_persisted = true;
     }
 }

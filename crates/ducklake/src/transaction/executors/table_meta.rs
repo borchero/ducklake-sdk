@@ -12,7 +12,7 @@ use crate::{DucklakeResult, Value, db, io};
 /* --------------------------------------------------------------------------------------------- */
 
 #[allow(clippy::too_many_arguments)]
-pub async fn create_table<'a>(
+pub(crate) async fn create_table<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     schema_ref: &SchemaRef,
@@ -89,7 +89,7 @@ pub async fn create_table<'a>(
     Ok(())
 }
 
-pub async fn rename_table<'a>(
+pub(crate) async fn rename_table<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
@@ -110,7 +110,7 @@ pub async fn rename_table<'a>(
     Ok(())
 }
 
-pub async fn update_table_partitioning<'a>(
+pub(crate) async fn update_table_partitioning<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
@@ -140,7 +140,7 @@ pub async fn update_table_partitioning<'a>(
     Ok(())
 }
 
-pub async fn delete_table<'a>(
+pub(crate) async fn delete_table<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
@@ -158,7 +158,7 @@ pub async fn delete_table<'a>(
     Ok(())
 }
 
-pub async fn add_table_tag<'a>(
+pub(crate) async fn add_table_tag<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
@@ -185,7 +185,7 @@ pub async fn add_table_tag<'a>(
     Ok(())
 }
 
-pub async fn remove_table_tag<'a>(
+pub(crate) async fn remove_table_tag<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
@@ -238,7 +238,7 @@ async fn create_partitioning<'a>(
 /*                                             COLUMN                                            */
 /* --------------------------------------------------------------------------------------------- */
 
-pub async fn add_table_column(
+pub(crate) async fn add_table_column(
     tx: &mut db::Transaction,
     state: &mut CommitState<'_>,
     parent_column_ref: &Option<ColumnRef>,
@@ -272,7 +272,7 @@ pub async fn add_table_column(
     Ok(())
 }
 
-pub async fn update_table_column<'a>(
+pub(crate) async fn update_table_column<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     parent_column_ref: &Option<ColumnRef>,
@@ -308,7 +308,7 @@ pub async fn update_table_column<'a>(
     Ok(())
 }
 
-pub async fn remove_table_column<'a>(
+pub(crate) async fn remove_table_column<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     column_ref: &ColumnRef,
@@ -325,7 +325,7 @@ pub async fn remove_table_column<'a>(
     Ok(())
 }
 
-pub async fn add_table_column_tag<'a>(
+pub(crate) async fn add_table_column_tag<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     column_ref: &ColumnRef,
@@ -354,7 +354,7 @@ pub async fn add_table_column_tag<'a>(
     Ok(())
 }
 
-pub async fn remove_table_column_tag<'a>(
+pub(crate) async fn remove_table_column_tag<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     column_ref: &ColumnRef,

@@ -5,10 +5,10 @@ use itertools::Itertools;
 
 use super::nested::*;
 use super::primitive::*;
-pub use super::{ArrayAppender, TypeDecoder};
+pub(super) use super::{ArrayAppender, TypeDecoder};
 use crate::{DataType, DucklakeResult, TimestampPrecision};
 
-pub fn make_array_appender<D: TypeDecoder>(
+pub(in crate::db) fn make_array_appender<D: TypeDecoder>(
     field: &Field,
 ) -> DucklakeResult<Box<dyn ArrayAppender<D>>> {
     let column = crate::Column::try_from(field)?;

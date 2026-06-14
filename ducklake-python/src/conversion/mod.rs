@@ -34,23 +34,23 @@ mod py_modules {
     static PY_UUID_MOD: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
     static PY_RELATIVEDELTA_MOD: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
 
-    pub fn ducklake_module(py: Python<'_>) -> &Py<PyModule> {
+    pub(super) fn ducklake_module(py: Python<'_>) -> &Py<PyModule> {
         PY_DUCKLAKE.get_or_init(py, || py.import("ducklake").unwrap().unbind())
     }
 
-    pub fn datetime_module(py: Python<'_>) -> &Py<PyModule> {
+    pub(super) fn datetime_module(py: Python<'_>) -> &Py<PyModule> {
         PY_DATETIME.get_or_init(py, || py.import("datetime").unwrap().unbind())
     }
 
-    pub fn decimal_module(py: Python<'_>) -> &Py<PyModule> {
+    pub(super) fn decimal_module(py: Python<'_>) -> &Py<PyModule> {
         PY_DECIMAL_MOD.get_or_init(py, || py.import("decimal").unwrap().unbind())
     }
 
-    pub fn uuid_module(py: Python<'_>) -> &Py<PyModule> {
+    pub(super) fn uuid_module(py: Python<'_>) -> &Py<PyModule> {
         PY_UUID_MOD.get_or_init(py, || py.import("uuid").unwrap().unbind())
     }
 
-    pub fn relativedelta_module(py: Python<'_>) -> &Py<PyModule> {
+    pub(super) fn relativedelta_module(py: Python<'_>) -> &Py<PyModule> {
         PY_RELATIVEDELTA_MOD
             .get_or_init(py, || py.import("dateutil.relativedelta").unwrap().unbind())
     }

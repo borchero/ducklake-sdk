@@ -1,6 +1,6 @@
 use sea_query::ExprTrait;
 
-pub trait SnapshotFilter {
+pub(crate) trait SnapshotFilter {
     fn filter_for_snapshot(
         &mut self,
         begin_snapshot: sea_query::Expr,

@@ -9,13 +9,13 @@ use crate::spec::literals;
 
 /* -------------------------------------------- LIST ------------------------------------------- */
 
-pub struct LargeListArrayExtractor<E: TypeEncoder> {
+pub(super) struct LargeListArrayExtractor<E: TypeEncoder> {
     array: LargeListArray,
     inner: Box<dyn ArrayExtractor<E>>,
 }
 
 impl<E: TypeEncoder> LargeListArrayExtractor<E> {
-    pub fn new(array: &ArrayRef, inner_field: &Field) -> DucklakeResult<Self> {
+    pub(super) fn new(array: &ArrayRef, inner_field: &Field) -> DucklakeResult<Self> {
         let array = array
             .as_any()
             .downcast_ref::<LargeListArray>()
@@ -53,13 +53,13 @@ impl<E: TypeEncoder> ArrayExtractor<E> for LargeListArrayExtractor<E> {
 
 /* ------------------------------------------- STRUCT ------------------------------------------ */
 
-pub struct StructArrayExtractor<E: TypeEncoder> {
+pub(super) struct StructArrayExtractor<E: TypeEncoder> {
     array: StructArray,
     children: Vec<(String, Box<dyn ArrayExtractor<E>>)>,
 }
 
 impl<E: TypeEncoder> StructArrayExtractor<E> {
-    pub fn new(array: &ArrayRef, fields: &[arrow_schema::Field]) -> DucklakeResult<Self> {
+    pub(super) fn new(array: &ArrayRef, fields: &[arrow_schema::Field]) -> DucklakeResult<Self> {
         let array = array
             .as_any()
             .downcast_ref::<StructArray>()
@@ -105,14 +105,18 @@ impl<E: TypeEncoder> ArrayExtractor<E> for StructArrayExtractor<E> {
 
 /* -------------------------------------------- MAP -------------------------------------------- */
 
-pub struct MapArrayExtractor<E: TypeEncoder> {
+pub(super) struct MapArrayExtractor<E: TypeEncoder> {
     array: MapArray,
     key_encoder: Box<dyn ArrayExtractor<E>>,
     value_encoder: Box<dyn ArrayExtractor<E>>,
 }
 
 impl<E: TypeEncoder> MapArrayExtractor<E> {
-    pub fn new(array: &ArrayRef, key_field: &Field, value_field: &Field) -> DucklakeResult<Self> {
+    pub(super) fn new(
+        array: &ArrayRef,
+        key_field: &Field,
+        value_field: &Field,
+    ) -> DucklakeResult<Self> {
         let array = array.as_any().downcast_ref::<MapArray>().unwrap().clone();
         let key_encoder = factory::make_column_encoder::<E>(key_field, array.keys().clone())?;
         let value_encoder =

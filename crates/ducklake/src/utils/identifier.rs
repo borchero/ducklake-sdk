@@ -17,7 +17,7 @@ static DOT_SEPARATED_QUOTED_IDENTIFIERS: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Parse an identifier into its dot-separated components.
-pub fn parse_identifier(s: &str) -> Option<Vec<String>> {
+pub(crate) fn parse_identifier(s: &str) -> Option<Vec<String>> {
     if DOT_SEPARATED_UNQUOTED_IDENTIFIERS.is_match(s) {
         Some(s.split('.').map(str::to_string).collect())
     } else if DOT_SEPARATED_QUOTED_IDENTIFIERS.is_match(s) {
@@ -33,7 +33,7 @@ pub fn parse_identifier(s: &str) -> Option<Vec<String>> {
 }
 
 /// Format an identifier from its components, quoting each component as necessary.
-pub fn format_identifier<S: AsRef<str>>(components: &[S]) -> String {
+pub(crate) fn format_identifier<S: AsRef<str>>(components: &[S]) -> String {
     components
         .iter()
         .map(|s| format!("\"{}\"", quote(s.as_ref())))

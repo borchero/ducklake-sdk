@@ -18,7 +18,7 @@ create_exception!(
 create_exception!(ducklake.exceptions, TransactionConflictError, PyException);
 create_exception!(ducklake.exceptions, ImmutableDucklakeError, PyException);
 
-pub fn into_pyerr(error: DucklakeError) -> PyErr {
+pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
     use DucklakeError::*;
     match error {
         CatalogNotInitialized => NotInitializedError::new_err(

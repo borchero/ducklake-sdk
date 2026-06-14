@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use itertools::{EitherOrBoth, Itertools};
 
-pub fn iter_index_map_diff<'a, K, V>(
+pub(crate) fn iter_index_map_diff<'a, K, V>(
     lhs: &'a IndexMap<K, V>,
     rhs: &'a IndexMap<K, V>,
 ) -> impl Iterator<Item = EitherOrBoth<(&'a K, &'a V)>>
@@ -13,7 +13,7 @@ where
     iter_lhs.merge_join_by(iter_rhs, |(k1, _), (k2, _)| k1.cmp(k2))
 }
 
-pub fn iter_vec_diff<'a, T, K>(
+pub(crate) fn iter_vec_diff<'a, T, K>(
     lhs: &'a [T],
     rhs: &'a [T],
     key_fn: impl Fn(&T) -> K + 'a,

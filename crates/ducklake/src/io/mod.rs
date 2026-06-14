@@ -1,6 +1,6 @@
 #[macro_use]
-pub mod arrow;
-pub mod parquet;
+pub(crate) mod arrow;
+pub(crate) mod parquet;
 mod path;
 
-pub use path::{DucklakePath, Path};
+pub(crate) use path::{DucklakePath, Path};

@@ -12,7 +12,7 @@ use crate::{DucklakeResult, db};
 
 /* ------------------------------------------- FILES ------------------------------------------- */
 
-pub async fn write_table_data(
+pub(crate) async fn write_table_data(
     tx: &mut db::Transaction,
     state: &mut CommitState<'_>,
     table_ref: &TableRef,
@@ -104,7 +104,7 @@ pub async fn write_table_data(
 
 /* ---------------------------------------- INLINE DATA ---------------------------------------- */
 
-pub async fn create_inlined_data_table(
+pub(crate) async fn create_inlined_data_table(
     tx: &mut db::Transaction,
     state: &mut CommitState<'_>,
     table_ref: &TableRef,
@@ -158,7 +158,7 @@ pub async fn create_inlined_data_table(
     Ok(())
 }
 
-pub async fn write_table_inline_data(
+pub(crate) async fn write_table_inline_data(
     tx: &mut db::Transaction,
     state: &mut CommitState<'_>,
     table_ref: &TableRef,

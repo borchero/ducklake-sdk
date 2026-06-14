@@ -13,13 +13,13 @@ use crate::primitives::{Interval, TimeWithTimezone};
 use crate::spec::literals;
 use crate::{DataType, DucklakeResult};
 
-pub struct PostgresDialect;
+pub(in crate::db) struct PostgresDialect;
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                          COLUMN TYPES                                         */
 /* --------------------------------------------------------------------------------------------- */
 
-pub fn column_type_for_data_type(data_type: &DataType) -> ColumnType {
+pub(super) fn column_type_for_data_type(data_type: &DataType) -> ColumnType {
     match data_type {
         DataType::Boolean => ColumnType::Boolean,
         DataType::Int8 => ColumnType::SmallInteger,

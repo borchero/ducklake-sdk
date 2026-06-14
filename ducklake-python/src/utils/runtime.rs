@@ -11,7 +11,7 @@ static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
         .unwrap()
 });
 
-pub fn block_on<F>(py: Python, fut: F) -> F::Output
+pub(crate) fn block_on<F>(py: Python, fut: F) -> F::Output
 where
     F: std::future::Future + Send,
     F::Output: Ungil,

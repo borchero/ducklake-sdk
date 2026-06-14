@@ -5,21 +5,21 @@ use crate::catalog::Catalog;
 use crate::{DucklakeResult, db};
 
 #[derive(Clone)]
-pub struct CatalogCache {
+pub(super) struct CatalogCache {
     pool: db::Pool,
     /// Mapping from `schema_version` to the catalog for that version of the schema.
     catalogs: Arc<RwLock<HashMap<i64, Arc<Catalog>>>>,
 }
 
 impl CatalogCache {
-    pub fn new(pool: db::Pool) -> Self {
+    pub(super) fn new(pool: db::Pool) -> Self {
         Self {
             pool,
             catalogs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub async fn get(
+    pub(super) async fn get(
         &self,
         snapshot_id: i64,
         schema_version: i64,

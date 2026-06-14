@@ -2,7 +2,7 @@
 /*                                          QUERY VALUES                                         */
 /* --------------------------------------------------------------------------------------------- */
 
-pub fn adapt_values(values: sea_query_sqlx::SqlxValues) -> sea_query_sqlx::SqlxValues {
+pub(super) fn adapt_values(values: sea_query_sqlx::SqlxValues) -> sea_query_sqlx::SqlxValues {
     use sea_query::Value;
     let values = values
         .0
