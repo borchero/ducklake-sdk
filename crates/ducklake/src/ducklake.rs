@@ -305,6 +305,10 @@ impl DucklakeConnection {
     pub(crate) fn snapshot_cache(&self) -> &SnapshotCache {
         &self.0.snapshot_cache
     }
+
+    pub(crate) fn storage_options(&self) -> &Vec<(String, String)> {
+        &self.0.storage_options
+    }
 }
 
 /* ---------------------------------------- TRANSACTIONS --------------------------------------- */

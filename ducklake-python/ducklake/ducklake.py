@@ -468,38 +468,20 @@ class Ducklake:
     ) -> list[str]:
         """Delete files in the data directory that are not referenced by any snapshot.
 
-        Dispatches to `ducklake_delete_orphaned_files`. Useful for cleaning up files that were
-        written but never registered (e.g. due to a crashed writer).
+        Useful for cleaning up files that were written but never registered (e.g. due to a
+        crashed writer). Orphaned files are discovered by listing the data directory and matching
+        the files against the catalog's known data, delete, and scheduled-for-deletion files.
 
         Args:
             cleanup_all: If `True`, delete all orphaned files regardless of age.
-            older_than: If provided, only delete orphaned files older than this timestamp.
+            older_than: If provided, only delete orphaned files last modified before this
+                timestamp. Ignored when `cleanup_all` is `True`. Defaults to the current time.
             dry_run: If `True`, no files are actually deleted.
 
         Returns:
             The paths that were deleted, or would be deleted when `dry_run` is `True`.
-
-        Note:
-            This requires :mod:`duckdb` to be installed.
         """
-        from .duckdb.utils import (
-            build_named_query_params,
-            fetch_result_dicts,
-            parse_cleanup_path_result,
-        )
-
-        params, args = build_named_query_params(
-            cleanup_all=cleanup_all if cleanup_all else None,
-            older_than=older_than,
-            dry_run=dry_run if dry_run else None,
-        )
-        return parse_cleanup_path_result(
-            fetch_result_dicts(
-                self._duckdb_connection,
-                f"CALL ducklake_delete_orphaned_files('my_ducklake'{params});",
-                args,
-            )
-        )
+        return self._pyducklake.delete_orphaned_files(cleanup_all, older_than, dry_run)
 
     def rewrite_data_files(
         self, *, delete_threshold: float | None = None

@@ -192,4 +192,20 @@ impl PyDucklake {
             .map(|snapshots| snapshots.into_iter().map(Wrap).collect())
             .map_err(error::into_pyerr)
     }
+
+    pub fn delete_orphaned_files(
+        &self,
+        py: Python,
+        cleanup_all: bool,
+        older_than: Option<chrono::DateTime<chrono::Utc>>,
+        dry_run: bool,
+    ) -> PyResult<Vec<String>> {
+        let dry_run = if dry_run { DryRun::Yes } else { DryRun::No };
+        block_on(
+            py,
+            self.0
+                .delete_orphaned_files(cleanup_all, older_than, dry_run),
+        )
+        .map_err(error::into_pyerr)
+    }
 }
