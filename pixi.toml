@@ -9,7 +9,7 @@ platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"]
 [dependencies]
 
 [feature.optionals.dependencies]
-duckdb = "*"
+duckdb = ">=1.5.3"
 duckdb-engine = "*"
 polars = ">=1.40,<2"
 pyarrow = "*"
@@ -179,7 +179,7 @@ duckdb-cli = "=1.5.3"
 # ----------------------------------------------------------------------------------------------- #
 
 [environments]
-default = ["build-py", "dev", "ducklake", "ducklake-v1-0", "install-py", "lint", "optionals", "test-py", "test-rs"]
+default = ["build-py", "dev", "ducklake", "install-py", "lint", "optionals", "test-py", "test-rs"]
 
 build = { features = ["build-py", "install-py"], no-default-feature = true }
 docs = { features = ["docs-py", "install-py", "optionals"] }
