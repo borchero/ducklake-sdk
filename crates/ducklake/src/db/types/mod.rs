@@ -1,2 +1,2 @@
-pub mod chrono;
-pub mod uuid;
+pub(super) mod chrono;
+pub(super) mod uuid;

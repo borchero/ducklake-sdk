@@ -2,7 +2,7 @@ use sea_query::{Asterisk, Expr, ExprTrait, JoinType, Order, Query, SelectStateme
 
 use crate::spec::*;
 
-pub fn build_data_files_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
+pub(super) fn build_data_files_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
     Query::select()
         .column(Asterisk)
         .from(ducklake_data_file::Table)
@@ -15,7 +15,7 @@ pub fn build_data_files_query(table_id: i64, snapshot_id: i64) -> SelectStatemen
         .to_owned()
 }
 
-pub fn build_column_stats_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
+pub(super) fn build_column_stats_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
     Query::select()
         .column((ducklake_file_column_stats::Table, Asterisk))
         .from(ducklake_file_column_stats::Table)
@@ -46,7 +46,7 @@ pub fn build_column_stats_query(table_id: i64, snapshot_id: i64) -> SelectStatem
         .to_owned()
 }
 
-pub fn build_delete_files_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
+pub(super) fn build_delete_files_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
     Query::select()
         .column(Asterisk)
         .from(ducklake_delete_file::Table)
@@ -59,7 +59,7 @@ pub fn build_delete_files_query(table_id: i64, snapshot_id: i64) -> SelectStatem
         .to_owned()
 }
 
-pub fn build_inlined_data_tables_query(table_id: i64) -> SelectStatement {
+pub(super) fn build_inlined_data_tables_query(table_id: i64) -> SelectStatement {
     Query::select()
         .column(Asterisk)
         .from(ducklake_inlined_data_tables::Table)
@@ -71,7 +71,7 @@ pub fn build_inlined_data_tables_query(table_id: i64) -> SelectStatement {
         .to_owned()
 }
 
-pub fn build_inlined_data_query<'a>(
+pub(super) fn build_inlined_data_query<'a>(
     table_name: &str,
     columns: impl Iterator<Item = &'a String>,
     snapshot_id: i64,
@@ -88,7 +88,7 @@ pub fn build_inlined_data_query<'a>(
         .to_owned()
 }
 
-pub fn build_inlined_deletes_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
+pub(super) fn build_inlined_deletes_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
     Query::select()
         .column(Asterisk)
         .from(DucklakeInlinedDelete::table_name(table_id))

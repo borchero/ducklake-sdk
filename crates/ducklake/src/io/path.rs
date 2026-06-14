@@ -21,13 +21,13 @@ use crate::{DucklakeError, DucklakeResult};
 /// Path stored in the DuckLake catalog. It can either be relative (to the catalog's data path) or
 /// absolute.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum DucklakePath {
+pub(crate) enum DucklakePath {
     Absolute(Url),
     Relative(String),
 }
 
 impl DucklakePath {
-    pub fn new(path: &str, is_relative: bool) -> Self {
+    pub(crate) fn new(path: &str, is_relative: bool) -> Self {
         if is_relative {
             DucklakePath::Relative(path.to_string())
         } else {
@@ -46,7 +46,7 @@ impl DucklakePath {
         }
     }
 
-    pub fn join(&self, other: &DucklakePath) -> Self {
+    pub(crate) fn join(&self, other: &DucklakePath) -> Self {
         use DucklakePath::*;
         match (self, other) {
             (_, Absolute(other)) => Absolute(other.clone()),
@@ -58,15 +58,15 @@ impl DucklakePath {
         }
     }
 
-    pub fn join_str(&self, other: &str) -> Self {
+    pub(crate) fn join_str(&self, other: &str) -> Self {
         self.join(&DucklakePath::Relative(other.to_string()))
     }
 
-    pub fn is_relative(&self) -> bool {
+    pub(crate) fn is_relative(&self) -> bool {
         matches!(self, DucklakePath::Relative(_))
     }
 
-    pub fn ensure_directory(&self) -> Self {
+    pub(crate) fn ensure_directory(&self) -> Self {
         match self {
             DucklakePath::Absolute(url) => {
                 let mut url = url.clone();
@@ -85,14 +85,14 @@ impl DucklakePath {
         }
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             DucklakePath::Absolute(url) => url.as_str(),
             DucklakePath::Relative(path) => path.as_str(),
         }
     }
 
-    pub fn resolve(&self) -> DucklakeResult<Path> {
+    pub(crate) fn resolve(&self) -> DucklakeResult<Path> {
         let url = match self {
             DucklakePath::Absolute(url) => url.clone(),
             DucklakePath::Relative(path) => Url::from_file_path(format!(
@@ -145,7 +145,7 @@ impl Display for DucklakePath {
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug)]
-pub enum Path {
+pub(crate) enum Path {
     Local {
         path: String,
     },
@@ -193,7 +193,7 @@ impl Path {
         }
     }
 
-    pub fn path(&self) -> ObjectStorePath {
+    pub(crate) fn path(&self) -> ObjectStorePath {
         let path = match self {
             Path::Local { path } => path,
             #[cfg(feature = "aws")]
@@ -206,7 +206,7 @@ impl Path {
         ObjectStorePath::parse(path).unwrap()
     }
 
-    pub fn object_store(
+    pub(crate) fn object_store(
         &self,
         #[allow(unused_variables)] options: Option<Vec<(String, String)>>,
     ) -> Arc<dyn ObjectStore> {

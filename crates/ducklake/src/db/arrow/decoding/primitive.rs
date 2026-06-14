@@ -51,12 +51,12 @@ macro_rules! impl_array_appender_into_physical {
 
 macro_rules! primitive_appender {
     ($name:ident, $builder:ty, $decode_fn:ident, $decode_ty:ty) => {
-        pub struct $name {
+        pub(in crate::db) struct $name {
             builder: $builder,
         }
 
         impl $name {
-            pub fn new() -> Self {
+            pub(in crate::db) fn new() -> Self {
                 Self {
                     builder: <$builder>::new(),
                 }
@@ -88,12 +88,12 @@ primitive_appender! {LargeBinaryArrayAppender, arrow_builder::LargeBinaryBuilder
 
 macro_rules! binary_appender {
     ($name:ident, $size:expr, $decode_fn:ident, $decode_ty:ty) => {
-        pub struct $name {
+        pub(in crate::db) struct $name {
             builder: arrow_builder::FixedSizeBinaryBuilder,
         }
 
         impl $name {
-            pub fn new() -> Self {
+            pub(in crate::db) fn new() -> Self {
                 Self {
                     builder: arrow_builder::FixedSizeBinaryBuilder::new($size),
                 }
@@ -120,12 +120,12 @@ binary_appender! {UuidArrayAppender, 16, decode_uuid, uuid::Uuid}
 
 /* ------------------------------------------ DECIMAL ------------------------------------------ */
 
-pub struct DecimalArrayAppender {
+pub(super) struct DecimalArrayAppender {
     builder: arrow_builder::Decimal128Builder,
 }
 
 impl DecimalArrayAppender {
-    pub fn new(precision: u8, scale: i8) -> DucklakeResult<Self> {
+    pub(super) fn new(precision: u8, scale: i8) -> DucklakeResult<Self> {
         let builder =
             arrow_builder::Decimal128Builder::new().with_precision_and_scale(precision, scale)?;
         Ok(Self { builder })
@@ -142,12 +142,12 @@ impl_array_appender!(DecimalArrayAppender, decode_decimal);
 
 macro_rules! timestamp_appender {
     ($name:ident, $builder:ty, $unit:expr) => {
-        pub struct $name {
+        pub(in crate::db) struct $name {
             builder: $builder,
         }
 
         impl $name {
-            pub fn new() -> Self {
+            pub(in crate::db) fn new() -> Self {
                 Self {
                     builder: <$builder>::new(),
                 }
@@ -170,12 +170,12 @@ timestamp_appender! {TimestampNanosecondArrayAppender, arrow_builder::TimestampN
 
 /* ---------------------------------------- TIMESTAMPTZ ---------------------------------------- */
 
-pub struct TimestampTzArrayAppender {
+pub(super) struct TimestampTzArrayAppender {
     builder: arrow_builder::TimestampMicrosecondBuilder,
 }
 
 impl TimestampTzArrayAppender {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             builder: arrow_builder::TimestampMicrosecondBuilder::new().with_timezone("UTC"),
         }

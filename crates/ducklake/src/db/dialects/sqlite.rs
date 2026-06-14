@@ -12,13 +12,13 @@ use crate::primitives::{Interval, TimeWithTimezone};
 use crate::spec::literals;
 use crate::{DataType, DucklakeResult};
 
-pub struct SqliteDialect;
+pub(in crate::db) struct SqliteDialect;
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                          COLUMN TYPES                                         */
 /* --------------------------------------------------------------------------------------------- */
 
-pub fn column_type_for_data_type(data_type: &DataType) -> ColumnType {
+pub(super) fn column_type_for_data_type(data_type: &DataType) -> ColumnType {
     match data_type {
         DataType::Boolean
         | DataType::Int8
@@ -285,7 +285,7 @@ impl TypeEncoder for SqliteDialect {
 /*                                          QUERY VALUES                                         */
 /* --------------------------------------------------------------------------------------------- */
 
-pub fn adapt_values(values: sea_query_sqlx::SqlxValues) -> sea_query_sqlx::SqlxValues {
+pub(super) fn adapt_values(values: sea_query_sqlx::SqlxValues) -> sea_query_sqlx::SqlxValues {
     use sea_query::Value;
     let values = values
         .0

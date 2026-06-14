@@ -10,7 +10,7 @@ use crate::caches::{Snapshot, SnapshotCache};
 use crate::spec::*;
 use crate::{DucklakeResult, db, io};
 
-pub async fn scan_table(
+pub(crate) async fn scan_table(
     pool: &db::Pool,
     table_id: i64,
     snapshot: Arc<Snapshot>,

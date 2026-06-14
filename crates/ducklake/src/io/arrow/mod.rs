@@ -30,8 +30,8 @@ macro_rules! arrow_match_time {
     };
 }
 
-pub mod aggregate;
-pub mod conversion;
+pub(crate) mod aggregate;
+pub(crate) mod conversion;
 mod statistics;
 
-pub use statistics::compute_record_batch_statistics;
+pub(crate) use statistics::compute_record_batch_statistics;

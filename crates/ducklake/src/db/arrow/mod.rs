@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 use arrow_array::RecordBatch;
 use arrow_schema::Schema;
-pub use decoding::*;
-pub use encoding::*;
+pub(super) use decoding::*;
+pub(super) use encoding::*;
 use futures::{Stream, TryStreamExt};
 
 use crate::DucklakeResult;
 
-pub async fn decode_rows<R, S>(mut rows: S, schema: &Schema) -> DucklakeResult<RecordBatch>
+pub(super) async fn decode_rows<R, S>(mut rows: S, schema: &Schema) -> DucklakeResult<RecordBatch>
 where
     R: DecodableRow,
     S: Stream<Item = sqlx::Result<R>> + Unpin,
@@ -35,7 +35,9 @@ where
     Ok(RecordBatch::try_new(Arc::new(schema.clone()), arrays)?)
 }
 
-pub fn encode_record_batch<A: EncodableArguments>(batch: &RecordBatch) -> DucklakeResult<A> {
+pub(super) fn encode_record_batch<A: EncodableArguments>(
+    batch: &RecordBatch,
+) -> DucklakeResult<A> {
     // Create an extractor for each column in the batch
     let extractors: Vec<Box<dyn ArrayExtractor<A::Encoder>>> = batch
         .schema_ref()

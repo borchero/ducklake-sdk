@@ -3,7 +3,7 @@ mod nested;
 mod primitive;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
-pub use factory::make_column_encoder;
+pub(in crate::db) use factory::make_column_encoder;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -12,21 +12,21 @@ use crate::primitives::{Interval, TimeWithTimezone};
 
 /* ----------------------------------- STEP 1: ARRAY -> RUST ----------------------------------- */
 
-pub trait ArrayExtractor<E: TypeEncoder>: Send + Sync {
+pub(in crate::db) trait ArrayExtractor<E: TypeEncoder>: Send + Sync {
     fn extract(&self, args: &mut E::Arguments, row_idx: usize) -> DucklakeResult<()>;
     fn extract_text(&self, row_idx: usize) -> String;
 }
 
 /* ---------------------------------- STEP 2: RUST -> DATABASE --------------------------------- */
 
-pub trait EncodableArguments: Default {
+pub(in crate::db) trait EncodableArguments: Default {
     type Encoder: TypeEncoder<Arguments = Self> + 'static;
 }
 
-pub trait Bindable<DB: sqlx::Database> =
+pub(in crate::db) trait Bindable<DB: sqlx::Database> =
     sqlx::Encode<'static, DB> + sqlx::Type<DB> + Send + 'static;
 
-pub trait TypeEncoder: Send + Sync + 'static {
+pub(in crate::db) trait TypeEncoder: Send + Sync + 'static {
     type Arguments: sqlx::Arguments<Database = Self::Database> + Default;
     type Database: sqlx::Database;
 

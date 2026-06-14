@@ -21,7 +21,7 @@ macro_rules! aggregate {
     }};
 }
 
-pub fn find_min(data_type: &DataType, array: &arrow_array::ArrayRef) -> Option<Value> {
+pub(crate) fn find_min(data_type: &DataType, array: &arrow_array::ArrayRef) -> Option<Value> {
     if array.is_empty() {
         return None;
     }
@@ -85,7 +85,7 @@ pub fn find_min(data_type: &DataType, array: &arrow_array::ArrayRef) -> Option<V
     }
 }
 
-pub fn find_max(data_type: &DataType, array: &arrow_array::ArrayRef) -> Option<Value> {
+pub(crate) fn find_max(data_type: &DataType, array: &arrow_array::ArrayRef) -> Option<Value> {
     if array.is_empty() {
         return None;
     }

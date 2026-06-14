@@ -328,7 +328,7 @@ impl Ducklake {
 impl DucklakeConnection {
     /// Start a new transaction to make changes to the catalog. If `author_info` is provided, it
     /// is attached to the snapshot created when the transaction is committed.
-    pub async fn transaction(
+    pub(crate) async fn transaction(
         &self,
         author_info: Option<AuthorInfo>,
     ) -> DucklakeResult<Transaction<'_>> {
@@ -348,7 +348,7 @@ impl DucklakeConnection {
 
     /// Read the latest snapshot from the database and return it. Future calls to
     /// [`DucklakeConnection::current_snapshot`] will also return this snapshot.
-    pub async fn latest_snapshot(
+    pub(crate) async fn latest_snapshot(
         &self,
         tolerate_immutable: bool,
     ) -> DucklakeResult<Arc<Snapshot>> {
@@ -365,7 +365,7 @@ impl DucklakeConnection {
     /// Read the current snapshot from the in-memory cache. This might be stale if another
     /// process has committed a new snapshot since the last time
     /// [`DucklakeConnection::latest_snapshot`] was called.
-    pub fn current_snapshot(&self) -> Arc<Snapshot> {
+    pub(crate) fn current_snapshot(&self) -> Arc<Snapshot> {
         if let Some(travel_snapshot) = &self.0.travel_snapshot {
             travel_snapshot.clone()
         } else {

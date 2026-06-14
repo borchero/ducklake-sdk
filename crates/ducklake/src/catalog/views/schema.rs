@@ -4,13 +4,13 @@ use super::TryIntoRef;
 use crate::catalog::{ArenaIdx, Catalog, CatalogSchema, SchemaRef};
 use crate::{DucklakeError, DucklakeResult};
 
-pub struct SchemaView<'a, C = &'a Catalog> {
+pub(crate) struct SchemaView<'a, C = &'a Catalog> {
     catalog: C,
     arena_idx: ArenaIdx,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-pub type SchemaViewMut<'a> = SchemaView<'a, &'a mut Catalog>;
+pub(crate) type SchemaViewMut<'a> = SchemaView<'a, &'a mut Catalog>;
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                              INIT                                             */
@@ -27,14 +27,14 @@ impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
 }
 
 impl Catalog {
-    pub fn list_schemas(&self) -> Vec<SchemaView<'_>> {
+    pub(crate) fn list_schemas(&self) -> Vec<SchemaView<'_>> {
         self.schemas
             .values()
             .map(|arena_idx| SchemaView::new(self, (*arena_idx).into()))
             .collect()
     }
 
-    pub fn schema<R: TryIntoRef<SchemaRef>>(
+    pub(crate) fn schema<R: TryIntoRef<SchemaRef>>(
         &self,
         schema_ref: R,
     ) -> Result<SchemaView<'_>, R::Error> {
@@ -42,7 +42,7 @@ impl Catalog {
         Ok(SchemaView::new(self, schema_ref))
     }
 
-    pub fn schema_mut<R: TryIntoRef<SchemaRef>>(
+    pub(crate) fn schema_mut<R: TryIntoRef<SchemaRef>>(
         &mut self,
         schema_ref: R,
     ) -> Result<SchemaViewMut<'_>, R::Error> {
@@ -96,19 +96,19 @@ impl<'a> SchemaViewMut<'a> {
 /* ----------------------------------------- ACCESSORS ----------------------------------------- */
 
 impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
-    pub fn ref_(&self) -> SchemaRef {
+    pub(crate) fn ref_(&self) -> SchemaRef {
         SchemaRef(self.arena_idx)
     }
 
-    pub fn id(&self) -> Option<i64> {
+    pub(crate) fn id(&self) -> Option<i64> {
         self.inner().id
     }
 
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.inner().name
     }
 
-    pub fn list_tables(&self) -> Vec<super::TableView<'_>> {
+    pub(crate) fn list_tables(&self) -> Vec<super::TableView<'_>> {
         let catalog: &Catalog = &self.catalog;
         self.inner()
             .tables
@@ -121,7 +121,7 @@ impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
 /* ------------------------------------------ MUTATION ----------------------------------------- */
 
 impl<'a> SchemaViewMut<'a> {
-    pub fn resolve_id(&mut self, id: i64) {
+    pub(crate) fn resolve_id(&mut self, id: i64) {
         let schema = self.inner_mut();
         match schema.id {
             None => {
@@ -132,7 +132,7 @@ impl<'a> SchemaViewMut<'a> {
         }
     }
 
-    pub fn delete(&mut self) -> DucklakeResult<()> {
+    pub(crate) fn delete(&mut self) -> DucklakeResult<()> {
         let schema = self.inner_mut();
         if !schema.tables.is_empty() {
             return Err(DucklakeError::InvalidChanges(format!(

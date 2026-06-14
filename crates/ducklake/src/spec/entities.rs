@@ -5,7 +5,7 @@ use crate::db::{UtcDateTime, UuidText, sea_query_ext};
 /// This table describes the columns that are part of a table, including their types, default
 /// values etc.
 #[ducklake_table]
-pub struct DucklakeColumn {
+pub(crate) struct DucklakeColumn {
     pub column_id: i64,
     pub begin_snapshot: i64,
     pub end_snapshot: Option<i64>,
@@ -24,7 +24,7 @@ pub struct DucklakeColumn {
 /// Mappings contain the information used to map parquet fields to column ids in the absence of
 /// `field-id`s in the Parquet file.
 #[ducklake_table]
-pub struct DucklakeColumnMapping {
+pub(crate) struct DucklakeColumnMapping {
     pub mapping_id: i64,
     pub table_id: i64,
     pub r#type: Option<String>,
@@ -43,7 +43,7 @@ pub struct DucklakeColumnTag {
 
 /// Data files contain the actual row data.
 #[ducklake_table]
-pub struct DucklakeDataFile {
+pub(crate) struct DucklakeDataFile {
     #[primary_key]
     pub data_file_id: i64,
     pub table_id: i64,
@@ -66,7 +66,7 @@ pub struct DucklakeDataFile {
 /// Delete files contains the row ids of rows that are deleted. Each data file will have its own
 /// delete file if any deletes are present for this data file.
 #[ducklake_table]
-pub struct DucklakeDeleteFile {
+pub(crate) struct DucklakeDeleteFile {
     #[primary_key]
     pub delete_file_id: i64,
     pub table_id: i64,
@@ -85,7 +85,7 @@ pub struct DucklakeDeleteFile {
 
 /// This table contains column-level statistics for a single data file.
 #[ducklake_table]
-pub struct DucklakeFileColumnStats {
+pub(crate) struct DucklakeFileColumnStats {
     pub data_file_id: i64,
     pub table_id: i64,
     pub column_id: i64,
@@ -100,7 +100,7 @@ pub struct DucklakeFileColumnStats {
 
 /// Files that are no longer part of any snapshot are scheduled for deletion.
 #[ducklake_table]
-pub struct DucklakeFilesScheduledForDeletion {
+pub(crate) struct DucklakeFilesScheduledForDeletion {
     pub data_file_id: i64,
     pub path: String,
     pub path_is_relative: bool,
@@ -109,7 +109,7 @@ pub struct DucklakeFilesScheduledForDeletion {
 
 /// This table defines which data file belongs to which partition.
 #[ducklake_table]
-pub struct DucklakeFilePartitionValue {
+pub(crate) struct DucklakeFilePartitionValue {
     pub data_file_id: i64,
     pub table_id: i64,
     pub partition_key_index: i64,
@@ -118,7 +118,7 @@ pub struct DucklakeFilePartitionValue {
 
 /// This table links DuckLake snapshots with inlined data tables.
 #[ducklake_table]
-pub struct DucklakeInlinedDataTables {
+pub(crate) struct DucklakeInlinedDataTables {
     pub table_id: i64,
     pub table_name: String,
     pub schema_version: i64,
@@ -127,7 +127,7 @@ pub struct DucklakeInlinedDataTables {
 /// The ducklake_metadata table contains key/value pairs with information about the specific setup
 /// of the DuckLake catalog.
 #[ducklake_table]
-pub struct DucklakeMetadata {
+pub(crate) struct DucklakeMetadata {
     #[not_null]
     pub key: String,
     #[not_null]
@@ -139,7 +139,7 @@ pub struct DucklakeMetadata {
 /// This table contains the information used to map a name to a column_id for a given mapping_id
 /// with the `map_by_name` type.
 #[ducklake_table]
-pub struct DucklakeNameMapping {
+pub(crate) struct DucklakeNameMapping {
     pub mapping_id: i64,
     pub column_id: i64,
     pub source_name: Option<String>,
@@ -151,7 +151,7 @@ pub struct DucklakeNameMapping {
 /// Partitions can refer to one or more columns, possibly with transformations such as hashing or
 /// bucketing.
 #[ducklake_table]
-pub struct DucklakePartitionColumn {
+pub(crate) struct DucklakePartitionColumn {
     pub partition_id: i64,
     pub table_id: i64,
     pub partition_key_index: i64,
@@ -161,7 +161,7 @@ pub struct DucklakePartitionColumn {
 
 /// This table defines valid partitions.
 #[ducklake_table]
-pub struct DucklakePartitionInfo {
+pub(crate) struct DucklakePartitionInfo {
     pub partition_id: i64,
     pub table_id: i64,
     pub begin_snapshot: i64,
@@ -170,7 +170,7 @@ pub struct DucklakePartitionInfo {
 
 /// This table defines valid schemas.
 #[ducklake_table]
-pub struct DucklakeSchema {
+pub(crate) struct DucklakeSchema {
     #[primary_key]
     pub schema_id: i64,
     pub schema_uuid: Option<UuidText>,
@@ -184,7 +184,7 @@ pub struct DucklakeSchema {
 /// This table contains the schema versions for a range of snapshots. It is necessary to compact
 /// files with different schemas.
 #[ducklake_table]
-pub struct DucklakeSchemaVersions {
+pub(crate) struct DucklakeSchemaVersions {
     pub begin_snapshot: i64,
     pub schema_version: i64,
     pub table_id: Option<i64>,
@@ -192,7 +192,7 @@ pub struct DucklakeSchemaVersions {
 
 /// This table contains the valid snapshots in a DuckLake.
 #[ducklake_table]
-pub struct DucklakeSnapshot {
+pub(crate) struct DucklakeSnapshot {
     #[primary_key]
     pub snapshot_id: i64,
     pub snapshot_time: UtcDateTime,
@@ -203,7 +203,7 @@ pub struct DucklakeSnapshot {
 
 /// This table lists changes that happened in a snapshot for easier conflict detection.
 #[ducklake_table]
-pub struct DucklakeSnapshotChanges {
+pub(crate) struct DucklakeSnapshotChanges {
     #[primary_key]
     pub snapshot_id: i64,
     pub changes_made: String,
@@ -214,7 +214,7 @@ pub struct DucklakeSnapshotChanges {
 
 /// This table describes tables. Inception!
 #[ducklake_table]
-pub struct DucklakeTable {
+pub(crate) struct DucklakeTable {
     pub table_id: i64,
     pub table_uuid: Option<UuidText>,
     pub begin_snapshot: i64,
@@ -227,7 +227,7 @@ pub struct DucklakeTable {
 
 /// This table contains column-level statistics for an entire table.
 #[ducklake_table]
-pub struct DucklakeTableColumnStats {
+pub(crate) struct DucklakeTableColumnStats {
     pub table_id: i64,
     pub column_id: i64,
     pub contains_null: Option<bool>,
@@ -239,7 +239,7 @@ pub struct DucklakeTableColumnStats {
 
 /// This table contains table-level statistics.
 #[ducklake_table]
-pub struct DucklakeTableStats {
+pub(crate) struct DucklakeTableStats {
     pub table_id: i64,
     pub record_count: Option<i64>,
     pub next_row_id: i64,
@@ -259,7 +259,7 @@ pub struct DucklakeTag {
 /// This table stores macro definitions. Each macro is associated with a schema and tracks its
 /// lifecycle through snapshots.
 #[ducklake_table]
-pub struct DucklakeMacro {
+pub(crate) struct DucklakeMacro {
     pub schema_id: i64,
     pub macro_id: i64,
     pub macro_name: String,
@@ -269,7 +269,7 @@ pub struct DucklakeMacro {
 
 /// This table stores macro implementations. A single macro can have multiple implementations.
 #[ducklake_table]
-pub struct DucklakeMacroImpl {
+pub(crate) struct DucklakeMacroImpl {
     pub macro_id: i64,
     pub impl_id: i64,
     pub dialect: Option<String>,
@@ -279,7 +279,7 @@ pub struct DucklakeMacroImpl {
 
 /// This table stores the parameters for each macro implementation.
 #[ducklake_table]
-pub struct DucklakeMacroParameters {
+pub(crate) struct DucklakeMacroParameters {
     pub macro_id: i64,
     pub impl_id: i64,
     pub column_id: i64,
@@ -292,7 +292,7 @@ pub struct DucklakeMacroParameters {
 /// This table records the version history of sort settings for tables. Each row represents one
 /// sort configuration applied to a table, with snapshot-based validity tracking.
 #[ducklake_table]
-pub struct DucklakeSortInfo {
+pub(crate) struct DucklakeSortInfo {
     pub sort_id: i64,
     pub table_id: i64,
     pub begin_snapshot: i64,
@@ -302,7 +302,7 @@ pub struct DucklakeSortInfo {
 /// The ducklake_sort_expression table stores the individual sort key expressions for each sort
 /// configuration. Each row corresponds to one expression in a SET SORTED BY clause.
 #[ducklake_table]
-pub struct DucklakeSortExpression {
+pub(crate) struct DucklakeSortExpression {
     pub sort_id: i64,
     pub table_id: i64,
     pub sort_key_index: i64,
@@ -314,7 +314,7 @@ pub struct DucklakeSortExpression {
 
 /// This table contains per-file statistics for the shredded sub-fields of variant columns.
 #[ducklake_table]
-pub struct DucklakeFileVariantStats {
+pub(crate) struct DucklakeFileVariantStats {
     pub data_file_id: i64,
     pub table_id: i64,
     pub column_id: i64,
@@ -331,7 +331,7 @@ pub struct DucklakeFileVariantStats {
 
 /// This table describes SQL-style VIEW definitions.
 #[ducklake_table]
-pub struct DucklakeView {
+pub(crate) struct DucklakeView {
     pub view_id: i64,
     pub view_uuid: Option<UuidText>,
     pub begin_snapshot: i64,
@@ -349,14 +349,14 @@ pub struct DucklakeView {
 /// deletes. While the name of this table does not exist, it can be used as a type to read via
 /// sqlx.
 #[ducklake_table]
-pub struct DucklakeInlinedDelete {
+pub(crate) struct DucklakeInlinedDelete {
     pub file_id: i64,
     pub row_id: i64,
     pub begin_snapshot: i64,
 }
 
 impl DucklakeInlinedDelete {
-    pub fn table_name(table_id: i64) -> String {
+    pub(crate) fn table_name(table_id: i64) -> String {
         format!("ducklake_inlined_delete_{}", table_id)
     }
 }
@@ -364,14 +364,14 @@ impl DucklakeInlinedDelete {
 /// Partial table for inlined data tables. This includes only the columns which are added beyond
 /// the columns that contain the data.
 #[ducklake_table]
-pub struct DucklakeInlinedData {
+pub(crate) struct DucklakeInlinedData {
     pub row_id: i64,
     pub begin_snapshot: i64,
     pub end_snapshot: Option<i64>,
 }
 
 impl DucklakeInlinedData {
-    pub fn table_name(table_id: i64, schema_version: i64) -> String {
+    pub(crate) fn table_name(table_id: i64, schema_version: i64) -> String {
         format!("ducklake_inlined_data_{}_{}", table_id, schema_version)
     }
 }

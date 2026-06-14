@@ -5,7 +5,7 @@ use crate::spec::*;
 use crate::transaction::CommitState;
 use crate::{DucklakeResult, db, io};
 
-pub async fn create_schema<'a>(
+pub(crate) async fn create_schema<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     schema_ref: &SchemaRef,
@@ -29,7 +29,7 @@ pub async fn create_schema<'a>(
     Ok(())
 }
 
-pub async fn delete_schema<'a>(
+pub(crate) async fn delete_schema<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     schema_ref: &SchemaRef,

@@ -7,7 +7,7 @@ use super::primitive::*;
 use super::{ArrayExtractor, TypeEncoder};
 use crate::{DataType, DucklakeResult, TimestampPrecision};
 
-pub fn make_column_encoder<E: TypeEncoder>(
+pub(in crate::db) fn make_column_encoder<E: TypeEncoder>(
     field: &Field,
     array: ArrayRef,
 ) -> DucklakeResult<Box<dyn ArrayExtractor<E>>> {

@@ -6,13 +6,13 @@ use sea_query::{Asterisk, ExprTrait, Query};
 use crate::spec::*;
 use crate::{DucklakeError, DucklakeResult, db, io, spec};
 
-pub struct MetadataCache {
+pub(crate) struct MetadataCache {
     pool: db::Pool,
     metadata: RwLock<Arc<Metadata>>,
 }
 
 impl MetadataCache {
-    pub async fn new(pool: db::Pool) -> DucklakeResult<Self> {
+    pub(crate) async fn new(pool: db::Pool) -> DucklakeResult<Self> {
         let metadata = Metadata::load(&pool).await?;
         Ok(Self {
             pool,
@@ -20,7 +20,7 @@ impl MetadataCache {
         })
     }
 
-    pub fn get_metadata(&self) -> Arc<Metadata> {
+    pub(crate) fn get_metadata(&self) -> Arc<Metadata> {
         self.metadata.read().unwrap().clone()
     }
 }
@@ -30,7 +30,7 @@ impl MetadataCache {
 /* --------------------------------------------------------------------------------------------- */
 
 #[derive(Clone, Debug)]
-pub struct Metadata {
+pub(crate) struct Metadata {
     global: HashMap<String, String>,
     schema: HashMap<i64, HashMap<String, String>>,
     table: HashMap<i64, HashMap<String, String>>,
@@ -129,14 +129,18 @@ impl Metadata {
 /* --------------------------------------------------------------------------------------------- */
 
 impl Metadata {
-    pub fn data_path(&self) -> io::DucklakePath {
+    pub(crate) fn data_path(&self) -> io::DucklakePath {
         self.global
             .get(spec::metadata::DATA_PATH)
             .map(|s| s.parse().unwrap())
             .unwrap_or_default()
     }
 
-    pub fn table_metadata(&self, schema_id: Option<i64>, table_id: Option<i64>) -> TableMetadata {
+    pub(crate) fn table_metadata(
+        &self,
+        schema_id: Option<i64>,
+        table_id: Option<i64>,
+    ) -> TableMetadata {
         TableMetadata {
             data_inlining_row_limit: self
                 .get_key(spec::metadata::DATA_INLINING_ROW_LIMIT, schema_id, table_id)
@@ -231,7 +235,7 @@ const READ_ONLY_KEYS: &[&str] = &[
 ];
 
 impl MetadataCache {
-    pub async fn set_global(&self, key: String, value: String) -> DucklakeResult<()> {
+    pub(crate) async fn set_global(&self, key: String, value: String) -> DucklakeResult<()> {
         self.update(&self.pool, &key, Some(&value), None, None)
             .await?;
         Arc::make_mut(&mut self.metadata.write().unwrap())
@@ -240,7 +244,7 @@ impl MetadataCache {
         Ok(())
     }
 
-    pub async fn set_schema(
+    pub(crate) async fn set_schema(
         &self,
         schema_id: i64,
         key: String,
@@ -262,7 +266,7 @@ impl MetadataCache {
         Ok(())
     }
 
-    pub async fn set_table(
+    pub(crate) async fn set_table(
         &self,
         table_id: i64,
         key: String,
@@ -284,7 +288,7 @@ impl MetadataCache {
         Ok(())
     }
 
-    pub async fn unset_global(&self, key: &str) -> DucklakeResult<()> {
+    pub(crate) async fn unset_global(&self, key: &str) -> DucklakeResult<()> {
         self.update(&self.pool, key, None, None, None).await?;
         Arc::make_mut(&mut self.metadata.write().unwrap())
             .global
@@ -292,7 +296,7 @@ impl MetadataCache {
         Ok(())
     }
 
-    pub async fn unset_schema(&self, schema_id: i64, key: &str) -> DucklakeResult<()> {
+    pub(crate) async fn unset_schema(&self, schema_id: i64, key: &str) -> DucklakeResult<()> {
         self.update(&self.pool, key, None, Some("schema"), Some(schema_id))
             .await?;
         if let Some(schema_meta) = Arc::make_mut(&mut self.metadata.write().unwrap())
@@ -304,7 +308,7 @@ impl MetadataCache {
         Ok(())
     }
 
-    pub async fn unset_table(&self, table_id: i64, key: &str) -> DucklakeResult<()> {
+    pub(crate) async fn unset_table(&self, table_id: i64, key: &str) -> DucklakeResult<()> {
         self.update(&self.pool, key, None, Some("table"), Some(table_id))
             .await?;
         if let Some(table_meta) = Arc::make_mut(&mut self.metadata.write().unwrap())

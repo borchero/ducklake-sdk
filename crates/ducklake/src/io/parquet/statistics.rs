@@ -18,7 +18,7 @@ use parquet::schema::types::{SchemaDescriptor, Type};
 
 use crate::{DucklakeResult, FileColumnStats, io};
 
-pub async fn read_file_statistics(
+pub(crate) async fn read_file_statistics(
     path: io::Path,
     io_options: Option<Vec<(String, String)>>,
 ) -> DucklakeResult<crate::DataFileStatistics> {

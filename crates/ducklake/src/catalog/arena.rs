@@ -13,14 +13,14 @@ pub(super) struct Arena<T> {
 }
 
 impl<T> Arena<T> {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             arena: Vec::new(),
             by_id: HashMap::new(),
         }
     }
 
-    pub fn push(&mut self, entity: T, id: Option<i64>) -> ArenaIdx {
+    pub(super) fn push(&mut self, entity: T, id: Option<i64>) -> ArenaIdx {
         let idx = ArenaIdx(self.arena.len());
         self.arena.push(entity);
         if let Some(id) = id {
@@ -29,19 +29,19 @@ impl<T> Arena<T> {
         idx
     }
 
-    pub fn register_id(&mut self, idx: ArenaIdx, id: i64) {
+    pub(super) fn register_id(&mut self, idx: ArenaIdx, id: i64) {
         self.by_id.insert(id, idx);
     }
 
-    pub fn map_id(&self, id: i64) -> Option<ArenaIdx> {
+    pub(super) fn map_id(&self, id: i64) -> Option<ArenaIdx> {
         self.by_id.get(&id).copied()
     }
 
-    pub fn get(&self, idx: ArenaIdx) -> &T {
+    pub(super) fn get(&self, idx: ArenaIdx) -> &T {
         &self.arena[idx.0]
     }
 
-    pub fn get_mut(&mut self, idx: ArenaIdx) -> &mut T {
+    pub(super) fn get_mut(&mut self, idx: ArenaIdx) -> &mut T {
         &mut self.arena[idx.0]
     }
 }

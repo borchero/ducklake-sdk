@@ -9,10 +9,10 @@ use crate::spec::literals;
 /// supported by sqlx.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct UtcDateTime(pub DateTime<Utc>);
+pub(crate) struct UtcDateTime(pub DateTime<Utc>);
 
 impl UtcDateTime {
-    pub fn now() -> Self {
+    pub(crate) fn now() -> Self {
         UtcDateTime(Utc::now())
     }
 }

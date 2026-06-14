@@ -4,7 +4,7 @@ use super::ArenaIdx;
 /// It is different to the schema ID in the DuckLake and also exists for transaction-local
 /// (i.e. pending) schemas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SchemaRef(pub(super) ArenaIdx);
+pub(crate) struct SchemaRef(pub(super) ArenaIdx);
 
 impl From<ArenaIdx> for SchemaRef {
     fn from(value: ArenaIdx) -> Self {
@@ -16,7 +16,7 @@ impl From<ArenaIdx> for SchemaRef {
 /// It is different to the table ID in the DuckLake and also exists for transaction-local
 /// (i.e. pending) tables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TableRef(pub(super) ArenaIdx);
+pub(crate) struct TableRef(pub(super) ArenaIdx);
 
 #[cfg(test)]
 impl TableRef {
@@ -35,7 +35,7 @@ impl From<ArenaIdx> for TableRef {
 /// of a catalog. It is different to the column ID in the DuckLake and also exists for
 /// transaction-local (i.e. pending) columns, potentially of transaction-local tables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ColumnRef {
+pub(crate) struct ColumnRef {
     pub table_ref: TableRef,
     pub(super) column_idx: ArenaIdx,
 }

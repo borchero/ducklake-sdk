@@ -2,7 +2,7 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 
-pub fn ducklake_table_impl(input: TokenStream) -> TokenStream {
+pub(crate) fn ducklake_table_impl(input: TokenStream) -> TokenStream {
     let mut ast = syn::parse(input).unwrap();
     let ducklake_table = ducklake_table_blocks(&mut ast);
     let result = quote! {

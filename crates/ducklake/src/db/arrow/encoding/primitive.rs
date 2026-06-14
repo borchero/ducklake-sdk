@@ -42,12 +42,12 @@ macro_rules! impl_array_extractor {
 
 macro_rules! primitive_extractor {
     ($name:ident, $array:ty, $value_ty:ty, $encode_fn:ident) => {
-        pub struct $name {
+        pub(in crate::db) struct $name {
             array: $array,
         }
 
         impl $name {
-            pub fn new(array: &ArrayRef) -> Self {
+            pub(in crate::db) fn new(array: &ArrayRef) -> Self {
                 Self {
                     array: array.as_any().downcast_ref::<$array>().unwrap().clone(),
                 }
@@ -84,13 +84,13 @@ primitive_extractor! {UuidArrayExtractor, arrow_array::FixedSizeBinaryArray, Uui
 
 /* ------------------------------------------ DECIMAL ------------------------------------------ */
 
-pub struct DecimalArrayExtractor {
+pub(super) struct DecimalArrayExtractor {
     array: arrow_array::Decimal128Array,
     scale: u32,
 }
 
 impl DecimalArrayExtractor {
-    pub fn new(array: &ArrayRef, scale: u8) -> Self {
+    pub(super) fn new(array: &ArrayRef, scale: u8) -> Self {
         Self {
             array: array
                 .as_any()
@@ -112,12 +112,12 @@ impl_array_extractor!(DecimalArrayExtractor, encode_decimal, Decimal);
 
 macro_rules! primitive_time_unit_extractor {
     ($name:ident, $array:ty, $value_ty:ty, $encode_fn:ident, $unit:expr) => {
-        pub struct $name {
+        pub(in crate::db) struct $name {
             array: $array,
         }
 
         impl $name {
-            pub fn new(array: &ArrayRef) -> Self {
+            pub(in crate::db) fn new(array: &ArrayRef) -> Self {
                 Self {
                     array: array.as_any().downcast_ref::<$array>().unwrap().clone(),
                 }
@@ -145,12 +145,12 @@ primitive_time_unit_extractor! {TimestampNanosecondArrayExtractor, arrow_array::
 
 /* ------------------------------------------ STRING ------------------------------------------- */
 
-pub struct StringArrayExtractor {
+pub(super) struct StringArrayExtractor {
     array: arrow_array::StringViewArray,
 }
 
 impl StringArrayExtractor {
-    pub fn new(array: &ArrayRef) -> Self {
+    pub(super) fn new(array: &ArrayRef) -> Self {
         Self {
             array: array
                 .as_any()
@@ -187,12 +187,12 @@ impl<E: TypeEncoder> ArrayExtractor<E> for StringArrayExtractor {
 
 /* ------------------------------------------ BINARY ------------------------------------------- */
 
-pub struct BinaryArrayExtractor {
+pub(super) struct BinaryArrayExtractor {
     array: arrow_array::BinaryViewArray,
 }
 
 impl BinaryArrayExtractor {
-    pub fn new(array: &ArrayRef) -> Self {
+    pub(super) fn new(array: &ArrayRef) -> Self {
         Self {
             array: array
                 .as_any()

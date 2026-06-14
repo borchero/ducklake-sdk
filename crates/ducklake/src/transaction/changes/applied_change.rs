@@ -22,7 +22,7 @@ impl AppliedChangeSet {
         Self { changes }
     }
 
-    pub fn check_conflict(
+    pub(crate) fn check_conflict(
         &self,
         other: &AppliedChangeSet,
         catalog: &Catalog,

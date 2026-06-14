@@ -20,7 +20,7 @@ pub(in crate::catalog) struct CatalogPartitionColumn {
 
 impl CatalogTablePartition {
     /// Transforms DuckLake partition info and columns into a catalog table partition.
-    pub fn from_ducklake(
+    pub(in crate::catalog) fn from_ducklake(
         partition_info: DucklakePartitionInfo,
         partition_columns: Vec<DucklakePartitionColumn>,
         columns: &CatalogColumns,
@@ -44,7 +44,7 @@ impl CatalogTablePartition {
         Ok(partition)
     }
 
-    pub fn from_partition(
+    pub(in crate::catalog) fn from_partition(
         partition: crate::Partition,
         columns: &CatalogColumns,
     ) -> DucklakeResult<Self> {
@@ -65,7 +65,7 @@ impl CatalogTablePartition {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn into_partition(&self, columns: &CatalogColumns) -> crate::Partition {
+    pub(in crate::catalog) fn into_partition(&self, columns: &CatalogColumns) -> crate::Partition {
         let columns = self
             .columns
             .iter()

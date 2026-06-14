@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::spec::*;
 use crate::{DucklakeResult, Value, io};
 
-pub fn parse_data_file(
+pub(super) fn parse_data_file(
     data_file: DucklakeDataFile,
     column_stats: Option<&Vec<DucklakeFileColumnStats>>,
     column_dtypes: &HashMap<i64, crate::DataType>,
@@ -67,7 +67,7 @@ fn parse_column_stats(
     }
 }
 
-pub fn parse_delete_file(
+pub(super) fn parse_delete_file(
     delete_file: &DucklakeDeleteFile,
     base_path: &io::DucklakePath,
 ) -> crate::ScanDeleteFile {

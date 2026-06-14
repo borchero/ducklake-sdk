@@ -10,10 +10,10 @@ use uuid::Uuid;
 /// the DuckLake DuckDB extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct UuidText(pub Uuid);
+pub(crate) struct UuidText(pub Uuid);
 
 impl UuidText {
-    pub fn now_v7() -> Self {
+    pub(crate) fn now_v7() -> Self {
         UuidText(Uuid::now_v7())
     }
 }

@@ -11,7 +11,7 @@ use crate::{DucklakeResult, db, io};
 
 /// A set of changes that ought to be applied within a transaction.
 #[derive(Debug, Clone)]
-pub struct ChangeSet {
+pub(crate) struct ChangeSet {
     changes: Vec<Change>,
 }
 
@@ -20,7 +20,7 @@ impl ChangeSet {
     ///
     /// The change set retains the order of changes, but de-duplicates them based on their type.
     /// For example: if a table is renamed multiple times, only the last rename is kept.
-    pub fn new(changes: Vec<Change>) -> Self {
+    pub(crate) fn new(changes: Vec<Change>) -> Self {
         // Reverse so `unique_by` keeps the LAST occurrence of each key, then reverse back to
         // preserve input order. The double-`.rev()` is materialized between the two reversals
         // because `Rev<UniqueBy<Rev<_>>>` cancels the reversals out via `DoubleEndedIterator`.
@@ -94,12 +94,12 @@ impl ChangeSet {
     }
 
     /// Whether this change set is empty.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }
 
     /// Compute the applied from the changes in this change set.
-    pub fn applied_change_set(&self, state: &mut CommitState<'_>) -> AppliedChangeSet {
+    pub(crate) fn applied_change_set(&self, state: &mut CommitState<'_>) -> AppliedChangeSet {
         let applied_changes = self
             .changes
             .iter()
@@ -112,7 +112,7 @@ impl ChangeSet {
     ///
     /// The state is used to obtain IDs for newly created objects as well as other metadata such
     /// as the current snapshot ID.
-    pub async fn apply(
+    pub(crate) async fn apply(
         &self,
         tx: &mut db::Transaction,
         state: &mut CommitState<'_>,
@@ -155,14 +155,17 @@ impl ChangeSet {
 
     /// Whether any of the changes in this change set affects the schema of the DuckLake. This
     /// essentially applies to all changes that do not insert or re-arrange data.
-    pub fn changes_schema(&self) -> bool {
+    pub(crate) fn changes_schema(&self) -> bool {
         self.changes.iter().any(|c| c.changes_schema())
     }
 
     /// Obtain the IDs of all tables for which inline data is written. This is necessary for
     /// detecting writes of inline data in transactions where the table schema is changed.
     /// This is currently not handled but we need to throw an error.
-    pub fn table_ids_with_inline_data_writes(&self, state: &mut CommitState<'_>) -> Vec<i64> {
+    pub(crate) fn table_ids_with_inline_data_writes(
+        &self,
+        state: &mut CommitState<'_>,
+    ) -> Vec<i64> {
         self.changes
             .iter()
             .filter_map(|c| {
@@ -179,7 +182,7 @@ impl ChangeSet {
     /// Obtain the IDs of all tables for which the schema changes in this change set. This includes
     /// created and deleted tables. This information is required for the `DucklakeSchemaVersions`
     /// table, which tracks schema changes on a per-table basis.
-    pub fn table_ids_with_schema_changes(&self, state: &mut CommitState<'_>) -> Vec<i64> {
+    pub(crate) fn table_ids_with_schema_changes(&self, state: &mut CommitState<'_>) -> Vec<i64> {
         self.table_refs_with_schema_changes()
             .into_iter()
             .map(|r| state.table_id(r))
@@ -195,7 +198,7 @@ impl ChangeSet {
     }
 
     /// Whether any of the changes in this change set requires to read or write table stats.
-    pub fn requires_table_stats(&self) -> bool {
+    pub(crate) fn requires_table_stats(&self) -> bool {
         self.changes.iter().any(|c| c.requires_table_stats())
     }
 }
@@ -204,7 +207,7 @@ impl ChangeSet {
 
 /// A change to be applied within a transaction.
 #[derive(Debug, Clone)]
-pub enum Change {
+pub(crate) enum Change {
     // --- SCHEMA CHANGES ---
     CreateSchema {
         schema_ref: SchemaRef,

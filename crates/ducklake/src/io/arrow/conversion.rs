@@ -21,7 +21,7 @@ use crate::primitives::{Interval, TimeWithTimezone};
 /* --------------------------------------------------------------------------------------------- */
 
 /// Trait for logical types that can be constructed from their physical Arrow representation.
-pub trait FromPhysical {
+pub(crate) trait FromPhysical {
     type ArrowType: ?Sized;
 
     fn from_physical(value: &Self::ArrowType) -> Self;
@@ -29,7 +29,7 @@ pub trait FromPhysical {
 
 /// Trait for logical types that can be constructed from their physical Arrow representation with
 /// some additional context.
-pub trait FromPhysicalWithContext {
+pub(crate) trait FromPhysicalWithContext {
     type ArrowType: ?Sized;
     type Context;
 
@@ -37,7 +37,7 @@ pub trait FromPhysicalWithContext {
 }
 
 /// Trait for logical types that can be converted into their physical Arrow representation.
-pub trait IntoPhysical {
+pub(crate) trait IntoPhysical {
     type ArrowType;
 
     fn into_physical(self) -> Self::ArrowType;
@@ -45,7 +45,7 @@ pub trait IntoPhysical {
 
 /// Trait for logical types that can be converted into their physical Arrow representation with
 /// some additional context.
-pub trait IntoPhysicalWithContext {
+pub(crate) trait IntoPhysicalWithContext {
     type ArrowType;
     type Context;
 
@@ -58,7 +58,7 @@ pub trait IntoPhysicalWithContext {
 
 /// Trait for physical Arrow types that can be converted into their logical representation.
 /// This trait is auto-synthesized for any type that implements `FromPhysical`.
-pub trait IntoLogical<Logical> {
+pub(crate) trait IntoLogical<Logical> {
     fn into_logical(self) -> Logical;
 }
 
@@ -74,7 +74,7 @@ where
 /// Trait for physical Arrow types that can be converted into their logical representation with
 /// some additional context. This trait is auto-synthesized for any type that implements
 /// `FromPhysicalWithContext`.
-pub trait IntoLogicalWithContext<T, C> {
+pub(crate) trait IntoLogicalWithContext<T, C> {
     fn into_logical_with_context(self, context: &C) -> T;
 }
 
