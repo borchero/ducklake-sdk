@@ -171,8 +171,8 @@ duckdb = "=1.5.1"
 duckdb-cli = "=1.5.1"
 
 [feature.ducklake-v1-0.dependencies]
-duckdb = "=1.5.2"
-duckdb-cli = "=1.5.2"
+duckdb = "=1.5.3"
+duckdb-cli = "=1.5.3"
 
 # ----------------------------------------------------------------------------------------------- #
 #                                           ENVIRONMENTS                                          #
