@@ -32,7 +32,7 @@ pub(crate) struct DucklakeColumnMapping {
 
 /// Columns can also have tags, those are defined in this table.
 #[ducklake_table]
-pub struct DucklakeColumnTag {
+pub(crate) struct DucklakeColumnTag {
     pub table_id: i64,
     pub column_id: i64,
     pub begin_snapshot: i64,
@@ -248,7 +248,7 @@ pub(crate) struct DucklakeTableStats {
 
 /// Schemas, tables, and views etc can have tags, those are declared in this table.
 #[ducklake_table]
-pub struct DucklakeTag {
+pub(crate) struct DucklakeTag {
     pub object_id: i64,
     pub begin_snapshot: i64,
     pub end_snapshot: Option<i64>,
