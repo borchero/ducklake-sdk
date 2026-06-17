@@ -4,16 +4,22 @@ import json
 import os
 import uuid
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
+from urllib.parse import urlparse
 
 import boto3
 import sqlalchemy as sa
 from azure.storage.blob import BlobServiceClient
+from botocore.exceptions import ClientError
 from sqlalchemy_utils import create_database, database_exists, drop_database
+
+from ducklake._storage import AzureStorageOptions, S3StorageOptions, StorageOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+
+    import ducklake as dl
 
 # ----------------------------------------------------------------------------------------------- #
 #                                              SETUP                                              #
@@ -284,3 +290,59 @@ def _row_sort_key(row: dict[str, Any]) -> tuple[tuple[int, str], ...]:
     return tuple(
         (0, "") if value is None else (1, repr(value)) for _, value in sorted(row.items())
     )
+
+
+# ----------------------------------------------------------------------------------------------- #
+#                                         FILE OPERATIONS                                         #
+# ----------------------------------------------------------------------------------------------- #
+
+_TStorageOptions = TypeVar("_TStorageOptions", bound=StorageOptions)
+
+# ------------------------------------------ EXISTENCE ------------------------------------------ #
+
+
+def storage_file_exists(ducklake: dl.Ducklake, path: str) -> bool:
+    parsed = urlparse(path)
+    bucket = parsed.netloc
+    key = parsed.path.lstrip("/")
+    match parsed.scheme:
+        case "" | "file":
+            return os.path.exists(parsed.path if parsed.scheme == "file" else path)
+        case "s3" | "gs":
+            # GCS test buckets are backed by the same S3-compatible store (see `make_storage_path`),
+            # so both are inspected through the S3 client.
+            options = _storage_options(ducklake, S3StorageOptions)
+            client = boto3.client(
+                "s3",
+                endpoint_url=options.endpoint_url,
+                aws_access_key_id=options.access_key_id,
+                aws_secret_access_key=options.secret_access_key,
+                region_name=options.region,
+            )
+            try:
+                client.head_object(Bucket=bucket, Key=key)
+            except ClientError as error:
+                if error.response["Error"]["Code"] in ("404", "NoSuchKey"):
+                    return False
+                raise
+            return True
+        case "az" | "abfs":
+            options = _storage_options(ducklake, AzureStorageOptions)
+            blob_service_client = BlobServiceClient.from_connection_string(
+                "DefaultEndpointsProtocol=http;"
+                f"AccountName={options.account_name};"
+                f"AccountKey={options.account_key};"
+                f"BlobEndpoint={options.endpoint_url};"
+            )
+            return blob_service_client.get_blob_client(container=bucket, blob=key).exists()
+        case _:
+            raise NotImplementedError
+
+
+def _storage_options(
+    ducklake: dl.Ducklake, options_type: type[_TStorageOptions]
+) -> _TStorageOptions:
+    for options in ducklake._storage_options.options:
+        if isinstance(options, options_type):
+            return options
+    raise ValueError(f"No {options_type.__name__} configured on the DuckLake.")

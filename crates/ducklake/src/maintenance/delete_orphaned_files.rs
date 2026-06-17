@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use futures::StreamExt;
+use futures::{StreamExt, stream};
+use object_store::ObjectStore;
 use object_store::path::Path as ObjectStorePath;
-use object_store::{ObjectStore, ObjectStoreExt};
 use sea_query::{Expr, ExprTrait, IntoIden, JoinType, Query};
 
 use super::DryRun;
@@ -42,7 +42,7 @@ impl Ducklake {
 
         // 2) List all files below the data path and find the orphaned ones.
         let resolved = data_path.resolve()?;
-        let store = resolved.object_store(Some(self.conn.storage_options().clone()));
+        let store = resolved.object_store(Some(self.conn.storage_options().to_vec()));
         let prefix = resolved.path();
         let threshold = if cleanup_all {
             None
@@ -65,10 +65,18 @@ impl Ducklake {
             orphans.push(meta.location);
         }
 
-        // 3) Delete the orphaned files unless this is a dry run.
+        // 3) Delete the orphaned files unless this is a dry run. We batch the deletes via
+        // `delete_stream` so the object store can use batch APIs where available, and tolerate
+        // files that are already gone to keep the operation idempotent.
         if matches!(dry_run, DryRun::No) {
-            for location in &orphans {
-                store.delete(location).await?;
+            let locations = orphans.clone();
+            let mut deletion =
+                store.delete_stream(stream::iter(locations.into_iter().map(Ok)).boxed());
+            while let Some(result) = deletion.next().await {
+                match result {
+                    Ok(_) | Err(object_store::Error::NotFound { .. }) => {}
+                    Err(e) => return Err(e.into()),
+                }
             }
         }
 

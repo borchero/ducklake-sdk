@@ -193,6 +193,24 @@ impl PyDucklake {
             .map_err(error::into_pyerr)
     }
 
+    pub fn cleanup_old_files(
+        &self,
+        py: Python,
+        cleanup_all: bool,
+        older_than: Option<chrono::DateTime<chrono::Utc>>,
+        dry_run: bool,
+    ) -> PyResult<Vec<String>> {
+        let dry_run = if dry_run { DryRun::Yes } else { DryRun::No };
+        let result = if cleanup_all {
+            block_on(py, self.0.cleanup_all_old_files(dry_run))
+        } else if let Some(timestamp) = older_than {
+            block_on(py, self.0.cleanup_old_files_older_than(timestamp, dry_run))
+        } else {
+            block_on(py, self.0.cleanup_old_files(dry_run))
+        };
+        result.map_err(error::into_pyerr)
+    }
+
     pub fn delete_orphaned_files(
         &self,
         py: Python,

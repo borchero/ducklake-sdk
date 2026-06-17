@@ -73,6 +73,10 @@ const DEFAULT_PARQUET_VERSION: i64 = 1;
 const DEFAULT_HIVE_FILE_PATTERN: bool = true;
 const DEFAULT_REWRITE_DELETE_THRESHOLD: f64 = 0.95;
 const DEFAULT_AUTO_COMPACT: bool = true;
+const DEFAULT_DELETE_OLDER_THAN: Interval = Interval {
+    months: chrono::Months::new(0),
+    delta: chrono::Duration::seconds(60 * 60 * 24 * 2), // 2 days
+};
 
 /* -------------------------------------------- LOAD ------------------------------------------- */
 
@@ -140,6 +144,13 @@ impl Metadata {
         self.global
             .get(spec::metadata::EXPIRE_OLDER_THAN)
             .and_then(|s| literals::parse(s).ok().flatten())
+    }
+
+    pub(crate) fn delete_older_than(&self) -> Interval {
+        self.global
+            .get(spec::metadata::DELETE_OLDER_THAN)
+            .and_then(|s| literals::parse(s).ok().flatten())
+            .unwrap_or(DEFAULT_DELETE_OLDER_THAN)
     }
 
     pub(crate) fn table_metadata(
