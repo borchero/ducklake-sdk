@@ -59,8 +59,6 @@ impl Ducklake {
         let data_path = self.conn.metadata().data_path();
         let storage_options = self.conn.storage_options().to_vec();
 
-        let mut tx = self.conn.pool().begin().await?;
-
         // 1) Find all files scheduled for deletion that match the filter.
         let mut select_query = Query::select()
             .columns([
@@ -73,7 +71,7 @@ impl Ducklake {
         if let Some(condition) = filter.condition() {
             select_query.cond_where(condition);
         }
-        let files: Vec<(i64, String, bool)> = tx.fetch_all(&select_query).await?;
+        let files: Vec<(i64, String, bool)> = self.conn.pool().fetch_all(&select_query).await?;
 
         // Resolve the full path of each file relative to the catalog's data path.
         let paths = files
@@ -86,7 +84,6 @@ impl Ducklake {
 
         // 2) In dry-run mode, we return the paths that would be deleted without touching anything.
         if matches!(dry_run, DryRun::Yes) {
-            tx.rollback().await?;
             return Ok(paths.iter().map(|path| path.to_string()).collect());
         }
 
@@ -94,6 +91,8 @@ impl Ducklake {
         delete_files(&paths, &storage_options).await?;
 
         // 4) Now that the files are gone, delete the corresponding rows from the database.
+        let mut tx = self.conn.pool().begin().await?;
+
         let file_ids = files.into_iter().map(|(id, _, _)| id).collect::<Vec<_>>();
         let lookup_table =
             LookupTableHandle::new(&mut tx, DATA_FILE_ID_LOOKUP_TABLE, &file_ids).await?;
