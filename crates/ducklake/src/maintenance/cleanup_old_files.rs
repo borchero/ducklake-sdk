@@ -1,9 +1,12 @@
-use object_store::ObjectStoreExt;
+use futures::{StreamExt, stream};
 use sea_query::{Condition, ExprTrait, Query};
 
 use super::DryRun;
+use super::utils::LookupTableHandle;
 use crate::spec::*;
 use crate::{Ducklake, DucklakeResult, io};
+
+const DATA_FILE_ID_LOOKUP_TABLE: &str = "__ducklake_cleaned_up_data_file_ids";
 
 /* ----------------------------------------- PUBLIC API ---------------------------------------- */
 
@@ -18,7 +21,8 @@ impl Ducklake {
     ///
     /// The `dry_run` flag allows to understand which files would be deleted upon execution.
     ///
-    /// Returns the paths of the files that were deleted (or that would be deleted in dry-run mode).
+    /// Returns the paths of the files that were deleted (or that would be deleted in dry-run
+    /// mode).
     pub async fn cleanup_old_files(&self, dry_run: DryRun) -> DucklakeResult<Vec<String>> {
         let interval = self.conn.metadata().delete_older_than();
         let timestamp = chrono::Utc::now() - interval.months - interval.delta;
@@ -60,6 +64,7 @@ impl Ducklake {
         // 1) Find all files scheduled for deletion that match the filter.
         let mut select_query = Query::select()
             .columns([
+                ducklake_files_scheduled_for_deletion::Column::DataFileId,
                 ducklake_files_scheduled_for_deletion::Column::Path,
                 ducklake_files_scheduled_for_deletion::Column::PathIsRelative,
             ])
@@ -68,18 +73,14 @@ impl Ducklake {
         if let Some(condition) = filter.condition() {
             select_query.cond_where(condition);
         }
-        let files: Vec<(String, bool)> = tx.fetch_all(&select_query).await?;
+        let files: Vec<(i64, String, bool)> = tx.fetch_all(&select_query).await?;
 
         // Resolve the full path of each file relative to the catalog's data path.
         let paths = files
-            .into_iter()
-            .map(|(path, path_is_relative)| {
-                let stored = io::DucklakePath::new(&path, path_is_relative);
-                if stored.is_absolute() {
-                    stored
-                } else {
-                    data_path.join(&stored)
-                }
+            .iter()
+            .map(|(_, path, path_is_relative)| {
+                let stored = io::DucklakePath::new(path, *path_is_relative);
+                data_path.join(&stored)
             })
             .collect::<Vec<_>>();
 
@@ -89,19 +90,22 @@ impl Ducklake {
             return Ok(paths.iter().map(|path| path.to_string()).collect());
         }
 
-        // 3) Delete each file from the object store. Files that are already gone are tolerated.
-        for path in &paths {
-            delete_file(path, &storage_options).await?;
-        }
+        // 3) Delete the files from the object store, batching deletes per store.
+        delete_files(&paths, &storage_options).await?;
 
         // 4) Now that the files are gone, delete the corresponding rows from the database.
-        let mut delete_query = Query::delete()
-            .from_table(ducklake_files_scheduled_for_deletion::Table)
-            .take();
-        if let Some(condition) = filter.condition() {
-            delete_query.cond_where(condition);
-        }
+        let file_ids = files.into_iter().map(|(id, _, _)| id).collect::<Vec<_>>();
+        let lookup_table =
+            LookupTableHandle::new(&mut tx, DATA_FILE_ID_LOOKUP_TABLE, &file_ids).await?;
+        let delete_query =
+            Query::delete()
+                .from_table(ducklake_files_scheduled_for_deletion::Table)
+                .cond_where(lookup_table.condition_is_in(
+                    ducklake_files_scheduled_for_deletion::Column::DataFileId.col(),
+                ))
+                .take();
         tx.execute(&delete_query).await?;
+        lookup_table.drop(&mut tx).await?;
 
         tx.commit().await?;
         Ok(paths.into_iter().map(|path| path.to_string()).collect())
@@ -112,18 +116,34 @@ impl Ducklake {
 /*                                             UTILS                                             */
 /* --------------------------------------------------------------------------------------------- */
 
-async fn delete_file(
-    path: &io::DucklakePath,
+async fn delete_files(
+    paths: &[io::DucklakePath],
     storage_options: &[(String, String)],
 ) -> DucklakeResult<()> {
-    let io_path = path.resolve()?;
-    let store = io_path.object_store(Some(storage_options.to_vec()));
-    let object_path = io_path.path();
-    match store.delete(&object_path).await {
-        // We tolerate files that are already gone to keep the operation idempotent.
-        Ok(()) | Err(object_store::Error::NotFound { .. }) => Ok(()),
-        Err(e) => Err(e.into()),
+    // We assume that all files share the same backing object store, so we resolve it once and
+    // batch the deletes via `delete_stream`. This allows using batch APIs of the object store if
+    // available.
+    let Some(first) = paths.first() else {
+        return Ok(());
+    };
+    let store = first
+        .resolve()?
+        .object_store(Some(storage_options.to_vec()));
+
+    let locations = paths
+        .iter()
+        .map(|path| Ok(path.resolve()?.path()))
+        .collect::<DucklakeResult<Vec<_>>>()?;
+
+    let mut stream = store.delete_stream(stream::iter(locations.into_iter().map(Ok)).boxed());
+    while let Some(result) = stream.next().await {
+        match result {
+            // We tolerate files that are already gone to keep the operation idempotent.
+            Ok(_) | Err(object_store::Error::NotFound { .. }) => {}
+            Err(e) => return Err(e.into()),
+        }
     }
+    Ok(())
 }
 
 /* ------------------------------------------ FILTERS ------------------------------------------ */

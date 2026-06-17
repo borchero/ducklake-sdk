@@ -370,6 +370,47 @@ class Ducklake:
             dry_run,
         )
 
+    # ------------------------------------ CLEANUP OLD FILES ------------------------------------ #
+
+    @overload
+    def cleanup_old_files(self, *, dry_run: bool = False) -> list[str]: ...
+
+    @overload
+    def cleanup_old_files(self, *, cleanup_all: bool, dry_run: bool = False) -> list[str]: ...
+
+    @overload
+    def cleanup_old_files(
+        self, *, older_than: dt.datetime, dry_run: bool = False
+    ) -> list[str]: ...
+
+    def cleanup_old_files(
+        self,
+        *,
+        cleanup_all: bool = False,
+        older_than: dt.datetime | None = None,
+        dry_run: bool = False,
+    ) -> list[str]:
+        """Delete files that have been scheduled for deletion.
+
+        Files are only scheduled for deletion when the snapshots referencing them are expired
+        (see :meth:`expire_snapshots`).
+
+        If neither `cleanup_all` nor `older_than` is provided, files are deleted according to the
+        `"delete_older_than"` metadata option (which defaults to two days). The reason for this
+        "grace period" is to prevent deleting files that are being used by active queries.
+
+        Args:
+            cleanup_all: If `True`, delete all files scheduled for deletion regardless of age.
+            older_than: If provided, only delete files scheduled for deletion before this
+                timestamp.
+            dry_run: If `True`, no files are actually deleted and the returned paths merely
+                indicate what would be deleted.
+
+        Returns:
+            The paths that were deleted, or would be deleted when `dry_run` is `True`.
+        """
+        return self._pyducklake.cleanup_old_files(cleanup_all, older_than, dry_run)
+
     # ------------------------------------------ OTHER ------------------------------------------ #
 
     def merge_adjacent_files(
@@ -415,33 +456,6 @@ class Ducklake:
                 args,
             )
         )
-
-    def cleanup_old_files(
-        self,
-        *,
-        cleanup_all: bool = False,
-        older_than: dt.datetime | None = None,
-        dry_run: bool = False,
-    ) -> list[str]:
-        """Delete files that have been scheduled for deletion.
-
-        Files are only scheduled for deletion when the snapshots referencing them are expired
-        (see :meth:`expire_snapshots`).
-
-        If neither `cleanup_all` nor `older_than` is provided, files are deleted according to the
-        `"delete_older_than"` metadata option (defaulting to two days).
-
-        Args:
-            cleanup_all: If `True`, delete all files scheduled for deletion regardless of age.
-            older_than: If provided, only delete files scheduled for deletion before this
-                timestamp.
-            dry_run: If `True`, no files are actually deleted and the returned paths merely
-                indicate what would be deleted.
-
-        Returns:
-            The paths that were deleted, or would be deleted when `dry_run` is `True`.
-        """
-        return self._pyducklake.cleanup_old_files(cleanup_all, older_than, dry_run)
 
     def delete_orphaned_files(
         self,
