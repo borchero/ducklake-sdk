@@ -45,7 +45,6 @@ pub(crate) static REQUIRE_COMMIT_MESSAGE: &str = "require_commit_message";
 pub(crate) static REWRITE_DELETE_THRESHOLD: &str = "rewrite_delete_threshold";
 
 // Age threshold for deleting unused files (duration string, e.g., '7d').
-#[allow(dead_code)]
 pub(crate) static DELETE_OLDER_THAN: &str = "delete_older_than";
 
 // Age threshold for expiring snapshots (duration string, e.g., '30d').

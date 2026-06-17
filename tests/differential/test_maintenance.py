@@ -38,3 +38,34 @@ def test_match_reference_expire_snapshot_versions(
 
     # Assert
     assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)
+
+
+@pytest.mark.differential
+def test_match_reference_cleanup_old_files(
+    ducklake: dl.Ducklake,
+    catalog_url: str,
+    reference_catalog_url: str,
+    reference_duckdb_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    # Arrange
+    first_table = ducklake.create_table("first", schema={"x": dl.Int64()})  # snapshot 1
+    first_table.sink_polars(pl.LazyFrame({"x": range(100)}))  # snapshot 2
+    first_table.delete()  # snapshot 3
+
+    reference_duckdb_connection.execute("CREATE TABLE first (x BIGINT)")
+    reference_duckdb_connection.execute("INSERT INTO first SELECT * FROM range(100)")
+    reference_duckdb_connection.execute("DROP TABLE first")
+
+    # Act
+    ducklake.expire_snapshots(versions=[0, 1, 2])
+    ducklake.cleanup_old_files(cleanup_all=True)
+
+    reference_duckdb_connection.execute(
+        "CALL ducklake_expire_snapshots('my_ducklake', versions => [0, 1, 2])"
+    )
+    reference_duckdb_connection.execute(
+        "CALL ducklake_cleanup_old_files('my_ducklake', cleanup_all => true)"
+    )
+
+    # Assert
+    assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)
