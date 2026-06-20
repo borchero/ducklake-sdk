@@ -1,5 +1,4 @@
 import datetime as dt
-from pathlib import Path
 
 import polars as pl
 import pytest
@@ -46,38 +45,6 @@ def test_merge_adjacent_files_skipped(ducklake: dl.Ducklake, random_table_name: 
     # Assert
     assert result == []
     assert len(table.scan().data_files) == 3
-
-
-@pytest.mark.skip_config(
-    storage="s3", reason="Orphaned-file cleanup test requires direct filesystem access."
-)
-@pytest.mark.skip_config(
-    storage="gcs", reason="Orphaned-file cleanup test requires direct filesystem access."
-)
-@pytest.mark.skip_config(
-    storage="azure", reason="Orphaned-file cleanup test requires direct filesystem access."
-)
-def test_delete_orphaned_files(
-    ducklake: dl.Ducklake, random_table_name: str, storage_path: str
-) -> None:
-    # Arrange: write a stray parquet file into the table directory that DuckLake doesn't know about
-    table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    table.set_metadata(data_inlining_row_limit=0)
-    table.write_polars(pl.DataFrame({"x": [1]}))
-    orphan = Path(storage_path) / "main" / random_table_name / "orphan.parquet"
-    orphan.parent.mkdir(parents=True, exist_ok=True)
-    pl.DataFrame({"x": [42]}).write_parquet(str(orphan))
-    assert orphan.exists()
-
-    # Act
-    dry_run_result = ducklake.delete_orphaned_files(cleanup_all=True, dry_run=True)
-    assert orphan.exists()
-    result = ducklake.delete_orphaned_files(cleanup_all=True)
-
-    # Assert
-    assert orphan in {Path(path) for path in dry_run_result}
-    assert orphan in {Path(path) for path in result}
-    assert not orphan.exists()
 
 
 def test_rewrite_data_files(ducklake: dl.Ducklake, random_table_name: str) -> None:

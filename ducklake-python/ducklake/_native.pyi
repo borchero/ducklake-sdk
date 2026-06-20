@@ -58,6 +58,12 @@ class PyDucklake:
         older_than: dt.datetime | None,
         dry_run: bool,
     ) -> list[str]: ...
+    def delete_orphaned_files(
+        self,
+        cleanup_all: bool,
+        older_than: dt.datetime | None,
+        dry_run: bool,
+    ) -> list[str]: ...
     def disconnect(self) -> None: ...
 
 # -------------------------------------------- TABLE -------------------------------------------- #

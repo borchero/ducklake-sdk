@@ -210,6 +210,18 @@ impl Path {
         ObjectStorePath::parse(path).unwrap()
     }
 
+    pub(crate) fn display_location(&self, location: &ObjectStorePath) -> String {
+        match self {
+            Path::Local { .. } => format!("/{}", location),
+            #[cfg(feature = "aws")]
+            Path::S3 { bucket, .. } => format!("s3://{}/{}", bucket, location),
+            #[cfg(feature = "azure")]
+            Path::Azure { container, .. } => format!("az://{}/{}", container, location),
+            #[cfg(feature = "gcp")]
+            Path::GCS { bucket, .. } => format!("gs://{}/{}", bucket, location),
+        }
+    }
+
     pub(crate) fn object_store(
         &self,
         #[allow(unused_variables)] options: Option<Vec<(String, String)>>,

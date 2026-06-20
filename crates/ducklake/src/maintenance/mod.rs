@@ -1,4 +1,5 @@
 mod cleanup_old_files;
+mod delete_orphaned_files;
 mod expire_snapshots;
 mod utils;
 
