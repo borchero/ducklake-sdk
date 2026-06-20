@@ -16,7 +16,9 @@ def test_delete_orphaned_files(
     live_files = {file.path for file in table.scan().data_files}
 
     orphan_file = os.path.join(storage_path, "test.parquet")
-    pl.LazyFrame({"x": [2]}).sink_parquet(orphan_file, mkdir=True)
+    pl.LazyFrame({"x": [2]}).sink_parquet(
+        orphan_file, mkdir=True, storage_options=ducklake._storage_options.to_dict()
+    )
 
     # Act / Assert
     dry_run_result = ducklake.delete_orphaned_files(cleanup_all=True, dry_run=True)
@@ -56,7 +58,9 @@ def test_delete_orphaned_files_respects_older_than(
 ) -> None:
     # Arrange
     orphan_file = os.path.join(storage_path, "test.parquet")
-    pl.LazyFrame({"x": [2]}).sink_parquet(orphan_file, mkdir=True)
+    pl.LazyFrame({"x": [2]}).sink_parquet(
+        orphan_file, mkdir=True, storage_options=ducklake._storage_options.to_dict()
+    )
 
     # Act
     result_default = ducklake.delete_orphaned_files()
