@@ -1,75 +1,70 @@
 import datetime as dt
-from pathlib import Path
-from urllib.parse import urlparse
+import os
 
 import polars as pl
-import pytest
+from _testutils import storage_file_exists
 
 import ducklake as dl
 
-# Creating an orphaned file requires writing directly into the table directory, which the test
-# only does for local storage.
-pytestmark = [
-    pytest.mark.skip_config(catalog="mysql", reason="The DuckDB MySQL connector is unreliable."),
-    pytest.mark.skip_config(
-        storage="s3", reason="Orphaned-file cleanup test requires direct filesystem access."
-    ),
-    pytest.mark.skip_config(
-        storage="gcs", reason="Orphaned-file cleanup test requires direct filesystem access."
-    ),
-    pytest.mark.skip_config(
-        storage="azure", reason="Orphaned-file cleanup test requires direct filesystem access."
-    ),
-]
 
-
-@pytest.fixture()
-def orphan_file(ducklake: dl.Ducklake, random_table_name: str, storage_path: str) -> Path:
-    table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    table.set_metadata(data_inlining_row_limit=0)
-    table.write_polars(pl.DataFrame({"x": [1]}))
-    orphan = Path(storage_path) / "main" / random_table_name / "orphan.parquet"
-    orphan.parent.mkdir(parents=True, exist_ok=True)
-    pl.DataFrame({"x": [42]}).write_parquet(str(orphan))
-    return orphan
-
-
-def test_delete_orphaned_files(ducklake: dl.Ducklake, orphan_file: Path) -> None:
-    # Arrange
-    table = ducklake.list_tables()[0]
-    live_files = {Path(urlparse(file.path).path) for file in table.scan().data_files}
-
-    # Act
-    dry_run_result = ducklake.delete_orphaned_files(cleanup_all=True, dry_run=True)
-    result = ducklake.delete_orphaned_files(cleanup_all=True)
-
-    # Assert: the orphan is deleted while the live data file is preserved
-    assert orphan_file in {Path(path) for path in dry_run_result}
-    assert orphan_file in {Path(path) for path in result}
-    assert not orphan_file.exists()
-    assert len(table.scan().data_files) == 1
-    assert all(path.exists() for path in live_files)
-
-
-def test_delete_orphaned_files_dry_run_keeps_files(
-    ducklake: dl.Ducklake, orphan_file: Path
+def test_delete_orphaned_files(
+    ducklake: dl.Ducklake, random_table_name: str, storage_path: str
 ) -> None:
-    # Act
-    result = ducklake.delete_orphaned_files(cleanup_all=True, dry_run=True)
+    # Arrange
+    table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    table.sink_polars(pl.LazyFrame({"x": [1]}))
+    live_files = {file.path for file in table.scan().data_files}
+
+    orphan_file = os.path.join(storage_path, "test.parquet")
+    pl.LazyFrame({"x": [2]}).sink_parquet(orphan_file, mkdir=True)
+
+    # Act / Assert
+    dry_run_result = ducklake.delete_orphaned_files(cleanup_all=True, dry_run=True)
+    assert storage_file_exists(ducklake, orphan_file)
+
+    result = ducklake.delete_orphaned_files(cleanup_all=True)
+    assert not storage_file_exists(ducklake, orphan_file)
 
     # Assert
-    assert orphan_file in {Path(path) for path in result}
-    assert orphan_file.exists()
+    assert orphan_file in dry_run_result
+    assert orphan_file in result
+    assert len(table.scan().data_files) == 1
+    assert all(storage_file_exists(ducklake, path) for path in live_files)
+
+
+def test_delete_orphaned_files_keeps_scheduled_for_deletion(
+    ducklake: dl.Ducklake, random_table_name: str, storage_path: str
+) -> None:
+    # Arrange
+    table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    table.sink_polars(pl.LazyFrame({"x": [1]}))
+    live_files = {file.path for file in table.scan().data_files}
+
+    table.delete()
+    ducklake.expire_snapshots(versions=[0, 1, 2])
+
+    # Act
+    result = ducklake.delete_orphaned_files(cleanup_all=True)
+
+    # Assert
+    assert result == []
+    assert all(storage_file_exists(ducklake, path) for path in live_files)
 
 
 def test_delete_orphaned_files_respects_older_than(
-    ducklake: dl.Ducklake, orphan_file: Path
+    ducklake: dl.Ducklake, storage_path: str
 ) -> None:
-    # Act: only files modified before yesterday are eligible, so the fresh orphan is retained
-    result = ducklake.delete_orphaned_files(
+    # Arrange
+    orphan_file = os.path.join(storage_path, "test.parquet")
+    pl.LazyFrame({"x": [2]}).sink_parquet(orphan_file, mkdir=True)
+
+    # Act
+    result_default = ducklake.delete_orphaned_files()
+    result_explicit = ducklake.delete_orphaned_files(
         older_than=dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)
     )
 
     # Assert
-    assert result == []
-    assert orphan_file.exists()
+    assert result_default == []
+    assert result_explicit == []
+    assert storage_file_exists(ducklake, orphan_file)

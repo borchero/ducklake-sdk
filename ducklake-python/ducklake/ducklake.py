@@ -411,6 +411,46 @@ class Ducklake:
         """
         return self._pyducklake.cleanup_old_files(cleanup_all, older_than, dry_run)
 
+    # ---------------------------------- DELETE ORPHANED FILES ---------------------------------- #
+
+    @overload
+    def delete_orphaned_files(self, *, dry_run: bool = False) -> list[str]: ...
+
+    @overload
+    def delete_orphaned_files(self, *, cleanup_all: bool, dry_run: bool = False) -> list[str]: ...
+
+    @overload
+    def delete_orphaned_files(
+        self, *, older_than: dt.datetime, dry_run: bool = False
+    ) -> list[str]: ...
+
+    def delete_orphaned_files(
+        self,
+        *,
+        cleanup_all: bool = False,
+        older_than: dt.datetime | None = None,
+        dry_run: bool = False,
+    ) -> list[str]:
+        """Delete files in the data directory that are not tracked in the catalog database.
+
+        This is useful for cleaning up files that were written but never registered (e.g. due to a
+        crashed writer).
+
+        If neither `cleanup_all` nor `older_than` is provided, files are deleted according to the
+        `"delete_older_than"` metadata option (which defaults to two days). The reason for this
+        "grace period" is to prevent deleting files that are currently being written.
+
+        Args:
+            cleanup_all: If `True`, delete all orphaned files regardless of age.
+            older_than: If provided, only delete orphaned files last modified before this
+                timestamp.
+            dry_run: If `True`, no files are actually deleted.
+
+        Returns:
+            The paths that were deleted, or would be deleted when `dry_run` is `True`.
+        """
+        return self._pyducklake.delete_orphaned_files(cleanup_all, older_than, dry_run)
+
     # ------------------------------------------ OTHER ------------------------------------------ #
 
     def merge_adjacent_files(
@@ -456,30 +496,6 @@ class Ducklake:
                 args,
             )
         )
-
-    def delete_orphaned_files(
-        self,
-        *,
-        cleanup_all: bool = False,
-        older_than: dt.datetime | None = None,
-        dry_run: bool = False,
-    ) -> list[str]:
-        """Delete files in the data directory that are not referenced by any snapshot.
-
-        Useful for cleaning up files that were written but never registered (e.g. due to a
-        crashed writer). Orphaned files are discovered by listing the data directory and matching
-        the files against the catalog's known data, delete, and scheduled-for-deletion files.
-
-        Args:
-            cleanup_all: If `True`, delete all orphaned files regardless of age.
-            older_than: If provided, only delete orphaned files last modified before this
-                timestamp. Ignored when `cleanup_all` is `True`. Defaults to the current time.
-            dry_run: If `True`, no files are actually deleted.
-
-        Returns:
-            The paths that were deleted, or would be deleted when `dry_run` is `True`.
-        """
-        return self._pyducklake.delete_orphaned_files(cleanup_all, older_than, dry_run)
 
     def rewrite_data_files(
         self, *, delete_threshold: float | None = None

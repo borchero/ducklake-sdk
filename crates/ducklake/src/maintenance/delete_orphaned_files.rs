@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use futures::{StreamExt, stream};
 use object_store::ObjectStore;
 use object_store::path::Path as ObjectStorePath;
-use sea_query::{Expr, ExprTrait, IntoIden, JoinType, Query};
+use sea_query::{Query, UnionType};
 
 use super::DryRun;
 use crate::spec::*;
@@ -19,20 +19,41 @@ impl Ducklake {
     /// occur, for example, when a writer crashes after writing a file but before committing the
     /// corresponding catalog entry.
     ///
-    /// If `cleanup_all` is `true`, all orphaned files are deleted regardless of their age.
-    /// Otherwise, only orphaned files whose last modification time is strictly before `older_than`
-    /// are deleted. If `older_than` is `None`, the current time is used, meaning all orphaned
-    /// files that exist at the time of the call are eligible for deletion.
-    ///
     /// The `dry_run` flag allows understanding which files would be deleted upon execution without
     /// actually deleting them.
     ///
     /// Returns the fully-qualified paths of the files that were deleted (or that would be deleted
     /// when `dry_run` is [`DryRun::Yes`]).
-    pub async fn delete_orphaned_files(
+    pub async fn delete_orphaned_files(&self, dry_run: DryRun) -> DucklakeResult<Vec<String>> {
+        let interval = self.conn.metadata().delete_older_than();
+        let timestamp = chrono::Utc::now() - interval.months - interval.delta;
+        self.delete_orphaned_files_filtered(Some(timestamp), dry_run)
+            .await
+    }
+
+    /// Delete orphaned files last modified before a specific timestamp.
+    ///
+    /// The functionality matches [`Ducklake::delete_orphaned_files`] for a predefined timestamp.
+    pub async fn delete_orphaned_files_older_than(
         &self,
-        cleanup_all: bool,
-        older_than: Option<chrono::DateTime<chrono::Utc>>,
+        timestamp: chrono::DateTime<chrono::Utc>,
+        dry_run: DryRun,
+    ) -> DucklakeResult<Vec<String>> {
+        self.delete_orphaned_files_filtered(Some(timestamp), dry_run)
+            .await
+    }
+
+    /// Delete all orphaned files regardless of their last modification time.
+    ///
+    /// The functionality matches [`Ducklake::delete_orphaned_files`] but ignores the
+    /// `delete_older_than` configuration.
+    pub async fn delete_all_orphaned_files(&self, dry_run: DryRun) -> DucklakeResult<Vec<String>> {
+        self.delete_orphaned_files_filtered(None, dry_run).await
+    }
+
+    async fn delete_orphaned_files_filtered(
+        &self,
+        max_age: Option<chrono::DateTime<chrono::Utc>>,
         dry_run: DryRun,
     ) -> DucklakeResult<Vec<String>> {
         let data_path = self.conn.metadata().data_path();
@@ -41,14 +62,9 @@ impl Ducklake {
         let referenced = self.collect_referenced_locations(&data_path).await?;
 
         // 2) List all files below the data path and find the orphaned ones.
-        let resolved = data_path.resolve()?;
-        let store = resolved.object_store(Some(self.conn.storage_options().to_vec()));
-        let prefix = resolved.path();
-        let threshold = if cleanup_all {
-            None
-        } else {
-            Some(older_than.unwrap_or_else(chrono::Utc::now))
-        };
+        let resolved_data_path = data_path.resolve()?;
+        let store = resolved_data_path.object_store(Some(self.conn.storage_options().to_vec()));
+        let prefix = resolved_data_path.path();
 
         let mut orphans = Vec::new();
         let mut listing = store.list(Some(&prefix));
@@ -57,8 +73,8 @@ impl Ducklake {
             if referenced.contains(&meta.location) {
                 continue;
             }
-            if let Some(threshold) = threshold
-                && meta.last_modified >= threshold
+            if let Some(max_age) = max_age
+                && meta.last_modified >= max_age
             {
                 continue;
             }
@@ -82,7 +98,7 @@ impl Ducklake {
 
         Ok(orphans
             .iter()
-            .map(|location| resolved.display_location(location))
+            .map(|location| resolved_data_path.display_location(location))
             .collect())
     }
 
@@ -93,54 +109,8 @@ impl Ducklake {
         data_path: &io::DucklakePath,
     ) -> DucklakeResult<HashSet<ObjectStorePath>> {
         let pool = self.conn.pool();
-
-        // Build a lookup from table ID to the (possibly multiple) data paths under which the
-        // table's files may live. Data and delete file paths are stored relative to the table's
-        // data path, so we need this to resolve them. We collect *all* candidate paths for a
-        // table ID (in case a table was relocated across versions) to err on the side of treating
-        // files as referenced rather than orphaned.
-        let table_path_query = Query::select()
-            .distinct()
-            .columns([
-                (
-                    ducklake_table::Table.into_iden(),
-                    ducklake_table::Column::TableId.into_iden(),
-                ),
-                (
-                    ducklake_schema::Table.into_iden(),
-                    ducklake_schema::Column::Path.into_iden(),
-                ),
-                (
-                    ducklake_schema::Table.into_iden(),
-                    ducklake_schema::Column::PathIsRelative.into_iden(),
-                ),
-                (
-                    ducklake_table::Table.into_iden(),
-                    ducklake_table::Column::Path.into_iden(),
-                ),
-                (
-                    ducklake_table::Table.into_iden(),
-                    ducklake_table::Column::PathIsRelative.into_iden(),
-                ),
-            ])
-            .from(ducklake_table::Table)
-            .join(
-                JoinType::InnerJoin,
-                ducklake_schema::Table,
-                Expr::col((ducklake_schema::Table, ducklake_schema::Column::SchemaId)).eq(
-                    Expr::col((ducklake_table::Table, ducklake_table::Column::SchemaId)),
-                ),
-            )
-            .take();
-        let tables: Vec<(i64, String, bool, String, bool)> =
-            pool.fetch_all(&table_path_query).await?;
-        let mut paths_by_table_id: HashMap<i64, Vec<io::DucklakePath>> = HashMap::new();
-        for (table_id, schema_path, schema_is_relative, table_path, table_is_relative) in tables {
-            let schema_path = io::DucklakePath::new(&schema_path, schema_is_relative);
-            let table_path = io::DucklakePath::new(&table_path, table_is_relative);
-            let full = data_path.join(&schema_path).join(&table_path);
-            paths_by_table_id.entry(table_id).or_default().push(full);
-        }
+        let snapshot = self.conn.latest_snapshot(false).await?;
+        let catalog = snapshot.catalog().await?;
 
         // Fetch the file paths from all relevant catalog tables.
         let data_file_query = Query::select()
@@ -150,18 +120,19 @@ impl Ducklake {
                 ducklake_data_file::Column::PathIsRelative,
             ])
             .from(ducklake_data_file::Table)
+            .union(
+                UnionType::All,
+                Query::select()
+                    .columns([
+                        ducklake_delete_file::Column::TableId,
+                        ducklake_delete_file::Column::Path,
+                        ducklake_delete_file::Column::PathIsRelative,
+                    ])
+                    .from(ducklake_delete_file::Table)
+                    .take(),
+            )
             .take();
-        let data_files: Vec<(i64, String, bool)> = pool.fetch_all(&data_file_query).await?;
-
-        let delete_file_query = Query::select()
-            .columns([
-                ducklake_delete_file::Column::TableId,
-                ducklake_delete_file::Column::Path,
-                ducklake_delete_file::Column::PathIsRelative,
-            ])
-            .from(ducklake_delete_file::Table)
-            .take();
-        let delete_files: Vec<(i64, String, bool)> = pool.fetch_all(&delete_file_query).await?;
+        let table_files: Vec<(i64, String, bool)> = pool.fetch_all(&data_file_query).await?;
 
         let scheduled_query = Query::select()
             .columns([
@@ -174,27 +145,21 @@ impl Ducklake {
 
         // Resolve all referenced file paths to object store locations.
         let mut result = HashSet::new();
-        for (table_id, path, path_is_relative) in data_files.into_iter().chain(delete_files) {
+        for (table_id, path, path_is_relative) in table_files {
             let file_path = io::DucklakePath::new(&path, path_is_relative);
-            if file_path.is_absolute() {
-                result.insert(file_path.resolve()?.path());
-            } else if let Some(base_paths) = paths_by_table_id.get(&table_id) {
-                for base_path in base_paths {
-                    result.insert(base_path.join(&file_path).resolve()?.path());
-                }
-            } else {
-                result.insert(data_path.join(&file_path).resolve()?.path());
-            }
+            let path = catalog
+                .table(table_id)
+                .unwrap()
+                .data_path(data_path)
+                .join(&file_path);
+            result.insert(path.resolve()?.path());
         }
+
         // Files scheduled for deletion store paths relative to the catalog's data path.
         for (path, path_is_relative) in scheduled_files {
             let file_path = io::DucklakePath::new(&path, path_is_relative);
-            let full = if file_path.is_absolute() {
-                file_path
-            } else {
-                data_path.join(&file_path)
-            };
-            result.insert(full.resolve()?.path());
+            let path = data_path.join(&file_path);
+            result.insert(path.resolve()?.path());
         }
 
         Ok(result)

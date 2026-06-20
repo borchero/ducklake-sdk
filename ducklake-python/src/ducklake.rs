@@ -219,11 +219,16 @@ impl PyDucklake {
         dry_run: bool,
     ) -> PyResult<Vec<String>> {
         let dry_run = if dry_run { DryRun::Yes } else { DryRun::No };
-        block_on(
-            py,
-            self.0
-                .delete_orphaned_files(cleanup_all, older_than, dry_run),
-        )
-        .map_err(error::into_pyerr)
+        let result = if cleanup_all {
+            block_on(py, self.0.delete_all_orphaned_files(dry_run))
+        } else if let Some(timestamp) = older_than {
+            block_on(
+                py,
+                self.0.delete_orphaned_files_older_than(timestamp, dry_run),
+            )
+        } else {
+            block_on(py, self.0.delete_orphaned_files(dry_run))
+        };
+        result.map_err(error::into_pyerr)
     }
 }

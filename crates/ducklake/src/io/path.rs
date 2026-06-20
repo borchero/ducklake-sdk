@@ -210,9 +210,6 @@ impl Path {
         ObjectStorePath::parse(path).unwrap()
     }
 
-    /// Render an object store location (which is relative to the store root) into a fully
-    /// qualified path string in the same form as the catalog's data path (e.g. an absolute file
-    /// system path for local storage or a `scheme://bucket/...` URL for cloud storage).
     pub(crate) fn display_location(&self, location: &ObjectStorePath) -> String {
         match self {
             Path::Local { .. } => format!("/{}", location),
