@@ -1,4 +1,4 @@
 [toolchain]
 # Latest nightly versions: https://rust-lang.github.io/rustup-components-history/
-channel = "nightly-2026-04-01"
+channel = "nightly-2026-07-01"
 components = ["clippy", "llvm-tools-preview", "rustfmt"]
