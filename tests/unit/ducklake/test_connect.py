@@ -60,7 +60,7 @@ def test_data_path(ducklake: dl.Ducklake, storage_path: str) -> None:
     # The data path is normalized on creation (trailing slash added, local paths turned into
     # `file://` URLs). Strip the scheme from both sides so this holds across storage backends.
     assert data_path.endswith("/")
-    assert storage_path.split("://")[-1].rstrip("/") in data_path.split("://")[-1]
+    assert storage_path.split("://")[-1].rstrip("/") == data_path.split("://")[-1].rstrip("/")
 
 
 # ----------------------------------------------------------------------------------------------- #

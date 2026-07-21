@@ -453,7 +453,7 @@ impl DucklakeConnection {
 }
 
 impl Ducklake {
-    pub async fn data_path(&self) -> DucklakeResult<String> {
+    pub fn data_path(&self) -> DucklakeResult<String> {
         let metadata = self.conn.metadata();
         Ok(metadata.data_path().to_string())
     }
