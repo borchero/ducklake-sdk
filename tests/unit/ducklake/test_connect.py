@@ -52,6 +52,17 @@ def test_ducklake_repr(ducklake: dl.Ducklake, catalog_url: str) -> None:
     assert actual == f'Ducklake(url="{catalog_url}")'
 
 
+def test_data_path(ducklake: dl.Ducklake, storage_path: str) -> None:
+    # Act
+    data_path = ducklake.data_path
+
+    # Assert
+    # The data path is normalized on creation (trailing slash added, local paths turned into
+    # `file://` URLs). Strip the scheme from both sides so this holds across storage backends.
+    assert data_path.endswith("/")
+    assert storage_path.split("://")[-1].rstrip("/") in data_path.split("://")[-1]
+
+
 # ----------------------------------------------------------------------------------------------- #
 #                                          URL PARSING                                            #
 # ----------------------------------------------------------------------------------------------- #

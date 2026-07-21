@@ -154,6 +154,10 @@ impl PyDucklake {
         block_on(py, self.0.list_schemas()).map_err(error::into_pyerr)
     }
 
+    pub fn data_path(&self, py: Python) -> PyResult<String> {
+        block_on(py, self.0.data_path()).map_err(error::into_pyerr)
+    }
+
     pub fn set_metadata(
         &self,
         py: Python,

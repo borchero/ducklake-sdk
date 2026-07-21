@@ -271,6 +271,15 @@ class Ducklake:
 
     # ----------------------------------------- METADATA ---------------------------------------- #
 
+    @property
+    def data_path(self) -> str:
+        """Get the data path for the catalog.
+
+        Returns:
+            The data path for the catalog.
+        """
+        return self._pyducklake.data_path()
+
     @overload
     def set_metadata(  # ty: ignore[invalid-overload]
         self, *, schema: str | None = None, **options: Unpack[TableMetadataUpdate]
