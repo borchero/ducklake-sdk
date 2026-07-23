@@ -19,7 +19,7 @@ mod transaction;
 mod typedefs;
 mod utils;
 
-pub use caches::TableMetadata;
+pub use caches::{GlobalMetadata, TableMetadata};
 pub use ducklake::{Ducklake, SnapshotMetadata};
 pub use error::{DucklakeError, DucklakeResult};
 pub use maintenance::*;

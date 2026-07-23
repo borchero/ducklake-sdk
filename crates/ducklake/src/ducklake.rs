@@ -453,9 +453,8 @@ impl DucklakeConnection {
 }
 
 impl Ducklake {
-    pub fn data_path(&self) -> DucklakeResult<String> {
-        let metadata = self.conn.metadata();
-        Ok(metadata.data_path().to_string())
+    pub fn metadata(&self) -> GlobalMetadata {
+        self.conn.metadata().global_metadata()
     }
 }
 

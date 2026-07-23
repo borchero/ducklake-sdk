@@ -1,4 +1,12 @@
-use ducklake::{AuthorInfo, ConnectOptions, CreateOptions, DryRun, Ducklake, SnapshotMetadata};
+use ducklake::{
+    AuthorInfo,
+    ConnectOptions,
+    CreateOptions,
+    DryRun,
+    Ducklake,
+    GlobalMetadata,
+    SnapshotMetadata,
+};
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
@@ -154,8 +162,8 @@ impl PyDucklake {
         block_on(py, self.0.list_schemas()).map_err(error::into_pyerr)
     }
 
-    pub fn data_path(&self) -> PyResult<String> {
-        self.0.data_path().map_err(error::into_pyerr)
+    pub fn metadata(&self) -> PyResult<Wrap<GlobalMetadata>> {
+        Ok(self.0.metadata().into())
     }
 
     pub fn set_metadata(

@@ -54,7 +54,7 @@ def test_ducklake_repr(ducklake: dl.Ducklake, catalog_url: str) -> None:
 
 def test_data_path(ducklake: dl.Ducklake, storage_path: str) -> None:
     # Act
-    data_path = ducklake.data_path
+    data_path = ducklake.metadata["data_path"]
 
     # Assert
     # The data path is normalized on creation (trailing slash added, local paths turned into
