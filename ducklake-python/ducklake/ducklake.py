@@ -10,6 +10,7 @@ from .transaction import Transaction
 from .typedefs import (
     Column,
     DataType,
+    GlobalMetadata,
     GlobalMetadataUpdate,
     MaintenanceResult,
     PartitionColumn,
@@ -270,6 +271,11 @@ class Ducklake:
         ]
 
     # ----------------------------------------- METADATA ---------------------------------------- #
+
+    @property
+    def metadata(self) -> GlobalMetadata:
+        """The metadata associated with the catalog."""
+        return self._pyducklake.metadata()
 
     @overload
     def set_metadata(  # ty: ignore[invalid-overload]

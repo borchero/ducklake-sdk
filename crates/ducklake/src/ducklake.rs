@@ -452,6 +452,12 @@ impl DucklakeConnection {
     }
 }
 
+impl Ducklake {
+    pub fn metadata(&self) -> GlobalMetadata {
+        self.conn.metadata().global_metadata()
+    }
+}
+
 /* -------------------------------------------- SET -------------------------------------------- */
 
 impl Ducklake {

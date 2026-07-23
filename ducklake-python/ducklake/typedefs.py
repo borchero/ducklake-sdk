@@ -41,6 +41,16 @@ class TableName(NamedTuple):
         return f'"{schema}"."{name}"'
 
 
+# --------------------------------------- GLOBAL METADATA --------------------------------------- #
+
+
+class GlobalMetadata(TypedDict):
+    """Metadata properties for the catalog."""
+
+    #: Root data path for the catalog (always ends with '/').
+    data_path: str
+
+
 # ---------------------------------------- TABLE METADATA --------------------------------------- #
 
 

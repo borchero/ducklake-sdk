@@ -52,6 +52,22 @@ def test_ducklake_repr(ducklake: dl.Ducklake, catalog_url: str) -> None:
     assert actual == f'Ducklake(url="{catalog_url}")'
 
 
+def test_data_path(catalog: str, tmp_path: Path) -> None:
+    # The data path is normalized on creation into a `file://` URL, which is only deterministic
+    # for a known local path, so this assertion is restricted to the SQLite catalog.
+    if catalog != "sqlite":
+        pytest.skip("The data path assertion is only run against the SQLite catalog.")
+
+    # Arrange
+    catalog_url = f"sqlite:///{tmp_path}/catalog.db"
+    data_path = tmp_path / "data"
+
+    # Act
+    with dl.create(catalog_url, data_path=str(data_path)) as lake:
+        # Assert
+        assert lake.metadata["data_path"] == data_path.as_uri() + "/"
+
+
 # ----------------------------------------------------------------------------------------------- #
 #                                          URL PARSING                                            #
 # ----------------------------------------------------------------------------------------------- #

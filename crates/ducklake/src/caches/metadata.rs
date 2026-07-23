@@ -36,6 +36,13 @@ pub(crate) struct Metadata {
     table: HashMap<i64, HashMap<String, String>>,
 }
 
+/// Metadata configuration for the catalog.
+#[derive(Clone, Debug)]
+pub struct GlobalMetadata {
+    /// Root data path for the catalog (always ends with '/').
+    pub data_path: String,
+}
+
 /// Resolved metadata configuration for a single table, combining global, schema-level, and
 /// table-level metadata overrides.
 #[derive(Clone, Debug)]
@@ -138,6 +145,12 @@ impl Metadata {
             .get(spec::metadata::DATA_PATH)
             .map(|s| s.parse().unwrap())
             .unwrap_or_default()
+    }
+
+    pub(crate) fn global_metadata(&self) -> GlobalMetadata {
+        GlobalMetadata {
+            data_path: self.data_path().to_string(),
+        }
     }
 
     pub(crate) fn expire_older_than(&self) -> Option<Interval> {
