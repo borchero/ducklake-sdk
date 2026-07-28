@@ -34,16 +34,26 @@ Polars :class:`polars.datatypes.Enum` columns can be used when creating a table 
 
     assert table.read_polars().schema["priority"] == priority
 
-DuckLake stores the values as ``VARCHAR`` and records the ordered categories in a versioned table
-tag keyed by stable field ID. Consequently, DuckDB and other DuckLake clients see the original
-string labels, while :meth:`~ducklake.Table.scan_polars` and
+DuckLake stores the values as ``VARCHAR`` and records the ordered categories in a reserved,
+versioned tag on the corresponding DuckLake column. DuckLake associates column tags with stable
+field IDs, so the logical type follows column renames and historical snapshots. DuckDB and other
+DuckLake clients see the original string labels, while :meth:`~ducklake.Table.scan_polars` and
 :meth:`~ducklake.Table.read_polars` restore the logical Enum data type. Struct fields and List
 elements containing Enums are supported as well.
 
 The categories are fixed when the table is created. Writes may provide either Enum or String
-columns, but every non-null value must belong to the table's category set. Enum filters are
-applied after converting the physical String column, so they currently do not benefit from
-Parquet predicate pushdown.
+columns, but every non-null value written through the SDK's Polars integration must belong to the
+table's category set. The physical ``VARCHAR`` column does not enforce this constraint: another
+DuckLake client can write an unknown label, in which case a later Polars scan fails while restoring
+the Enum.
+
+Adding a Polars logical-type column through schema evolution and changing an Enum's categories are
+not yet supported. Polars Categorical, Array, and Object are also intentionally unsupported for
+now; the internal logical-type codec boundary allows adding them in follow-up changes without
+changing the table, write, or scan integration points.
+
+Enum filters are applied after converting the physical String column, so they currently do not
+benefit from Parquet predicate pushdown.
 
 .. currentmodule:: ducklake.polars
 .. autosummary::
