@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from ._native import schema_from_arrow
 from .typedefs import ArrowSchemaExportable, Column, List, Map, Schema, Struct
@@ -16,11 +17,14 @@ if TYPE_CHECKING:
 
 POLARS_LOGICAL_TYPE_TAG = "ducklake-sdk.polars.logical-type.v1"
 
+JsonValue: TypeAlias = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
+
 
 @dataclass(frozen=True)
 class _PolarsLogicalType:
     type_name: str
-    metadata: dict[str, object]
+    version: int
+    metadata: dict[str, JsonValue]
 
 
 @dataclass(frozen=True)
@@ -30,17 +34,18 @@ class _EncodedPolarsSchema:
 
 class _PolarsLogicalTypeCodec(Protocol):
     type_name: str
+    version: int
 
     def matches(self, dtype: pl.DataType | pld.DataTypeClass) -> bool: ...
 
     def physical_dtype(self, dtype: pl.DataType | pld.DataTypeClass) -> pl.DataType: ...
 
-    def metadata(self, dtype: pl.DataType | pld.DataTypeClass) -> dict[str, object]: ...
+    def metadata(self, dtype: pl.DataType | pld.DataTypeClass) -> dict[str, JsonValue]: ...
 
     def logical_dtype(
         self,
         physical_dtype: pl.DataType | pld.DataTypeClass,
-        metadata: Mapping[str, object],
+        metadata: Mapping[str, JsonValue],
     ) -> pl.DataType: ...
 
     def physical_expression(
@@ -61,6 +66,7 @@ class _PolarsLogicalTypeCodec(Protocol):
 
 class _EnumCodec:
     type_name = "enum"
+    version = 1
 
     def matches(self, dtype: pl.DataType | pld.DataTypeClass) -> bool:
         import polars as pl
@@ -72,7 +78,7 @@ class _EnumCodec:
 
         return pl.String()
 
-    def metadata(self, dtype: pl.DataType | pld.DataTypeClass) -> dict[str, object]:
+    def metadata(self, dtype: pl.DataType | pld.DataTypeClass) -> dict[str, JsonValue]:
         import polars as pl
 
         enum = cast(pl.Enum, dtype)
@@ -81,7 +87,7 @@ class _EnumCodec:
     def logical_dtype(
         self,
         physical_dtype: pl.DataType | pld.DataTypeClass,
-        metadata: Mapping[str, object],
+        metadata: Mapping[str, JsonValue],
     ) -> pl.DataType:
         import polars as pl
 
@@ -114,8 +120,24 @@ class _EnumCodec:
         return expression.cast(logical_dtype)
 
 
+def _index_codecs(
+    codecs: tuple[_PolarsLogicalTypeCodec, ...],
+) -> dict[str, _PolarsLogicalTypeCodec]:
+    result: dict[str, _PolarsLogicalTypeCodec] = {}
+    for codec in codecs:
+        if not codec.type_name or codec.type_name in result:
+            raise RuntimeError(f"Duplicate Polars logical type codec {codec.type_name!r}")
+        if type(codec.version) is not int or codec.version < 1:
+            raise RuntimeError(
+                f"Invalid version {codec.version!r} for Polars logical type "
+                f"codec {codec.type_name!r}"
+            )
+        result[codec.type_name] = codec
+    return result
+
+
 _LOGICAL_TYPE_CODECS: tuple[_PolarsLogicalTypeCodec, ...] = (_EnumCodec(),)
-_LOGICAL_TYPE_CODECS_BY_NAME = {codec.type_name: codec for codec in _LOGICAL_TYPE_CODECS}
+_LOGICAL_TYPE_CODECS_BY_NAME = _index_codecs(_LOGICAL_TYPE_CODECS)
 
 
 def schema_from_polars(schema: ArrowSchemaExportable) -> _EncodedPolarsSchema | None:
@@ -146,14 +168,7 @@ def prepare_table_polars_metadata(schema: Schema) -> list[Column]:
                 f"Column tag {POLARS_LOGICAL_TYPE_TAG!r} is reserved for Polars logical types"
             )
         if logical_type := column._polars_logical_type:
-            column.tags[POLARS_LOGICAL_TYPE_TAG] = json.dumps(
-                {
-                    "type": logical_type.type_name,
-                    **logical_type.metadata,
-                },
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
+            column.tags[POLARS_LOGICAL_TYPE_TAG] = _serialize_logical_type(logical_type)
             column._polars_logical_type = None
     return prepared_columns
 
@@ -218,7 +233,11 @@ def _physical_dtype(
 
     if codec := _codec_for_dtype(dtype):
         if logical_types is not None:
-            logical_types[path] = _PolarsLogicalType(codec.type_name, codec.metadata(dtype))
+            logical_types[path] = _PolarsLogicalType(
+                codec.type_name,
+                codec.version,
+                codec.metadata(dtype),
+            )
         dtype = codec.physical_dtype(dtype)
 
     if isinstance(dtype, pl.List):
@@ -295,6 +314,24 @@ def ensure_not_reserved_polars_column_tag(key: str) -> None:
         raise ValueError(f"Column tag {key!r} is reserved for Polars logical types")
 
 
+def _serialize_logical_type(logical_type: _PolarsLogicalType) -> str:
+    if not _is_json_value(logical_type.metadata):
+        raise TypeError(
+            f"Metadata for Polars logical type {logical_type.type_name!r} "
+            "must be JSON-serializable"
+        )
+    return json.dumps(
+        {
+            "type": logical_type.type_name,
+            "version": logical_type.version,
+            "metadata": logical_type.metadata,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
 def _column_logical_type(column: Column) -> _PolarsLogicalType | None:
     value = column.tags.get(POLARS_LOGICAL_TYPE_TAG)
     if value is None:
@@ -303,22 +340,40 @@ def _column_logical_type(column: Column) -> _PolarsLogicalType | None:
         raw_logical_type = json.loads(value)
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid Polars logical type metadata on column {column.name!r}") from e
-    if not isinstance(raw_logical_type, dict) or not isinstance(
-        type_name := raw_logical_type.get("type"), str
+    if (
+        not isinstance(raw_logical_type, dict)
+        or set(raw_logical_type) != {"type", "version", "metadata"}
+        or not isinstance(type_name := raw_logical_type["type"], str)
+        or type(version := raw_logical_type["version"]) is not int
+        or version < 1
+        or not isinstance(metadata := raw_logical_type["metadata"], dict)
+        or not _is_json_value(metadata)
     ):
         raise ValueError(f"Invalid Polars logical type metadata on column {column.name!r}")
-    if type_name not in _LOGICAL_TYPE_CODECS_BY_NAME:
+    codec = _LOGICAL_TYPE_CODECS_BY_NAME.get(type_name)
+    if codec is None:
         raise ValueError(f"Unsupported Polars logical type {type_name!r}")
-    return _PolarsLogicalType(
-        type_name,
-        {key: value for key, value in raw_logical_type.items() if key != "type"},
-    )
+    if version != codec.version:
+        raise ValueError(f"Unsupported version {version} for Polars logical type {type_name!r}")
+    return _PolarsLogicalType(type_name, version, metadata)
 
 
 def _codec_for_dtype(
     dtype: pl.DataType | pld.DataTypeClass,
 ) -> _PolarsLogicalTypeCodec | None:
     return next((codec for codec in _LOGICAL_TYPE_CODECS if codec.matches(dtype)), None)
+
+
+def _is_json_value(value: object) -> bool:
+    if value is None or isinstance(value, (bool, int, str)):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, list):
+        return all(_is_json_value(item) for item in value)
+    if isinstance(value, dict):
+        return all(isinstance(key, str) and _is_json_value(item) for key, item in value.items())
+    return False
 
 
 def _walk_columns(

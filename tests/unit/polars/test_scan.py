@@ -173,7 +173,7 @@ def test_scan_enum_from_data_file_and_inline_data(
         (dl.Column("priority", dl.Varchar()), "not-json"),
         (
             dl.Column("priority", dl.Int64()),
-            '{"type":"enum","categories":["z","a","m"]}',
+            '{"type":"enum","version":1,"metadata":{"categories":["z","a","m"]}}',
         ),
     ],
 )

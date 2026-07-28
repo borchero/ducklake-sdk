@@ -99,7 +99,9 @@ def test_sink_enum_as_varchar(
             "priority",
             dl.Varchar(),
             tags={
-                POLARS_LOGICAL_TYPE_TAG: ('{"type":"enum","categories":["low","medium","high"]}')
+                POLARS_LOGICAL_TYPE_TAG: (
+                    '{"type":"enum","version":1,"metadata":{"categories":["low","medium","high"]}}'
+                )
             },
             field_id=1,
         )

@@ -33,6 +33,6 @@ def test_create_write_enum_in_transaction(
     # Assert
     table = shared_ducklake.get_table(random_table_name)
     assert table.schema.columns[0].tags[POLARS_LOGICAL_TYPE_TAG] == (
-        '{"type":"enum","categories":["low","medium","high"]}'
+        '{"type":"enum","version":1,"metadata":{"categories":["low","medium","high"]}}'
     )
     assert_frame_equal(table.read_polars(), df)

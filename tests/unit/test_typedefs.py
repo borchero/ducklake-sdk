@@ -92,7 +92,10 @@ def test_schema_from_polars_enum() -> None:
             ),
         ),
     ]
-    metadata = '{"type":"enum","categories":["low","medium","high","🚨;critical"]}'
+    metadata = (
+        '{"type":"enum","version":1,'
+        '"metadata":{"categories":["low","medium","high","🚨;critical"]}}'
+    )
     assert prepare_table_polars_metadata(schema) == [
         dl.Column("priority", dl.Varchar(), tags={POLARS_LOGICAL_TYPE_TAG: metadata}),
         dl.Column(
