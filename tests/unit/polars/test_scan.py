@@ -132,7 +132,7 @@ def test_scan_enum_tracks_column_history(
         },
         schema=original_schema,
     )
-    table.write_polars(original)
+    table.sink_polars(original.lazy())
     original_snapshot = shared_ducklake.get_latest_snapshot().id
 
     # Act
