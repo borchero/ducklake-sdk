@@ -11,6 +11,8 @@ platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"]
 [feature.optionals.dependencies]
 duckdb = ">=1.5.3"
 duckdb-engine = "*"
+# NOTE: This is the oldest supported polars version. It should always match the version in
+# feature.polars-minimal. The latest polars version is in feature.polars-latest.
 polars = ">=1.40,<2"
 pyarrow = "*"
 python-dateutil = "*"
@@ -67,6 +69,21 @@ test-py-make-snapshot = "bash tests/_snapshots/make_snapshot.sh"
 [feature.test-py-minimal.dependencies]
 polars = "*"
 pytest = ">=9"
+
+# ----------------------------------- PYTHON - POLARS VERSIONS ---------------------------------- #
+
+[feature.polars-minimal.dependencies]
+# NOTE: This is the oldest supported polars version. It should always match the floor in
+# feature.optionals.
+polars = "1.40.*"
+
+[feature.polars-latest.dependencies]
+polars = "1.43.*"
+
+# --------------------------------------- PYTHON - NIGHTLY -------------------------------------- #
+
+[feature.nightly.tasks]
+install-polars-nightly = "pip install --pre --no-deps --upgrade --only-binary :all: polars polars-runtime-32"
 
 # --------------------------------------------- RUST -------------------------------------------- #
 
@@ -190,6 +207,11 @@ test-py313 = ["install-py", "optionals", "py313", "test-py", "test-rs"]
 test-py314 = ["install-py", "optionals", "py314", "test-py", "test-rs"]
 test-py314-minimal = ["install-py", "py314", "test-py-minimal"]
 test-rs = { features = ["test-rs"], no-default-feature = true }
+
+# Polars compatibility environments: exercise the oldest and newest supported polars versions.
+test-polars-minimal = ["install-py", "optionals", "polars-minimal", "py314", "test-py", "test-rs"]
+test-polars-latest = ["install-py", "optionals", "polars-latest", "py314", "test-py", "test-rs"]
+nightly = ["install-py", "nightly", "optionals", "py314", "test-py", "test-rs"]
 
 ducklake-v0-1 = { features = ["ducklake", "ducklake-v0-1"], no-default-feature = true }
 ducklake-v0-2 = { features = ["ducklake", "ducklake-v0-2"], no-default-feature = true }
