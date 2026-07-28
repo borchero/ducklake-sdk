@@ -209,9 +209,9 @@ test-py314-minimal = ["install-py", "py314", "test-py-minimal"]
 test-rs = { features = ["test-rs"], no-default-feature = true }
 
 # Polars compatibility environments: exercise the oldest and newest supported polars versions.
-test-polars-minimal = ["install-py", "optionals", "polars-minimal", "py314", "test-py", "test-rs"]
-test-polars-latest = ["install-py", "optionals", "polars-latest", "py314", "test-py", "test-rs"]
 nightly = ["install-py", "nightly", "optionals", "py314", "test-py", "test-rs"]
+test-polars-latest = ["install-py", "optionals", "polars-latest", "py314", "test-py", "test-rs"]
+test-polars-minimal = ["install-py", "optionals", "polars-minimal", "py314", "test-py", "test-rs"]
 
 ducklake-v0-1 = { features = ["ducklake", "ducklake-v0-1"], no-default-feature = true }
 ducklake-v0-2 = { features = ["ducklake", "ducklake-v0-2"], no-default-feature = true }

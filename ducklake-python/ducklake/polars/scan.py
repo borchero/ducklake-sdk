@@ -134,7 +134,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
         # --- Optimization ---
         _column_mapping=("iceberg-column-mapping", schema),
         _deletion_files=("iceberg-position-delete", dict(iceberg_position_deletes)),
-        _default_values=("iceberg", (defaults, {}) if _POLARS_VERSION >= (1, 43) else defaults),
+        _default_values=("iceberg", (defaults, {}) if _POLARS_VERSION >= (1, 43) else defaults),  # type: ignore[invalid-argument-type]
         _table_statistics=table_statistics,
         _row_count=(physical_rows, deleted_rows),
     )
