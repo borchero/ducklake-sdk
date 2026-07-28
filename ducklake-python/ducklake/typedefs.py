@@ -147,16 +147,13 @@ class Schema:
     """Schema of a table."""
 
     columns: list[Column]
-    _polars_logical_types: dict[tuple[str, ...], _PolarsLogicalType]
 
     def __init__(
         self,
         columns: Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable,
     ) -> None:
-        self._polars_logical_types = {}
         if isinstance(columns, Schema):
             self.columns = list(columns.columns)
-            self._polars_logical_types = dict(columns._polars_logical_types)
         elif isinstance(columns, ArrowSchemaExportable):
             from ._polars_types import schema_from_polars
 
@@ -165,7 +162,6 @@ class Schema:
                 self.columns = schema_from_arrow(columns)
             else:
                 self.columns = encoded_schema.columns
-                self._polars_logical_types = encoded_schema.logical_types
         elif isinstance(columns, Sequence):
             self.columns = list(columns)  # ty: ignore[invalid-assignment]
         else:
@@ -189,6 +185,8 @@ class Schema:
 class Column:
     """A named column with a data type, nullability, and optional tags."""
 
+    _polars_logical_type: _PolarsLogicalType | None
+
     def __init__(
         self,
         name: str,
@@ -207,6 +205,7 @@ class Column:
         self.initial_default = initial_default
         self.default_value = default_value
         self.field_id = field_id
+        self._polars_logical_type = None
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Column):

@@ -8,7 +8,11 @@ from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
 
 from ducklake import typedefs
 from ducklake._native import PyDataFilePathGenerator
-from ducklake._polars_types import logical_polars_schema, physicalize_polars_schema
+from ducklake._polars_types import (
+    logical_polars_schema,
+    physicalize_polars_expression,
+    physicalize_polars_schema,
+)
 from ducklake.table import Table
 from ducklake.transaction import TransactionTable
 from ducklake.typedefs import Column, Partitioning, WriteDataFile
@@ -129,7 +133,12 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
     input_schema = lf.collect_schema()
     physical_input_schema = physicalize_polars_schema(input_schema)
     input_casts = [
-        pl.col(name).cast(physical_input_schema[name]).alias(name)
+        physicalize_polars_expression(
+            pl.col(name),
+            dtype,
+            physical_input_schema[name],
+            validate=False,
+        ).alias(name)
         for name, dtype in input_schema.items()
         if dtype != physical_input_schema[name]
     ]
@@ -150,7 +159,12 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
 
     # Validate the final logical values, then lower them to their physical DuckLake types.
     logical_type_casts = [
-        pl.col(name).cast(logical_schema[name]).cast(physical_schema[name]).alias(name)
+        physicalize_polars_expression(
+            pl.col(name),
+            dtype,
+            physical_schema[name],
+            validate=True,
+        ).alias(name)
         for name, dtype in logical_schema.items()
         if dtype != physical_schema[name]
     ]

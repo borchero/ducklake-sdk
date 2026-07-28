@@ -8,7 +8,7 @@ import polars.datatypes as pld
 
 from ducklake import typedefs
 from ducklake._native import arrow_schema_field_ids
-from ducklake._polars_types import logical_polars_schema
+from ducklake._polars_types import logical_polars_schema, logicalize_polars_expression
 from ducklake.table import Table
 from ducklake.typedefs import Column, Schema
 
@@ -156,7 +156,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
             result = pl.concat([result, inline_lf])
 
     logical_type_casts = [
-        pl.col(name).cast(logical_schema[name]).alias(name)
+        logicalize_polars_expression(pl.col(name), logical_schema[name]).alias(name)
         for name, dtype in logical_schema.items()
         if dtype != target_schema[name]
     ]

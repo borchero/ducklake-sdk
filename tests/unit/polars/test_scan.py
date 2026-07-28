@@ -122,6 +122,31 @@ def test_scan_nested_enum(shared_ducklake: dl.Ducklake, random_table_name: str) 
     assert_frame_equal(actual, expected)
 
 
+def test_scan_ignores_enum_metadata_for_removed_column(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    table = shared_ducklake.create_table(
+        random_table_name,
+        pl.Schema({"priority": enum, "value": pl.Int64}),
+    )
+    table.sink_polars(
+        pl.LazyFrame(
+            {"priority": ["z", "a"], "value": [1, 2]},
+            schema_overrides={"priority": enum},
+        )
+    )
+
+    # Act
+    table.remove_column("priority")
+    actual = table.read_polars()
+
+    # Assert
+    expected = pl.DataFrame({"value": [1, 2]})
+    assert_frame_equal(actual, expected)
+
+
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
 def test_scan_enum_from_data_file_and_inline_data(
     shared_ducklake: dl.Ducklake, random_table_name: str
@@ -159,11 +184,8 @@ def test_scan_rejects_invalid_enum_metadata(
     metadata: str,
 ) -> None:
     # Arrange
-    table = shared_ducklake.create_table(
-        random_table_name,
-        [column],
-        tags={POLARS_LOGICAL_TYPES_TAG: metadata},
-    )
+    table = shared_ducklake.create_table(random_table_name, [column])
+    table._pytable.add_tag(POLARS_LOGICAL_TYPES_TAG, metadata)
 
     # Act & Assert
     with pytest.raises(ValueError, match="Polars.*metadata"):

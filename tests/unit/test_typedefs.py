@@ -100,6 +100,23 @@ def test_schema_from_polars_enum() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Categorical(),
+        pl.Array(pl.Int64, 3),
+        pl.Object(),
+    ],
+)
+def test_schema_rejects_unsupported_polars_logical_type(dtype: pl.DataType) -> None:
+    # Arrange
+    polars_schema = pl.Schema({"value": dtype})
+
+    # Act & Assert
+    with pytest.raises(RuntimeError, match="unsupported Arrow data type"):
+        dl.Schema(polars_schema)
+
+
 # ------------------------------------------- COLUMN -------------------------------------------- #
 
 

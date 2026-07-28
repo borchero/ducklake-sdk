@@ -184,6 +184,58 @@ def test_write_enum_rejects_unknown_value(
     assert scan_result.inline_data == []
 
 
+@pytest.mark.parametrize("operation", ["add_column", "update_schema"])
+def test_schema_evolution_rejects_polars_logical_types(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    operation: str,
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"value": dl.Int64()})
+    enum_schema = dl.Schema(pl.Schema({"priority": pl.Enum(ENUM_CATEGORIES)}))
+
+    # Act & Assert
+    with pytest.raises(NotImplementedError, match="Polars logical types"):
+        if operation == "add_column":
+            table.add_column(enum_schema.columns[0])
+        else:
+            table.update_schema(enum_schema)
+
+
+def test_create_table_rejects_reserved_polars_logical_type_tag(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+) -> None:
+    # Arrange
+    tags = {POLARS_LOGICAL_TYPES_TAG: "{}"}
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="reserved for Polars logical types"):
+        shared_ducklake.create_table(
+            random_table_name,
+            {"value": dl.Int64()},
+            tags=tags,
+        )
+
+
+@pytest.mark.parametrize("operation", ["add", "remove"])
+def test_table_rejects_polars_logical_type_tag_mutation(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    operation: str,
+) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="reserved for Polars logical types"):
+        if operation == "add":
+            table.add_tag(POLARS_LOGICAL_TYPES_TAG, "{}")
+        else:
+            table.remove_tag(POLARS_LOGICAL_TYPES_TAG)
+
+
 def test_write_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64(), "y": dl.Varchar()})

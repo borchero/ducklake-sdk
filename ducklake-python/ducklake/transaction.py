@@ -269,6 +269,9 @@ class TransactionTable:
         Args:
             column: The column to add.
         """
+        from ._polars_types import ensure_no_polars_logical_types
+
+        ensure_no_polars_logical_types([column], "Adding columns")
         self._pytxtable.add_column(column)
 
     def rename_column(self, column: str | Sequence[str], new_name: str) -> None:
@@ -339,6 +342,9 @@ class TransactionTable:
         Args:
             schema: The new schema of the table.
         """
+        from ._polars_types import ensure_no_polars_logical_types
+
+        ensure_no_polars_logical_types(schema.columns, "Updating schemas")
         self._pytxtable.update_schema(schema.columns)
 
     def delete(self) -> None:
@@ -355,6 +361,9 @@ class TransactionTable:
             key: The key of the tag.
             value: The value of the tag.
         """
+        from ._polars_types import ensure_not_reserved_polars_tag
+
+        ensure_not_reserved_polars_tag(key)
         self._pytxtable.add_tag(key, value)
 
     def remove_tag(self, key: str) -> None:
@@ -366,6 +375,9 @@ class TransactionTable:
         Raises:
             ValueError: If no tag for the provided key exists.
         """
+        from ._polars_types import ensure_not_reserved_polars_tag
+
+        ensure_not_reserved_polars_tag(key)
         self._pytxtable.remove_tag(key)
 
     def add_column_tag(self, column: str | Sequence[str], key: str, value: str) -> None:
