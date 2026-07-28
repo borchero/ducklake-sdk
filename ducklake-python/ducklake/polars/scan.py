@@ -14,8 +14,6 @@ from ducklake.typedefs import Column, Schema
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
-# polars 1.43 changed the shape of the private `scan_parquet(_default_values=...)` argument
-# from a single mapping to a 2-tuple of `(identity_transformed_values, initial_defaults)`.
 _POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
 
 
@@ -66,6 +64,9 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
         for col in schema.columns
         if col.initial_default is not None and col.field_id is not None
     }
+    # polars 1.43 changed the shape from a single mapping to a 2-tuple of
+    # `(identity_transformed_values, initial_defaults)`. Our defaults populate the former.
+    default_values = (defaults, {}) if _POLARS_VERSION >= (1, 43) else defaults
 
     # 2.4) Statistics
     stat_len = pl.Series(
@@ -134,7 +135,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
         # --- Optimization ---
         _column_mapping=("iceberg-column-mapping", schema),
         _deletion_files=("iceberg-position-delete", dict(iceberg_position_deletes)),
-        _default_values=("iceberg", (defaults, {}) if _POLARS_VERSION >= (1, 43) else defaults),  # type: ignore[invalid-argument-type]
+        _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
         _table_statistics=table_statistics,
         _row_count=(physical_rows, deleted_rows),
     )
