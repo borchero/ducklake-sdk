@@ -85,6 +85,13 @@ jobs:
           - python-version: py310
             database: sqlite
             storage: local
+          # Exercise the oldest and newest supported polars versions.
+          - python-version: polars-minimal
+            database: sqlite
+            storage: local
+          - python-version: polars-latest
+            database: sqlite
+            storage: local
     services:
       postgres:
         image: ${{ case(matrix.database == 'postgres', 'postgres:latest', '') }}

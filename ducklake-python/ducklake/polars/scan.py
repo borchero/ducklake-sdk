@@ -1,3 +1,4 @@
+import re
 import tempfile
 from collections import defaultdict
 from pathlib import Path
@@ -13,6 +14,8 @@ from ducklake.table import Table
 from ducklake.typedefs import Column, Schema
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
+
+_POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
 
 
 def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.LazyFrame:
@@ -50,19 +53,37 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
         + inline_delete_count
     )
 
-    # 2.3) Schema and defaults
+    # 2.3) Schema and defaults. DuckLake's column-level defaults map to Iceberg's per-column
+    #      `initial-default`, which is applied wherever a column is missing from a data file.
     target_schema = pl.Schema(schema)
     logical_schema = logical_polars_schema(schema, table.tags)
-    defaults: dict[int, pl.Series | str] = {
-        col.field_id: pl.repeat(
-            col.initial_default,
-            len(scan_result.data_files),
-            dtype=target_schema[col.name],
-            eager=True,
-        )
+    columns_with_defaults = [
+        col
         for col in schema.columns
         if col.initial_default is not None and col.field_id is not None
-    }
+    ]
+    if _POLARS_VERSION >= (1, 43):
+        # polars 1.43 introduced a dedicated slot for per-column initial defaults, passed as a
+        # 2-tuple of `(identity_transformed_values, initial_defaults)`.
+        default_values = (
+            {},
+            {
+                col.field_id: pl.Series([col.initial_default], dtype=target_schema[col.name])
+                for col in columns_with_defaults
+            },
+        )
+    else:
+        # Older polars only exposes the per-file `identity_transformed_values` slot, so the
+        # constant default has to be repeated once per data file.
+        default_values = {
+            col.field_id: pl.repeat(
+                col.initial_default,
+                len(scan_result.data_files),
+                dtype=target_schema[col.name],
+                eager=True,
+            )
+            for col in columns_with_defaults
+        }
 
     # 2.4) Statistics
     stat_len = pl.Series(
@@ -131,7 +152,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
         # --- Optimization ---
         _column_mapping=("iceberg-column-mapping", schema),
         _deletion_files=("iceberg-position-delete", dict(iceberg_position_deletes)),
-        _default_values=("iceberg", defaults),
+        _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
         _table_statistics=table_statistics,
         _row_count=(physical_rows, deleted_rows),
     )

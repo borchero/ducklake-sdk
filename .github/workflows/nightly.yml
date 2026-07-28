@@ -1,0 +1,37 @@
+name: Nightly CI
+on:
+  schedule:
+    - cron: "0 0 * * *" # Runs every day at midnight UTC
+  workflow_dispatch:
+
+# Automatically stop old builds on the same branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Unit Tests (py314 - sqlite - local - Polars Nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
+        with:
+          environments: nightly
+          activate-environment: true
+      - name: Install Rust
+        run: rustup show
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install polars nightly
+        run: pixi run -e nightly install-polars-nightly
+      - name: Install Python package
+        run: pixi run -e nightly install-py
+      - name: Run tests
+        run: pixi run -e nightly test-py -v
