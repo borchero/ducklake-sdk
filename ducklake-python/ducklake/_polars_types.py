@@ -271,6 +271,8 @@ def _physical_dtype(
                 codec.metadata(dtype),
             )
         dtype = codec.physical_dtype(dtype)
+    elif isinstance(dtype, (pl.Array, pl.Categorical)) or dtype == pl.Object:
+        raise NotImplementedError(f"Polars logical type {dtype!r} is not yet supported")
 
     if isinstance(dtype, pl.List):
         return pl.List(_physical_dtype(dtype.inner, (*path, "element"), logical_types))

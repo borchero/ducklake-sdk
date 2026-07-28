@@ -137,7 +137,7 @@ def test_schema_rejects_unsupported_polars_logical_type(dtype: pl.DataType) -> N
     polars_schema = pl.Schema({"value": dtype})
 
     # Act & Assert
-    with pytest.raises(RuntimeError, match="unsupported Arrow data type"):
+    with pytest.raises(NotImplementedError, match="Polars logical type.*not yet supported"):
         dl.Schema(polars_schema)
 
 
