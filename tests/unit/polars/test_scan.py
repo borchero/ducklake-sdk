@@ -3,6 +3,9 @@ import pytest
 from polars.testing import assert_frame_equal
 
 import ducklake as dl
+from ducklake._polars_enum import POLARS_ENUM_TAG
+
+ENUM_CATEGORIES = ["z", "a", "m"]
 
 
 def test_scan_single_file(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
@@ -43,6 +46,120 @@ def test_read_polars_with_file_paths(shared_ducklake: dl.Ducklake, random_table_
     assert "path" in df.columns
     assert df.height == 3
     assert df["path"].n_unique() == 1
+
+
+def test_scan_enum(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
+    expected = pl.DataFrame(
+        {"priority": ["z", "a", "m", None]},
+        schema_overrides={"priority": enum},
+    )
+    table.sink_polars(expected.lazy())
+
+    # Act
+    scanned = table.scan_polars()
+    actual = scanned.collect()
+
+    # Assert
+    assert scanned.collect_schema() == expected.schema
+    assert_frame_equal(actual, expected)
+    assert_frame_equal(table.read_polars(), expected)
+
+
+def test_scan_enum_uses_category_order(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
+    table.sink_polars(
+        pl.LazyFrame(
+            {"priority": ["z", "a", "m"]},
+            schema_overrides={"priority": enum},
+        )
+    )
+
+    # Act
+    actual = table.scan_polars().filter(pl.col("priority") > "z").collect()
+
+    # Assert
+    expected = pl.DataFrame(
+        {"priority": ["a", "m"]},
+        schema_overrides={"priority": enum},
+    )
+    assert_frame_equal(actual, expected)
+
+
+def test_scan_nested_enum(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    schema = pl.Schema(
+        {
+            "priorities": pl.List(enum),
+            "details": pl.Struct({"priority": enum, "count": pl.Int64}),
+        }
+    )
+    table = shared_ducklake.create_table(random_table_name, schema)
+    expected = pl.DataFrame(
+        {
+            "priorities": [["z", "m"], [None], None],
+            "details": [
+                {"priority": "z", "count": 1},
+                {"priority": "m", "count": 2},
+                {"priority": None, "count": 3},
+            ],
+        },
+        schema=schema,
+    )
+    table.sink_polars(expected.lazy())
+
+    # Act
+    actual = table.read_polars()
+
+    # Assert
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
+def test_scan_enum_from_data_file_and_inline_data(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
+    file_data = pl.DataFrame({"priority": ["z", "a"]}, schema_overrides={"priority": enum})
+    inline_data = pl.DataFrame({"priority": ["m", None]}, schema_overrides={"priority": enum})
+    table.sink_polars(file_data.lazy())
+    table.write_polars(inline_data)
+
+    # Act
+    actual = table.read_polars()
+
+    # Assert
+    expected = pl.concat([file_data, inline_data])
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "column",
+    [
+        dl.Column("priority", dl.Varchar(), tags={POLARS_ENUM_TAG: "not-json"}),
+        dl.Column("priority", dl.Int64(), tags={POLARS_ENUM_TAG: '["z","a","m"]'}),
+    ],
+)
+def test_scan_rejects_invalid_enum_metadata(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    column: dl.Column,
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, [column])
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="Polars Enum metadata"):
+        table.scan_polars()
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")

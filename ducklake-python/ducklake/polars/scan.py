@@ -8,6 +8,7 @@ import polars.datatypes as pld
 
 from ducklake import typedefs
 from ducklake._native import arrow_schema_field_ids
+from ducklake._polars_enum import logical_polars_schema
 from ducklake.table import Table
 from ducklake.typedefs import Column, Schema
 
@@ -51,6 +52,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
 
     # 2.3) Schema and defaults
     target_schema = pl.Schema(schema)
+    logical_schema = logical_polars_schema(schema)
     defaults: dict[int, pl.Series | str] = {
         col.field_id: pl.repeat(
             col.initial_default,
@@ -152,6 +154,14 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
                     pl.lit(None, dtype=pl.String).alias(include_file_paths)
                 )
             result = pl.concat([result, inline_lf])
+
+    enum_casts = [
+        pl.col(name).cast(logical_schema[name]).alias(name)
+        for name, dtype in logical_schema.items()
+        if dtype != target_schema[name]
+    ]
+    if enum_casts:
+        result = result.with_columns(enum_casts)
 
     return result
 
