@@ -77,6 +77,24 @@ impl Column {
         self.field_id = field_id;
         self
     }
+
+    pub(super) fn assign_new_field_ids(&mut self, next_field_id: &mut i64) {
+        self.field_id = Some(*next_field_id);
+        *next_field_id += 1;
+        match &mut self.dtype {
+            DataType::List(inner) => inner.assign_new_field_ids(next_field_id),
+            DataType::Struct(fields) => {
+                for field in fields {
+                    field.assign_new_field_ids(next_field_id);
+                }
+            }
+            DataType::Map(key, value) => {
+                key.assign_new_field_ids(next_field_id);
+                value.assign_new_field_ids(next_field_id);
+            }
+            _ => {}
+        }
+    }
 }
 
 /* ----------------------------------------- FLATTENING ---------------------------------------- */

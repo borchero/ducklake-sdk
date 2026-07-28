@@ -3,7 +3,7 @@ import pytest
 from polars.testing import assert_frame_equal
 
 import ducklake as dl
-from ducklake._polars_types import POLARS_LOGICAL_TYPE_TAG
+from ducklake._polars_types import POLARS_LOGICAL_TYPES_TAG
 
 ENUM_CATEGORIES = ["z", "a", "m"]
 
@@ -66,6 +66,27 @@ def test_scan_enum(shared_ducklake: dl.Ducklake, random_table_name: str) -> None
     assert scanned.collect_schema() == expected.schema
     assert_frame_equal(actual, expected)
     assert_frame_equal(table.read_polars(), expected)
+
+
+@pytest.mark.skip_config(catalog="mysql", reason="The DuckDB MySQL connector is unreliable.")
+def test_enum_metadata_is_compatible_with_duckdb(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
+    data = pl.DataFrame(
+        {"priority": ["z", "a", None]},
+        schema_overrides={"priority": enum},
+    )
+    table.sink_polars(data.lazy())
+
+    # Act
+    actual = table.scan_duckdb().pl()
+
+    # Assert
+    expected = pl.DataFrame({"priority": ["z", "a", None]})
+    assert_frame_equal(actual, expected)
 
 
 def test_scan_enum_uses_category_order(
@@ -258,7 +279,7 @@ def test_scan_rejects_invalid_enum_metadata(
 ) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, [column])
-    table._pytable.add_column_tag("priority", POLARS_LOGICAL_TYPE_TAG, metadata)
+    table._pytable.add_tag(POLARS_LOGICAL_TYPES_TAG, f'{{"1":{metadata}}}')
 
     # Act & Assert
     with pytest.raises(ValueError, match=error):

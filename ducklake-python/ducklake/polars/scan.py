@@ -56,7 +56,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
     # 2.3) Schema and defaults. DuckLake's column-level defaults map to Iceberg's per-column
     #      `initial-default`, which is applied wherever a column is missing from a data file.
     target_schema = pl.Schema(schema)
-    logical_schema = logical_polars_schema(schema)
+    logical_schema = logical_polars_schema(schema, table.tags)
     columns_with_defaults = [
         col
         for col in schema.columns

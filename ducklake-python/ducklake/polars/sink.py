@@ -128,7 +128,7 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
 def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.LazyFrame:
     ducklake_schema = table.schema
     physical_schema = pl.Schema(ducklake_schema)
-    logical_schema = logical_polars_schema(ducklake_schema)
+    logical_schema = logical_polars_schema(ducklake_schema, table.tags)
 
     # Lower logical Polars types before aligning the input with the physical DuckLake schema.
     input_schema = lf.collect_schema()

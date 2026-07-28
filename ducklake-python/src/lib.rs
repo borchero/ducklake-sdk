@@ -34,7 +34,12 @@ mod ducklake_module {
         TransactionConflictError,
     };
     #[pymodule_export]
-    use crate::utils::arrow::{arrow_schema_field_ids, schema_from_arrow, schema_to_arrow};
+    use crate::utils::arrow::{
+        arrow_schema_field_ids,
+        assign_new_schema_field_ids,
+        schema_from_arrow,
+        schema_to_arrow,
+    };
     #[pymodule_export]
     use crate::utils::filepath_generator::PyDataFilePathGenerator;
 }

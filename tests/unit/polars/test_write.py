@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from polars.testing import assert_frame_equal
 
 import ducklake as dl
-from ducklake._polars_types import POLARS_LOGICAL_TYPE_TAG
+from ducklake._polars_types import POLARS_LOGICAL_TYPES_TAG
 from ducklake.typedefs import _ParamLessPartitionTransform
 
 ENUM_CATEGORIES = ["low", "medium", "high"]
@@ -95,18 +95,10 @@ def test_sink_enum_as_varchar(
     )
     expected = pl.DataFrame({"priority": ["low", "high", None]})
     assert_frame_equal(actual, expected)
-    assert table.schema.columns == [
-        dl.Column(
-            "priority",
-            dl.Varchar(),
-            tags={
-                POLARS_LOGICAL_TYPE_TAG: (
-                    '{"type":"enum","version":1,"metadata":{"categories":["low","medium","high"]}}'
-                )
-            },
-            field_id=1,
-        )
-    ]
+    assert table.schema.columns == [dl.Column("priority", dl.Varchar(), field_id=1)]
+    assert table.tags[POLARS_LOGICAL_TYPES_TAG] == (
+        '{"1":{"type":"enum","version":1,"metadata":{"categories":["low","medium","high"]}}}'
+    )
 
 
 def test_sink_nested_enum_as_varchar(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
@@ -241,17 +233,14 @@ def test_create_table_rejects_reserved_polars_logical_type_tag(
     random_table_name: str,
 ) -> None:
     # Arrange
-    column = dl.Column(
-        "value",
-        dl.Varchar(),
-        tags={POLARS_LOGICAL_TYPE_TAG: "{}"},
-    )
+    tags = {POLARS_LOGICAL_TYPES_TAG: "{}"}
 
     # Act & Assert
     with pytest.raises(ValueError, match="reserved for Polars logical types"):
         shared_ducklake.create_table(
             random_table_name,
-            [column],
+            {"value": dl.Varchar()},
+            tags=tags,
         )
 
 
@@ -273,9 +262,9 @@ def test_table_rejects_polars_logical_type_tag_mutation(
         # Act & Assert
         with pytest.raises(ValueError, match="reserved for Polars logical types"):
             if operation == "add":
-                table.add_column_tag("priority", POLARS_LOGICAL_TYPE_TAG, "{}")
+                table.add_tag(POLARS_LOGICAL_TYPES_TAG, "{}")
             else:
-                table.remove_column_tag("priority", POLARS_LOGICAL_TYPE_TAG)
+                table.remove_tag(POLARS_LOGICAL_TYPES_TAG)
 
 
 def test_write_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:

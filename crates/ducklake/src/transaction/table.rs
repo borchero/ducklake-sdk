@@ -81,6 +81,11 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
             .map(|p| p.0);
         Ok(columns)
     }
+
+    /// Get the tags of the table within the current transaction.
+    pub fn tags(&self) -> DucklakeResult<Vec<crate::Tag>> {
+        Ok(self.tx.catalog().table(&self.name)?.tags())
+    }
 }
 
 /* --------------------------------------------------------------------------------------------- */

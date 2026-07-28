@@ -5,7 +5,7 @@ import pytest
 
 import ducklake as dl
 from ducklake._polars_types import (
-    POLARS_LOGICAL_TYPE_TAG,
+    POLARS_LOGICAL_TYPES_TAG,
     _EnumCodec,
     _index_codecs,
     prepare_table_polars_metadata,
@@ -126,32 +126,9 @@ def test_schema_from_polars_enum() -> None:
         '{"type":"enum","version":1,'
         '"metadata":{"categories":["low","medium","high","🚨;critical"]}}'
     )
-    assert prepare_table_polars_metadata(schema) == [
-        dl.Column("priority", dl.Varchar(), tags={POLARS_LOGICAL_TYPE_TAG: metadata}),
-        dl.Column(
-            "priorities",
-            dl.List(
-                dl.Column(
-                    "element",
-                    dl.Varchar(),
-                    tags={POLARS_LOGICAL_TYPE_TAG: metadata},
-                )
-            ),
-        ),
-        dl.Column(
-            "details",
-            dl.Struct(
-                [
-                    dl.Column(
-                        "priority",
-                        dl.Varchar(),
-                        tags={POLARS_LOGICAL_TYPE_TAG: metadata},
-                    ),
-                    dl.Column("count", dl.Int64()),
-                ]
-            ),
-        ),
-    ]
+    columns, tags = prepare_table_polars_metadata(schema, None)
+    assert columns == schema.columns
+    assert tags[POLARS_LOGICAL_TYPES_TAG] == (f'{{"1":{metadata},"3":{metadata},"5":{metadata}}}')
 
 
 @pytest.mark.parametrize(

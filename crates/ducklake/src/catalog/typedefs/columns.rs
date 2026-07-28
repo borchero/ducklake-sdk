@@ -197,7 +197,7 @@ impl CatalogColumns {
         // If so, add the column to the arena - this does not "register" the column in the "tree"
         // of columns yet
         let column_name = column.name.clone();
-        let arena_idxs = self.add_column_to_arena(column, parent_idx);
+        let arena_idxs = self.add_column_to_arena(column, parent_idx, ColumnIdSource::Allocate);
 
         // We either add the column as a root column or as a struct field
         if let Some(pidx) = parent_idx {
@@ -224,6 +224,7 @@ impl CatalogColumns {
         &mut self,
         column: crate::Column,
         parent: Option<ArenaIdx>,
+        column_id_source: ColumnIdSource,
     ) -> Vec<ArenaIdx> {
         use crate::DataType::*;
 
@@ -246,6 +247,13 @@ impl CatalogColumns {
         }
 
         for (idx, flat_column) in flattened_columns.into_iter().enumerate() {
+            let column_id = match column_id_source {
+                ColumnIdSource::Allocate => self.next_column_id(),
+                ColumnIdSource::Assigned => flat_column
+                    .column
+                    .field_id
+                    .expect("field IDs were assigned before adding columns to the catalog"),
+            };
             let dtype = match flat_column.column.dtype {
                 List(_) => CatalogDataType::List(children_by_parent[&idx][0]),
                 Struct(columns) => CatalogDataType::Struct(
@@ -266,7 +274,7 @@ impl CatalogColumns {
                 .map(|i| ArenaIdx(first_idx + i))
                 .or(parent);
             let catalog_column = CatalogColumn {
-                id: self.next_column_id(),
+                id: column_id,
                 parent_column,
                 name: flat_column.column.name,
                 dtype,
@@ -280,6 +288,12 @@ impl CatalogColumns {
         }
         result
     }
+}
+
+#[derive(Clone, Copy)]
+enum ColumnIdSource {
+    Allocate,
+    Assigned,
 }
 
 /* ----------------------------------------- INTERNALS ----------------------------------------- */
@@ -371,13 +385,12 @@ impl CatalogColumns {
 }
 
 impl From<crate::Schema> for CatalogColumns {
-    fn from(value: crate::Schema) -> Self {
-        // NOTE: This implementation is only called when creating a new table. In this instance,
-        //  we know that the first column ID will be a 1.
-        let mut result = Self::new(Some(1));
+    fn from(mut value: crate::Schema) -> Self {
+        let next_column_id = crate::assign_new_field_ids(value.columns.values_mut());
+        let mut result = Self::new(Some(next_column_id));
         for column in value.columns.into_values() {
             let column_name = column.name.clone();
-            let idxs = result.add_column_to_arena(column, None);
+            let idxs = result.add_column_to_arena(column, None, ColumnIdSource::Assigned);
             result.root_columns.insert(column_name, idxs[0]);
         }
         result

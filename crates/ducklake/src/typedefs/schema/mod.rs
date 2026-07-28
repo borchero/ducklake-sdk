@@ -11,6 +11,16 @@ use indexmap::map::Entry;
 
 use crate::{DucklakeError, DucklakeResult};
 
+/// Assign the field IDs that columns will receive when creating a new table.
+#[doc(hidden)]
+pub fn assign_new_field_ids<'a>(columns: impl IntoIterator<Item = &'a mut Column>) -> i64 {
+    let mut next_field_id = 1;
+    for column in columns {
+        column.assign_new_field_ids(&mut next_field_id);
+    }
+    next_field_id
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Schema {
     pub columns: IndexMap<String, Column>,

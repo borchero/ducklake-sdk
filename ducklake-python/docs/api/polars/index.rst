@@ -35,11 +35,12 @@ Polars :class:`polars.datatypes.Enum` columns can be used when creating a table 
     assert table.read_polars().schema["priority"] == priority
 
 DuckLake stores the values as ``VARCHAR`` and records the ordered categories in a reserved,
-versioned tag on the corresponding DuckLake column. DuckLake associates column tags with stable
-field IDs, so the logical type follows column renames and historical snapshots. DuckDB and other
-DuckLake clients see the original string labels, while :meth:`~ducklake.Table.scan_polars` and
-:meth:`~ducklake.Table.read_polars` restore the logical Enum data type. Struct fields and List
-elements containing Enums are supported as well.
+versioned table tag keyed by DuckLake's stable field IDs. The SDK obtains the IDs from the same
+native schema traversal used for table creation, so the logical type follows column renames and
+historical snapshots without exposing unsupported custom column tags to other DuckLake clients.
+DuckDB and other DuckLake clients see the original string labels, while
+:meth:`~ducklake.Table.scan_polars` and :meth:`~ducklake.Table.read_polars` restore the logical Enum
+data type. Struct fields and List elements containing Enums are supported as well.
 
 The categories are fixed when the table is created. Writes may provide either Enum or String
 columns, but every non-null value written through the SDK's Polars integration must belong to the

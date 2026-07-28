@@ -133,6 +133,15 @@ impl PyTransactionTable {
         Ok(partitioning.map(|p| p.into_iter().map(|col| col.into()).collect()))
     }
 
+    #[getter]
+    pub fn tags(&mut self) -> PyResult<Vec<Wrap<ducklake::Tag>>> {
+        let table = self.table.clone();
+        let mut tx_guard = self.tx();
+        let tx_table = tx_guard.table(table).map_err(error::into_pyerr)?;
+        let tags = tx_table.tags().map_err(error::into_pyerr)?;
+        Ok(tags.into_iter().map(|tag| tag.into()).collect())
+    }
+
     fn get_write_info(&mut self) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator)> {
         let table = self.table.clone();
         let (metadata, generator) = self

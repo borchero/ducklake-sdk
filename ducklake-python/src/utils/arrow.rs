@@ -9,6 +9,16 @@ use pyo3_arrow::PySchema as ArrowPySchema;
 use crate::conversion::Wrap;
 use crate::error;
 
+/// Assign the field IDs a new DuckLake table will receive to a list of columns.
+#[pyfunction]
+pub(crate) fn assign_new_schema_field_ids(
+    columns: Vec<Wrap<ducklake::Column>>,
+) -> Vec<Wrap<ducklake::Column>> {
+    let mut columns: Vec<_> = columns.into_iter().map(|column| column.0).collect();
+    ducklake::assign_new_field_ids(&mut columns);
+    columns.into_iter().map(Wrap).collect()
+}
+
 /// Convert a list of columns to an object implementing the Arrow PyCapsule.
 #[pyfunction]
 pub(crate) fn schema_to_arrow(columns: Vec<Wrap<ducklake::Column>>) -> PyResult<ArrowPySchema> {
