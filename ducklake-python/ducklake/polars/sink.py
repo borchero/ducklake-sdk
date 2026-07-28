@@ -8,6 +8,7 @@ from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
 
 from ducklake import typedefs
 from ducklake._native import PyDataFilePathGenerator
+from ducklake._polars_enum import logical_polars_schema, physicalize_polars_schema
 from ducklake.table import Table
 from ducklake.transaction import TransactionTable
 from ducklake.typedefs import Column, Partitioning, WriteDataFile
@@ -120,17 +121,43 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
 
 
 def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.LazyFrame:
+    ducklake_schema = table.schema
+    physical_schema = pl.Schema(ducklake_schema)
+    logical_schema = logical_polars_schema(ducklake_schema)
+
+    # Polars does not implicitly cast Enum columns to String when matching schemas. Lower any
+    # Enum leaves in the input before aligning it with the physical DuckLake schema.
+    input_schema = lf.collect_schema()
+    physical_input_schema = physicalize_polars_schema(input_schema)
+    input_casts = [
+        pl.col(name).cast(physical_input_schema[name]).alias(name)
+        for name, dtype in input_schema.items()
+        if dtype != physical_input_schema[name]
+    ]
+    if input_casts:
+        lf = lf.with_columns(input_casts)
+
     # Ensure that the provided lazy frame aligns with the current schema of the table
-    lf = lf.match_to_schema(pl.Schema(table.schema))
+    lf = lf.match_to_schema(physical_schema)
 
     # Make sure that we apply the current defaults if there are any
     default_exprs = [
         pl.col(col.name).pipe(_apply_default_value, col).alias(col.name)
-        for col in table.schema.columns
+        for col in ducklake_schema.columns
         if _has_default_expression(col)
     ]
     if default_exprs:
-        return lf.with_columns(default_exprs)
+        lf = lf.with_columns(default_exprs)
+
+    # Validate all final values against the table's Enum definitions, then lower them back to the
+    # physical String representation used in DuckLake.
+    enum_casts = [
+        pl.col(name).cast(logical_schema[name]).cast(physical_schema[name]).alias(name)
+        for name, dtype in logical_schema.items()
+        if dtype != physical_schema[name]
+    ]
+    if enum_casts:
+        lf = lf.with_columns(enum_casts)
     return lf
 
 

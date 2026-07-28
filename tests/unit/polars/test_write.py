@@ -9,6 +9,8 @@ from polars.testing import assert_frame_equal
 import ducklake as dl
 from ducklake.typedefs import _ParamLessPartitionTransform
 
+ENUM_CATEGORIES = ["low", "medium", "high"]
+
 
 def test_sink_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
@@ -63,6 +65,118 @@ def test_sink_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     assert table_column_stats[2]["min_value"] == "foo"
     assert table_column_stats[2]["max_value"] == "foo"
     assert not table_column_stats[2]["contains_null"]
+
+
+@pytest.mark.parametrize("input_dtype", [pl.String, pl.Enum(ENUM_CATEGORIES)])
+def test_sink_enum_as_varchar(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    input_dtype: pl.DataType,
+) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
+    lf = pl.LazyFrame(
+        {"priority": ["low", "high", None]},
+        schema_overrides={"priority": input_dtype},
+    )
+
+    # Act
+    table.sink_polars(lf)
+
+    # Assert
+    data_files = table.scan().data_files
+    assert len(data_files) == 1
+    actual = pl.read_parquet(
+        data_files[0].path,
+        storage_options=shared_ducklake._storage_options.to_dict(),
+    )
+    expected = pl.DataFrame({"priority": ["low", "high", None]})
+    assert_frame_equal(actual, expected)
+
+
+def test_sink_nested_enum_as_varchar(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    schema = pl.Schema(
+        {
+            "priorities": pl.List(enum),
+            "details": pl.Struct({"priority": enum, "count": pl.Int64}),
+        }
+    )
+    table = shared_ducklake.create_table(random_table_name, schema)
+    lf = pl.LazyFrame(
+        {
+            "priorities": [["low", "high"], [None], None],
+            "details": [
+                {"priority": "low", "count": 1},
+                {"priority": "high", "count": 2},
+                {"priority": None, "count": 3},
+            ],
+        },
+        schema=schema,
+    )
+
+    # Act
+    table.sink_polars(lf)
+
+    # Assert
+    data_files = table.scan().data_files
+    assert len(data_files) == 1
+    actual = pl.read_parquet(
+        data_files[0].path,
+        storage_options=shared_ducklake._storage_options.to_dict(),
+    )
+    expected = pl.DataFrame(
+        {
+            "priorities": [["low", "high"], [None], None],
+            "details": [
+                {"priority": "low", "count": 1},
+                {"priority": "high", "count": 2},
+                {"priority": None, "count": 3},
+            ],
+        }
+    )
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
+def test_write_enum_inline_as_varchar(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
+    df = pl.DataFrame({"priority": ["low", "high", None]}, schema_overrides={"priority": enum})
+
+    # Act
+    table.write_polars(df)
+
+    # Assert
+    inline_data = table.scan().inline_data
+    assert len(inline_data) == 1
+    actual = pl.DataFrame(inline_data[0])
+    expected = pl.DataFrame({"priority": ["low", "high", None]})
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
+def test_write_enum_rejects_unknown_value(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
+    df = pl.DataFrame({"priority": ["low", "unknown"]})
+
+    # Act & Assert
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="conversion from `str` to `enum`"
+    ):
+        table.write_polars(df)
+    scan_result = table.scan()
+    assert scan_result.data_files == []
+    assert scan_result.inline_data == []
 
 
 def test_write_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:

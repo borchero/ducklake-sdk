@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from ._native import PyDataFilePathGenerator, PyTransaction, PyTransactionTable
     from ._storage import StorageOptionSet
     from .table import TableName
-    from .typedefs import ArrowStreamExportable
+    from .typedefs import ArrowSchemaExportable, ArrowStreamExportable
 
 
 class Transaction:
@@ -60,7 +60,7 @@ class Transaction:
     def create_table(
         self,
         name: str | tuple[str, str] | TableName,
-        schema: Schema | Sequence[Column] | Mapping[str, DataType],
+        schema: Schema | Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable,
         *,
         partition_by: (
             Partitioning | Sequence[PartitionColumn] | Sequence[str] | PartitionColumn | str | None

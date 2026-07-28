@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from ._native import PyDucklake
     from ._storage import StorageOptionSet
     from .connect import ConnectionArgs
+    from .typedefs import ArrowSchemaExportable
 
 
 class Ducklake:
@@ -191,7 +192,7 @@ class Ducklake:
     def create_table(
         self,
         name: str | tuple[str, str] | TableName,
-        schema: Schema | Sequence[Column] | Mapping[str, DataType],
+        schema: Schema | Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable,
         *,
         partition_by: (
             Partitioning | Sequence[PartitionColumn] | Sequence[str] | PartitionColumn | str | None
