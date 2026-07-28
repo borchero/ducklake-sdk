@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
     import dateutil.relativedelta as rd
 
+    from ._polars_types import _PolarsLogicalType
+
 # ------------------------------------------ TABLE NAME ----------------------------------------- #
 
 
@@ -145,17 +147,25 @@ class Schema:
     """Schema of a table."""
 
     columns: list[Column]
+    _polars_logical_types: dict[tuple[str, ...], _PolarsLogicalType]
 
     def __init__(
         self,
         columns: Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable,
     ) -> None:
+        self._polars_logical_types = {}
         if isinstance(columns, Schema):
             self.columns = list(columns.columns)
+            self._polars_logical_types = dict(columns._polars_logical_types)
         elif isinstance(columns, ArrowSchemaExportable):
-            from ._polars_enum import columns_from_polars_schema
+            from ._polars_types import schema_from_polars
 
-            self.columns = columns_from_polars_schema(columns) or schema_from_arrow(columns)
+            encoded_schema = schema_from_polars(columns)
+            if encoded_schema is None:
+                self.columns = schema_from_arrow(columns)
+            else:
+                self.columns = encoded_schema.columns
+                self._polars_logical_types = encoded_schema.logical_types
         elif isinstance(columns, Sequence):
             self.columns = list(columns)  # ty: ignore[invalid-assignment]
         else:

@@ -8,7 +8,7 @@ from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
 
 from ducklake import typedefs
 from ducklake._native import PyDataFilePathGenerator
-from ducklake._polars_enum import logical_polars_schema, physicalize_polars_schema
+from ducklake._polars_types import logical_polars_schema, physicalize_polars_schema
 from ducklake.table import Table
 from ducklake.transaction import TransactionTable
 from ducklake.typedefs import Column, Partitioning, WriteDataFile
@@ -125,8 +125,7 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
     physical_schema = pl.Schema(ducklake_schema)
     logical_schema = logical_polars_schema(ducklake_schema, table.tags)
 
-    # Polars does not implicitly cast Enum columns to String when matching schemas. Lower any
-    # Enum leaves in the input before aligning it with the physical DuckLake schema.
+    # Lower logical Polars types before aligning the input with the physical DuckLake schema.
     input_schema = lf.collect_schema()
     physical_input_schema = physicalize_polars_schema(input_schema)
     input_casts = [
@@ -149,15 +148,14 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
     if default_exprs:
         lf = lf.with_columns(default_exprs)
 
-    # Validate all final values against the table's Enum definitions, then lower them back to the
-    # physical String representation used in DuckLake.
-    enum_casts = [
+    # Validate the final logical values, then lower them to their physical DuckLake types.
+    logical_type_casts = [
         pl.col(name).cast(logical_schema[name]).cast(physical_schema[name]).alias(name)
         for name, dtype in logical_schema.items()
         if dtype != physical_schema[name]
     ]
-    if enum_casts:
-        lf = lf.with_columns(enum_casts)
+    if logical_type_casts:
+        lf = lf.with_columns(logical_type_casts)
     return lf
 
 

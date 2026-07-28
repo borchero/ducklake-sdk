@@ -3,7 +3,7 @@ import pytest
 from polars.testing import assert_frame_equal
 
 import ducklake as dl
-from ducklake._polars_enum import POLARS_ENUM_TAG
+from ducklake._polars_types import POLARS_LOGICAL_TYPES_TAG
 
 ENUM_CATEGORIES = ["z", "a", "m"]
 
@@ -146,7 +146,10 @@ def test_scan_enum_from_data_file_and_inline_data(
     ("column", "metadata"),
     [
         (dl.Column("priority", dl.Varchar()), "not-json"),
-        (dl.Column("priority", dl.Int64()), '{"1":["z","a","m"]}'),
+        (
+            dl.Column("priority", dl.Int64()),
+            '{"1":{"type":"enum","categories":["z","a","m"]}}',
+        ),
     ],
 )
 def test_scan_rejects_invalid_enum_metadata(
@@ -159,11 +162,11 @@ def test_scan_rejects_invalid_enum_metadata(
     table = shared_ducklake.create_table(
         random_table_name,
         [column],
-        tags={POLARS_ENUM_TAG: metadata},
+        tags={POLARS_LOGICAL_TYPES_TAG: metadata},
     )
 
     # Act & Assert
-    with pytest.raises(ValueError, match="Polars Enum metadata"):
+    with pytest.raises(ValueError, match="Polars.*metadata"):
         table.scan_polars()
 
 

@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 
 import ducklake as dl
-from ducklake._polars_enum import POLARS_ENUM_TAG
+from ducklake._polars_types import POLARS_LOGICAL_TYPES_TAG, prepare_table_polars_metadata
 from ducklake.typedefs import _serialize_metadata_value
 
 # ----------------------------------------- TABLE NAME ------------------------------------------ #
@@ -79,20 +79,25 @@ def test_schema_from_polars_enum() -> None:
     schema = dl.Schema(polars_schema)
 
     # Assert
-    tag = {POLARS_ENUM_TAG: '["low","medium","high","🚨;critical"]'}
     assert schema.columns == [
-        dl.Column("priority", dl.Varchar(), tags=tag),
-        dl.Column("priorities", dl.List(dl.Column("element", dl.Varchar(), tags=tag))),
+        dl.Column("priority", dl.Varchar()),
+        dl.Column("priorities", dl.List(dl.Column("element", dl.Varchar()))),
         dl.Column(
             "details",
             dl.Struct(
                 [
-                    dl.Column("priority", dl.Varchar(), tags=tag),
+                    dl.Column("priority", dl.Varchar()),
                     dl.Column("count", dl.Int64()),
                 ]
             ),
         ),
     ]
+    _, tags = prepare_table_polars_metadata(schema, None)
+    assert tags[POLARS_LOGICAL_TYPES_TAG] == (
+        '{"1":{"type":"enum","categories":["low","medium","high","🚨;critical"]},'
+        '"3":{"type":"enum","categories":["low","medium","high","🚨;critical"]},'
+        '"5":{"type":"enum","categories":["low","medium","high","🚨;critical"]}}'
+    )
 
 
 # ------------------------------------------- COLUMN -------------------------------------------- #

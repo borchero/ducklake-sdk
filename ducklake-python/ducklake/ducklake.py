@@ -5,7 +5,7 @@ import warnings
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from ._polars_enum import prepare_table_polars_metadata
+from ._polars_types import prepare_table_polars_metadata
 from .table import Table
 from .transaction import Transaction
 from .typedefs import (
@@ -218,7 +218,7 @@ class Ducklake:
             The newly created :class:`Table`.
         """
         schema_cls = schema if isinstance(schema, Schema) else Schema(schema)
-        columns, table_tags = prepare_table_polars_metadata(schema_cls.columns, tags)
+        columns, table_tags = prepare_table_polars_metadata(schema_cls, tags)
         partition_cls = (
             partition_by
             if isinstance(partition_by, Partitioning)

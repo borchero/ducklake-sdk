@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, overload
 
-from ._polars_enum import prepare_table_polars_metadata
+from ._polars_types import prepare_table_polars_metadata
 from .typedefs import (
     Column,
     DataType,
@@ -86,7 +86,7 @@ class Transaction:
             A :class:`TransactionTable` referring to the newly created table.
         """
         schema_cls = schema if isinstance(schema, Schema) else Schema(schema)
-        columns, table_tags = prepare_table_polars_metadata(schema_cls.columns, tags)
+        columns, table_tags = prepare_table_polars_metadata(schema_cls, tags)
         partition_cls = (
             partition_by
             if isinstance(partition_by, Partitioning)
