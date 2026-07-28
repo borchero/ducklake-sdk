@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 
 import ducklake as dl
+from ducklake._polars_enum import POLARS_ENUM_TAG
 from ducklake.typedefs import _serialize_metadata_value
 
 # ----------------------------------------- TABLE NAME ------------------------------------------ #
@@ -59,6 +60,38 @@ def test_schema_from_arrow() -> None:
     assert schema.columns == [
         dl.Column("a", dl.Int64()),
         dl.Column("b", dl.Struct({"x": dl.Float32(), "y": dl.Decimal(10, 5)})),
+    ]
+
+
+def test_schema_from_polars_enum() -> None:
+    # Arrange
+    categories = ["low", "medium", "high", "🚨;critical"]
+    enum = pl.Enum(categories)
+    polars_schema = pl.Schema(
+        {
+            "priority": enum,
+            "priorities": pl.List(enum),
+            "details": pl.Struct({"priority": enum, "count": pl.Int64}),
+        }
+    )
+
+    # Act
+    schema = dl.Schema(polars_schema)
+
+    # Assert
+    tag = {POLARS_ENUM_TAG: '["low","medium","high","🚨;critical"]'}
+    assert schema.columns == [
+        dl.Column("priority", dl.Varchar(), tags=tag),
+        dl.Column("priorities", dl.List(dl.Column("element", dl.Varchar(), tags=tag))),
+        dl.Column(
+            "details",
+            dl.Struct(
+                [
+                    dl.Column("priority", dl.Varchar(), tags=tag),
+                    dl.Column("count", dl.Int64()),
+                ]
+            ),
+        ),
     ]
 
 

@@ -153,7 +153,9 @@ class Schema:
         if isinstance(columns, Schema):
             self.columns = list(columns.columns)
         elif isinstance(columns, ArrowSchemaExportable):
-            self.columns = schema_from_arrow(columns)
+            from ._polars_enum import columns_from_polars_schema
+
+            self.columns = columns_from_polars_schema(columns) or schema_from_arrow(columns)
         elif isinstance(columns, Sequence):
             self.columns = list(columns)  # ty: ignore[invalid-assignment]
         else:

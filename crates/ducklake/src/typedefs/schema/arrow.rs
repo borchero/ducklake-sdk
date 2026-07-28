@@ -175,7 +175,8 @@ impl TryFrom<&ArrowField> for Column {
                 Ok(DataType::uuid())
             }
             ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => {
-                let inner_type = Column::try_from(&**inner)?;
+                let mut inner_type = Column::try_from(&**inner)?;
+                inner_type.name = "element".to_string();
                 Ok(DataType::List(Box::new(inner_type)))
             }
             ArrowDataType::Struct(fields) => {
