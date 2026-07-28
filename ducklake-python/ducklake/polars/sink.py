@@ -123,7 +123,7 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
 def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.LazyFrame:
     ducklake_schema = table.schema
     physical_schema = pl.Schema(ducklake_schema)
-    logical_schema = logical_polars_schema(ducklake_schema)
+    logical_schema = logical_polars_schema(ducklake_schema, table.tags)
 
     # Polars does not implicitly cast Enum columns to String when matching schemas. Lower any
     # Enum leaves in the input before aligning it with the physical DuckLake schema.

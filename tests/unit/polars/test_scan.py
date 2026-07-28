@@ -143,19 +143,24 @@ def test_scan_enum_from_data_file_and_inline_data(
 
 
 @pytest.mark.parametrize(
-    "column",
+    ("column", "metadata"),
     [
-        dl.Column("priority", dl.Varchar(), tags={POLARS_ENUM_TAG: "not-json"}),
-        dl.Column("priority", dl.Int64(), tags={POLARS_ENUM_TAG: '["z","a","m"]'}),
+        (dl.Column("priority", dl.Varchar()), "not-json"),
+        (dl.Column("priority", dl.Int64()), '{"1":["z","a","m"]}'),
     ],
 )
 def test_scan_rejects_invalid_enum_metadata(
     shared_ducklake: dl.Ducklake,
     random_table_name: str,
     column: dl.Column,
+    metadata: str,
 ) -> None:
     # Arrange
-    table = shared_ducklake.create_table(random_table_name, [column])
+    table = shared_ducklake.create_table(
+        random_table_name,
+        [column],
+        tags={POLARS_ENUM_TAG: metadata},
+    )
 
     # Act & Assert
     with pytest.raises(ValueError, match="Polars Enum metadata"):

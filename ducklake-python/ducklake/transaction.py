@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, overload
 
+from ._polars_enum import prepare_table_polars_metadata
 from .typedefs import (
     Column,
     DataType,
@@ -85,6 +86,7 @@ class Transaction:
             A :class:`TransactionTable` referring to the newly created table.
         """
         schema_cls = schema if isinstance(schema, Schema) else Schema(schema)
+        columns, table_tags = prepare_table_polars_metadata(schema_cls.columns, tags)
         partition_cls = (
             partition_by
             if isinstance(partition_by, Partitioning)
@@ -92,14 +94,14 @@ class Transaction:
         )
         pytransaction_table = self._pytx.create_table(
             name,
-            schema_cls.columns,
+            columns,
             partition=(
                 [(c.name, c.transform, c.num_buckets) for c in partition_cls.columns]
                 if partition_cls
                 else None
             ),
             data_path=data_path,
-            tags=list(tags.items()) if tags else None,
+            tags=list(table_tags.items()) if table_tags else None,
             if_exists=if_exists,
         )
         return TransactionTable._from_pytransaction_table(
@@ -144,6 +146,11 @@ class TransactionTable:
     def schema(self) -> Schema:
         """The schema of the table."""
         return Schema(self._pytxtable.columns)
+
+    @property
+    def tags(self) -> dict[str, str]:
+        """The tags associated with the table."""
+        return dict(self._pytxtable.tags)
 
     @property
     def partitioning(self) -> Partitioning | None:

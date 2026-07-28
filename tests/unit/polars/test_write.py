@@ -7,6 +7,7 @@ import sqlalchemy as sa
 from polars.testing import assert_frame_equal
 
 import ducklake as dl
+from ducklake._polars_enum import POLARS_ENUM_TAG
 from ducklake.typedefs import _ParamLessPartitionTransform
 
 ENUM_CATEGORIES = ["low", "medium", "high"]
@@ -93,6 +94,8 @@ def test_sink_enum_as_varchar(
     )
     expected = pl.DataFrame({"priority": ["low", "high", None]})
     assert_frame_equal(actual, expected)
+    assert table.schema.columns == [dl.Column("priority", dl.Varchar(), field_id=1)]
+    assert table.tags[POLARS_ENUM_TAG] == '{"1":["low","medium","high"]}'
 
 
 def test_sink_nested_enum_as_varchar(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:

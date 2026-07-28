@@ -52,7 +52,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
 
     # 2.3) Schema and defaults
     target_schema = pl.Schema(schema)
-    logical_schema = logical_polars_schema(schema)
+    logical_schema = logical_polars_schema(schema, table.tags)
     defaults: dict[int, pl.Series | str] = {
         col.field_id: pl.repeat(
             col.initial_default,

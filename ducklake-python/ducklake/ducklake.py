@@ -5,6 +5,7 @@ import warnings
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+from ._polars_enum import prepare_table_polars_metadata
 from .table import Table
 from .transaction import Transaction
 from .typedefs import (
@@ -217,6 +218,7 @@ class Ducklake:
             The newly created :class:`Table`.
         """
         schema_cls = schema if isinstance(schema, Schema) else Schema(schema)
+        columns, table_tags = prepare_table_polars_metadata(schema_cls.columns, tags)
         partition_cls = (
             partition_by
             if isinstance(partition_by, Partitioning)
@@ -224,14 +226,14 @@ class Ducklake:
         )
         pytable = self._pyducklake.create_table(
             name,
-            schema_cls.columns,
+            columns,
             partition=(
                 [(c.name, c.transform, c.num_buckets) for c in partition_cls.columns]
                 if partition_cls
                 else None
             ),
             data_path=data_path,
-            tags=list(tags.items()) if tags else None,
+            tags=list(table_tags.items()) if table_tags else None,
             if_exists=if_exists,
         )
         return Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
