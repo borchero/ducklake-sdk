@@ -254,9 +254,13 @@ class Table:
         Args:
             column: The column to add.
         """
-        from ._polars_types import ensure_no_polars_logical_types
+        from ._polars_types import (
+            ensure_no_new_polars_logical_type_tags,
+            ensure_no_polars_logical_types,
+        )
 
         ensure_no_polars_logical_types([column], "Adding columns")
+        ensure_no_new_polars_logical_type_tags([column], "Adding columns", allow_existing=False)
         self._pytable.add_column(column)
 
     def rename_column(self, column: str, new_name: str) -> None:
@@ -323,9 +327,15 @@ class Table:
             schema: The new schema of the table.
         """
         schema_cls = schema if isinstance(schema, Schema) else Schema(schema)
-        from ._polars_types import ensure_no_polars_logical_types
+        from ._polars_types import (
+            ensure_no_new_polars_logical_type_tags,
+            ensure_no_polars_logical_types,
+        )
 
         ensure_no_polars_logical_types(schema_cls.columns, "Updating schemas")
+        ensure_no_new_polars_logical_type_tags(
+            schema_cls.columns, "Updating schemas", allow_existing=True
+        )
         self._pytable.update_schema(schema_cls.columns)
 
     def delete(self) -> None:
@@ -342,9 +352,6 @@ class Table:
             key: The key of the tag.
             value: The value of the tag.
         """
-        from ._polars_types import ensure_not_reserved_polars_tag
-
-        ensure_not_reserved_polars_tag(key)
         self._pytable.add_tag(key, value)
 
     def remove_tag(self, key: str) -> None:
@@ -356,9 +363,6 @@ class Table:
         Raises:
             ValueError: If no tag for the provided key exists.
         """
-        from ._polars_types import ensure_not_reserved_polars_tag
-
-        ensure_not_reserved_polars_tag(key)
         self._pytable.remove_tag(key)
 
     def add_column_tag(self, column: str | Sequence[str], key: str, value: str) -> None:
@@ -370,6 +374,9 @@ class Table:
             key: The key of the tag.
             value: The value of the tag.
         """
+        from ._polars_types import ensure_not_reserved_polars_column_tag
+
+        ensure_not_reserved_polars_column_tag(key)
         self._pytable.add_column_tag(
             column if isinstance(column, str) else list(column),
             key,
@@ -387,6 +394,9 @@ class Table:
         Raises:
             ValueError: If no tag for the provided key exists.
         """
+        from ._polars_types import ensure_not_reserved_polars_column_tag
+
+        ensure_not_reserved_polars_column_tag(key)
         self._pytable.remove_column_tag(
             column if isinstance(column, str) else list(column),
             key,

@@ -86,7 +86,7 @@ class Transaction:
             A :class:`TransactionTable` referring to the newly created table.
         """
         schema_cls = schema if isinstance(schema, Schema) else Schema(schema)
-        columns, table_tags = prepare_table_polars_metadata(schema_cls, tags)
+        columns = prepare_table_polars_metadata(schema_cls)
         partition_cls = (
             partition_by
             if isinstance(partition_by, Partitioning)
@@ -101,7 +101,7 @@ class Transaction:
                 else None
             ),
             data_path=data_path,
-            tags=list(table_tags.items()) if table_tags else None,
+            tags=list(tags.items()) if tags else None,
             if_exists=if_exists,
         )
         return TransactionTable._from_pytransaction_table(
@@ -146,11 +146,6 @@ class TransactionTable:
     def schema(self) -> Schema:
         """The schema of the table."""
         return Schema(self._pytxtable.columns)
-
-    @property
-    def tags(self) -> dict[str, str]:
-        """The tags associated with the table."""
-        return dict(self._pytxtable.tags)
 
     @property
     def partitioning(self) -> Partitioning | None:
@@ -269,9 +264,13 @@ class TransactionTable:
         Args:
             column: The column to add.
         """
-        from ._polars_types import ensure_no_polars_logical_types
+        from ._polars_types import (
+            ensure_no_new_polars_logical_type_tags,
+            ensure_no_polars_logical_types,
+        )
 
         ensure_no_polars_logical_types([column], "Adding columns")
+        ensure_no_new_polars_logical_type_tags([column], "Adding columns", allow_existing=False)
         self._pytxtable.add_column(column)
 
     def rename_column(self, column: str | Sequence[str], new_name: str) -> None:
@@ -342,9 +341,15 @@ class TransactionTable:
         Args:
             schema: The new schema of the table.
         """
-        from ._polars_types import ensure_no_polars_logical_types
+        from ._polars_types import (
+            ensure_no_new_polars_logical_type_tags,
+            ensure_no_polars_logical_types,
+        )
 
         ensure_no_polars_logical_types(schema.columns, "Updating schemas")
+        ensure_no_new_polars_logical_type_tags(
+            schema.columns, "Updating schemas", allow_existing=True
+        )
         self._pytxtable.update_schema(schema.columns)
 
     def delete(self) -> None:
@@ -361,9 +366,6 @@ class TransactionTable:
             key: The key of the tag.
             value: The value of the tag.
         """
-        from ._polars_types import ensure_not_reserved_polars_tag
-
-        ensure_not_reserved_polars_tag(key)
         self._pytxtable.add_tag(key, value)
 
     def remove_tag(self, key: str) -> None:
@@ -375,9 +377,6 @@ class TransactionTable:
         Raises:
             ValueError: If no tag for the provided key exists.
         """
-        from ._polars_types import ensure_not_reserved_polars_tag
-
-        ensure_not_reserved_polars_tag(key)
         self._pytxtable.remove_tag(key)
 
     def add_column_tag(self, column: str | Sequence[str], key: str, value: str) -> None:
@@ -389,6 +388,9 @@ class TransactionTable:
             key: The key of the tag.
             value: The value of the tag.
         """
+        from ._polars_types import ensure_not_reserved_polars_column_tag
+
+        ensure_not_reserved_polars_column_tag(key)
         self._pytxtable.add_column_tag(
             column if isinstance(column, str) else list(column),
             key,
@@ -406,6 +408,9 @@ class TransactionTable:
         Raises:
             ValueError: If no tag for the provided key exists.
         """
+        from ._polars_types import ensure_not_reserved_polars_column_tag
+
+        ensure_not_reserved_polars_column_tag(key)
         self._pytxtable.remove_column_tag(
             column if isinstance(column, str) else list(column),
             key,

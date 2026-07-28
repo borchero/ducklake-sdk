@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import polars as pl
     import polars.datatypes as pld
 
-POLARS_LOGICAL_TYPES_TAG = "ducklake-sdk.polars.logical-types.v1"
+POLARS_LOGICAL_TYPE_TAG = "ducklake-sdk.polars.logical-type.v1"
 
 
 @dataclass(frozen=True)
@@ -138,60 +138,35 @@ def schema_from_polars(schema: ArrowSchemaExportable) -> _EncodedPolarsSchema | 
     return _EncodedPolarsSchema(columns)
 
 
-def prepare_table_polars_metadata(
-    schema: Schema, tags: Mapping[str, str] | None
-) -> tuple[list[Column], dict[str, str]]:
+def prepare_table_polars_metadata(schema: Schema) -> list[Column]:
     prepared_columns = copy.deepcopy(schema.columns)
-    prepared_tags: dict[str, str] = dict(tags or {})
-    logical_types: dict[str, dict[str, object]] = {}
-    next_field_id = 1
-
-    def visit(column: Column) -> None:
-        nonlocal next_field_id
-
-        field_id = next_field_id
-        next_field_id += 1
+    for _, column in _walk_columns(prepared_columns):
+        if POLARS_LOGICAL_TYPE_TAG in column.tags:
+            raise ValueError(
+                f"Column tag {POLARS_LOGICAL_TYPE_TAG!r} is reserved for Polars logical types"
+            )
         if logical_type := column._polars_logical_type:
-            logical_types[str(field_id)] = {
-                "type": logical_type.type_name,
-                **logical_type.metadata,
-            }
+            column.tags[POLARS_LOGICAL_TYPE_TAG] = json.dumps(
+                {
+                    "type": logical_type.type_name,
+                    **logical_type.metadata,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
             column._polars_logical_type = None
-
-        if isinstance(column.data_type, List):
-            visit(column.data_type.inner)
-        elif isinstance(column.data_type, Struct):
-            for field in column.data_type.fields:
-                visit(field)
-        elif isinstance(column.data_type, Map):
-            visit(column.data_type.key)
-            visit(column.data_type.value)
-
-    for column in prepared_columns:
-        visit(column)
-
-    if POLARS_LOGICAL_TYPES_TAG in prepared_tags:
-        raise ValueError(
-            f"Table tag {POLARS_LOGICAL_TYPES_TAG!r} is reserved for Polars logical types"
-        )
-    if logical_types:
-        prepared_tags[POLARS_LOGICAL_TYPES_TAG] = json.dumps(
-            logical_types, ensure_ascii=False, separators=(",", ":")
-        )
-    return prepared_columns, prepared_tags
+    return prepared_columns
 
 
-def logical_polars_schema(schema: Schema, tags: Mapping[str, str]) -> pl.Schema:
+def logical_polars_schema(schema: Schema) -> pl.Schema:
     import polars as pl
 
-    field_ids = {field_id for column in schema.columns for field_id in _field_ids(column)}
-    logical_types = _table_logical_types(tags, field_ids)
     physical_schema = pl.Schema(schema)
     return pl.Schema(
         [
             (
                 column.name,
-                _logical_dtype(column, physical_schema[column.name], logical_types),
+                _logical_dtype(column, physical_schema[column.name]),
             )
             for column in schema.columns
         ]
@@ -264,14 +239,13 @@ def _physical_dtype(
 def _logical_dtype(
     column: Column,
     physical_dtype: pl.DataType | pld.DataTypeClass,
-    logical_types: dict[int, _PolarsLogicalType],
 ) -> pl.DataType:
     import polars as pl
 
     if isinstance(column.data_type, List):
         list_dtype = cast(pl.List, physical_dtype)
         dtype: pl.DataType | pld.DataTypeClass = pl.List(
-            _logical_dtype(column.data_type.inner, list_dtype.inner, logical_types)
+            _logical_dtype(column.data_type.inner, list_dtype.inner)
         )
     elif isinstance(column.data_type, Struct):
         struct_dtype = cast(pl.Struct, physical_dtype)
@@ -280,7 +254,7 @@ def _logical_dtype(
             [
                 pl.Field(
                     field.name,
-                    _logical_dtype(field, physical_fields[field.name], logical_types),
+                    _logical_dtype(field, physical_fields[field.name]),
                 )
                 for field in column.data_type.fields
             ]
@@ -288,7 +262,7 @@ def _logical_dtype(
     else:
         dtype = physical_dtype
 
-    logical_type = logical_types.get(cast(int, column.field_id))
+    logical_type = _column_logical_type(column)
     if logical_type is None:
         return cast("pl.DataType", dtype)
     codec = _LOGICAL_TYPE_CODECS_BY_NAME[logical_type.type_name]
@@ -303,65 +277,48 @@ def ensure_no_polars_logical_types(columns: list[Column], operation: str) -> Non
         )
 
 
-def ensure_not_reserved_polars_tag(key: str) -> None:
-    if key == POLARS_LOGICAL_TYPES_TAG:
-        raise ValueError(f"Table tag {key!r} is reserved for Polars logical types")
-
-
-def _table_logical_types(
-    tags: Mapping[str, str], current_field_ids: set[int]
-) -> dict[int, _PolarsLogicalType]:
-    value = tags.get(POLARS_LOGICAL_TYPES_TAG)
-    if value is None:
-        return {}
-    try:
-        raw_logical_types = json.loads(value)
-    except json.JSONDecodeError as e:
-        raise ValueError("Invalid Polars logical type metadata for table") from e
-    if not isinstance(raw_logical_types, dict):
-        raise ValueError("Invalid Polars logical type metadata for table")
-
-    logical_types: dict[int, _PolarsLogicalType] = {}
-    for raw_field_id, raw_logical_type in raw_logical_types.items():
-        try:
-            field_id = int(raw_field_id)
-        except (TypeError, ValueError) as e:
-            raise ValueError("Invalid Polars logical type metadata for table") from e
-        if (
-            field_id < 1
-            or str(field_id) != raw_field_id
-            or not isinstance(raw_logical_type, dict)
-            or not isinstance(type_name := raw_logical_type.get("type"), str)
-        ):
-            raise ValueError("Invalid Polars logical type metadata for table")
-        if field_id not in current_field_ids:
-            continue
-        if type_name not in _LOGICAL_TYPE_CODECS_BY_NAME:
-            raise ValueError(f"Unsupported Polars logical type {type_name!r}")
-        logical_types[field_id] = _PolarsLogicalType(
-            type_name,
-            {key: value for key, value in raw_logical_type.items() if key != "type"},
+def ensure_no_new_polars_logical_type_tags(
+    columns: list[Column], operation: str, *, allow_existing: bool
+) -> None:
+    if any(
+        POLARS_LOGICAL_TYPE_TAG in column.tags and (not allow_existing or column.field_id is None)
+        for _, column in _walk_columns(columns)
+    ):
+        raise ValueError(
+            f"{operation} with the reserved column tag {POLARS_LOGICAL_TYPE_TAG!r} "
+            "is not supported"
         )
-    return logical_types
+
+
+def ensure_not_reserved_polars_column_tag(key: str) -> None:
+    if key == POLARS_LOGICAL_TYPE_TAG:
+        raise ValueError(f"Column tag {key!r} is reserved for Polars logical types")
+
+
+def _column_logical_type(column: Column) -> _PolarsLogicalType | None:
+    value = column.tags.get(POLARS_LOGICAL_TYPE_TAG)
+    if value is None:
+        return None
+    try:
+        raw_logical_type = json.loads(value)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid Polars logical type metadata on column {column.name!r}") from e
+    if not isinstance(raw_logical_type, dict) or not isinstance(
+        type_name := raw_logical_type.get("type"), str
+    ):
+        raise ValueError(f"Invalid Polars logical type metadata on column {column.name!r}")
+    if type_name not in _LOGICAL_TYPE_CODECS_BY_NAME:
+        raise ValueError(f"Unsupported Polars logical type {type_name!r}")
+    return _PolarsLogicalType(
+        type_name,
+        {key: value for key, value in raw_logical_type.items() if key != "type"},
+    )
 
 
 def _codec_for_dtype(
     dtype: pl.DataType | pld.DataTypeClass,
 ) -> _PolarsLogicalTypeCodec | None:
     return next((codec for codec in _LOGICAL_TYPE_CODECS if codec.matches(dtype)), None)
-
-
-def _field_ids(column: Column) -> list[int]:
-    field_ids = [cast(int, column.field_id)]
-    if isinstance(column.data_type, List):
-        field_ids.extend(_field_ids(column.data_type.inner))
-    elif isinstance(column.data_type, Struct):
-        for field in column.data_type.fields:
-            field_ids.extend(_field_ids(field))
-    elif isinstance(column.data_type, Map):
-        field_ids.extend(_field_ids(column.data_type.key))
-        field_ids.extend(_field_ids(column.data_type.value))
-    return field_ids
 
 
 def _walk_columns(
