@@ -52,21 +52,36 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
         + inline_delete_count
     )
 
-    # 2.3) Schema and defaults
+    # 2.3) Schema and defaults. DuckLake's column-level defaults map to Iceberg's per-column
+    #      `initial-default`, which is applied wherever a column is missing from a data file.
     target_schema = pl.Schema(schema)
-    defaults: dict[int, pl.Series | str] = {
-        col.field_id: pl.repeat(
-            col.initial_default,
-            len(scan_result.data_files),
-            dtype=target_schema[col.name],
-            eager=True,
-        )
+    columns_with_defaults = [
+        col
         for col in schema.columns
         if col.initial_default is not None and col.field_id is not None
-    }
-    # polars 1.43 changed the shape from a single mapping to a 2-tuple of
-    # `(identity_transformed_values, initial_defaults)`. Our defaults populate the former.
-    default_values = (defaults, {}) if _POLARS_VERSION >= (1, 43) else defaults
+    ]
+    if _POLARS_VERSION >= (1, 43):
+        # polars 1.43 introduced a dedicated slot for per-column initial defaults, passed as a
+        # 2-tuple of `(identity_transformed_values, initial_defaults)`.
+        default_values = (
+            {},
+            {
+                col.field_id: pl.Series([col.initial_default], dtype=target_schema[col.name])
+                for col in columns_with_defaults
+            },
+        )
+    else:
+        # Older polars only exposes the per-file `identity_transformed_values` slot, so the
+        # constant default has to be repeated once per data file.
+        default_values = {
+            col.field_id: pl.repeat(
+                col.initial_default,
+                len(scan_result.data_files),
+                dtype=target_schema[col.name],
+                eager=True,
+            )
+            for col in columns_with_defaults
+        }
 
     # 2.4) Statistics
     stat_len = pl.Series(
