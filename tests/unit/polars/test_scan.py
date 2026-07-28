@@ -92,6 +92,53 @@ def test_scan_enum_uses_category_order(
     assert_frame_equal(actual, expected)
 
 
+def test_scan_enum_tracks_column_history(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    original_schema = pl.Schema(
+        {
+            "priority": enum,
+            "details": pl.Struct({"priority": enum}),
+        }
+    )
+    table = shared_ducklake.create_table(random_table_name, original_schema)
+    original = pl.DataFrame(
+        {
+            "priority": ["z", "a"],
+            "details": [{"priority": "m"}, {"priority": "z"}],
+        },
+        schema=original_schema,
+    )
+    table.write_polars(original)
+    original_snapshot = shared_ducklake.get_latest_snapshot().id
+
+    # Act
+    table.rename_column("priority", "level")
+    with shared_ducklake.transaction() as tx:
+        tx.table(random_table_name).rename_column(["details", "priority"], "level")
+    current = shared_ducklake.get_table(random_table_name).read_polars()
+    historic = shared_ducklake.at(original_snapshot).get_table(random_table_name).read_polars()
+
+    # Assert
+    current_schema = pl.Schema(
+        {
+            "level": enum,
+            "details": pl.Struct({"level": enum}),
+        }
+    )
+    expected_current = pl.DataFrame(
+        {
+            "level": ["z", "a"],
+            "details": [{"level": "m"}, {"level": "z"}],
+        },
+        schema=current_schema,
+    )
+    assert_frame_equal(current, expected_current)
+    assert_frame_equal(historic, original)
+
+
 def test_scan_nested_enum(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     enum = pl.Enum(ENUM_CATEGORIES)
@@ -168,12 +215,37 @@ def test_scan_enum_from_data_file_and_inline_data(
 
 
 @pytest.mark.parametrize(
-    ("column", "metadata"),
+    ("column", "metadata", "error"),
     [
-        (dl.Column("priority", dl.Varchar()), "not-json"),
+        (
+            dl.Column("priority", dl.Varchar()),
+            "not-json",
+            "Invalid Polars logical type metadata",
+        ),
         (
             dl.Column("priority", dl.Int64()),
             '{"type":"enum","version":1,"metadata":{"categories":["z","a","m"]}}',
+            "Invalid Polars Enum logical type metadata",
+        ),
+        (
+            dl.Column("priority", dl.Varchar()),
+            '{"type":"enum","categories":["z","a","m"]}',
+            "Invalid Polars logical type metadata",
+        ),
+        (
+            dl.Column("priority", dl.Varchar()),
+            '{"type":"future","version":1,"metadata":{}}',
+            "Unsupported Polars logical type",
+        ),
+        (
+            dl.Column("priority", dl.Varchar()),
+            '{"type":"enum","version":2,"metadata":{"categories":["z","a","m"]}}',
+            "Unsupported version",
+        ),
+        (
+            dl.Column("priority", dl.Varchar()),
+            '{"type":"enum","version":1,"metadata":{"categories":["z","z"]}}',
+            "Invalid Polars Enum logical type metadata",
         ),
     ],
 )
@@ -182,13 +254,14 @@ def test_scan_rejects_invalid_enum_metadata(
     random_table_name: str,
     column: dl.Column,
     metadata: str,
+    error: str,
 ) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, [column])
     table._pytable.add_column_tag("priority", POLARS_LOGICAL_TYPE_TAG, metadata)
 
     # Act & Assert
-    with pytest.raises(ValueError, match="Polars.*metadata"):
+    with pytest.raises(ValueError, match=error):
         table.scan_polars()
 
 

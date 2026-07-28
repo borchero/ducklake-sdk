@@ -4,7 +4,12 @@ import polars as pl
 import pytest
 
 import ducklake as dl
-from ducklake._polars_types import POLARS_LOGICAL_TYPE_TAG, prepare_table_polars_metadata
+from ducklake._polars_types import (
+    POLARS_LOGICAL_TYPE_TAG,
+    _EnumCodec,
+    _index_codecs,
+    prepare_table_polars_metadata,
+)
 from ducklake.typedefs import _serialize_metadata_value
 
 # ----------------------------------------- TABLE NAME ------------------------------------------ #
@@ -60,6 +65,31 @@ def test_schema_from_arrow() -> None:
     assert schema.columns == [
         dl.Column("a", dl.Int64()),
         dl.Column("b", dl.Struct({"x": dl.Float32(), "y": dl.Decimal(10, 5)})),
+    ]
+
+
+def test_schema_from_arrow_normalizes_list_element_name() -> None:
+    # Arrange
+    import pyarrow as pa
+
+    arrow_schema = pa.schema(
+        [
+            pa.field(
+                "values",
+                pa.list_(pa.field("item", pa.int64())),
+            )
+        ]
+    )
+
+    # Act
+    schema = dl.Schema(arrow_schema)
+
+    # Assert
+    assert schema.columns == [
+        dl.Column(
+            "values",
+            dl.List(dl.Column("element", dl.Int64())),
+        )
     ]
 
 
@@ -139,6 +169,15 @@ def test_schema_rejects_unsupported_polars_logical_type(dtype: pl.DataType) -> N
     # Act & Assert
     with pytest.raises(NotImplementedError, match="Polars logical type.*not yet supported"):
         dl.Schema(polars_schema)
+
+
+def test_polars_logical_type_registry_rejects_duplicate_names() -> None:
+    # Arrange
+    codecs = (_EnumCodec(), _EnumCodec())
+
+    # Act & Assert
+    with pytest.raises(RuntimeError, match="Duplicate Polars logical type codec"):
+        _index_codecs(codecs)
 
 
 # ------------------------------------------- COLUMN -------------------------------------------- #

@@ -1,4 +1,5 @@
 import datetime as dt
+from contextlib import nullcontext
 from typing import Any
 
 import polars as pl
@@ -174,13 +175,18 @@ def test_write_enum_inline_as_varchar(
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
+@pytest.mark.parametrize("nested", [False, True])
 def test_write_enum_rejects_unknown_value(
-    shared_ducklake: dl.Ducklake, random_table_name: str
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    nested: bool,
 ) -> None:
     # Arrange
     enum = pl.Enum(ENUM_CATEGORIES)
-    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
-    df = pl.DataFrame({"priority": ["low", "unknown"]})
+    dtype = pl.List(enum) if nested else enum
+    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": dtype}))
+    values = [["low"], ["unknown"]] if nested else ["low", "unknown"]
+    df = pl.DataFrame({"priority": values})
 
     # Act & Assert
     with pytest.raises(
@@ -190,6 +196,26 @@ def test_write_enum_rejects_unknown_value(
     scan_result = table.scan()
     assert scan_result.data_files == []
     assert scan_result.inline_data == []
+
+
+def test_sink_enum_applies_default(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    enum = pl.Enum(ENUM_CATEGORIES)
+    schema = dl.Schema(pl.Schema({"priority": enum}))
+    schema.columns[0].default_value = "medium"
+    table = shared_ducklake.create_table(random_table_name, schema)
+    lf = pl.LazyFrame({"priority": [None, "low"]})
+
+    # Act
+    table.sink_polars(lf)
+    actual = table.scan_polars()
+
+    # Assert
+    expected = pl.LazyFrame(
+        {"priority": ["medium", "low"]},
+        schema=pl.Schema({"priority": enum}),
+    )
+    assert_frame_equal(actual, expected)
 
 
 @pytest.mark.parametrize("operation", ["add_column", "update_schema"])
@@ -230,21 +256,26 @@ def test_create_table_rejects_reserved_polars_logical_type_tag(
 
 
 @pytest.mark.parametrize("operation", ["add", "remove"])
+@pytest.mark.parametrize("transactional", [False, True])
 def test_table_rejects_polars_logical_type_tag_mutation(
     shared_ducklake: dl.Ducklake,
     random_table_name: str,
     operation: str,
+    transactional: bool,
 ) -> None:
     # Arrange
     enum = pl.Enum(ENUM_CATEGORIES)
-    table = shared_ducklake.create_table(random_table_name, pl.Schema({"priority": enum}))
+    context = shared_ducklake.transaction() if transactional else nullcontext(shared_ducklake)
 
-    # Act & Assert
-    with pytest.raises(ValueError, match="reserved for Polars logical types"):
-        if operation == "add":
-            table.add_column_tag("priority", POLARS_LOGICAL_TYPE_TAG, "{}")
-        else:
-            table.remove_column_tag("priority", POLARS_LOGICAL_TYPE_TAG)
+    with context as creator:
+        table = creator.create_table(random_table_name, pl.Schema({"priority": enum}))
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="reserved for Polars logical types"):
+            if operation == "add":
+                table.add_column_tag("priority", POLARS_LOGICAL_TYPE_TAG, "{}")
+            else:
+                table.remove_column_tag("priority", POLARS_LOGICAL_TYPE_TAG)
 
 
 def test_write_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
