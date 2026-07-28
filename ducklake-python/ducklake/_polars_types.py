@@ -33,6 +33,13 @@ class _EncodedPolarsSchema:
 
 
 class _PolarsLogicalTypeCodec(Protocol):
+    """Translate one logical dtype between Polars and DuckLake representations.
+
+    Codecs receive expressions whose dtype is the codec's logical type when encoding and its
+    physical type when validating or decoding. Logical types nested in List or Struct currently
+    rely on Polars' recursive composite casts.
+    """
+
     type_name: str
     version: int
 
@@ -48,19 +55,25 @@ class _PolarsLogicalTypeCodec(Protocol):
         metadata: Mapping[str, JsonValue],
     ) -> pl.DataType: ...
 
-    def physical_expression(
+    def encode_expression(
         self,
         expression: pl.Expr,
         logical_dtype: pl.DataType | pld.DataTypeClass,
         physical_dtype: pl.DataType | pld.DataTypeClass,
-        *,
-        validate: bool,
     ) -> pl.Expr: ...
 
-    def logical_expression(
+    def validate_physical_expression(
         self,
         expression: pl.Expr,
         logical_dtype: pl.DataType | pld.DataTypeClass,
+        physical_dtype: pl.DataType | pld.DataTypeClass,
+    ) -> pl.Expr: ...
+
+    def decode_expression(
+        self,
+        expression: pl.Expr,
+        logical_dtype: pl.DataType | pld.DataTypeClass,
+        physical_dtype: pl.DataType | pld.DataTypeClass,
     ) -> pl.Expr: ...
 
 
@@ -100,22 +113,27 @@ class _EnumCodec:
             raise ValueError("Invalid Polars Enum logical type metadata")
         return pl.Enum(cast(list[str], categories))
 
-    def physical_expression(
+    def encode_expression(
         self,
         expression: pl.Expr,
         logical_dtype: pl.DataType | pld.DataTypeClass,
         physical_dtype: pl.DataType | pld.DataTypeClass,
-        *,
-        validate: bool,
     ) -> pl.Expr:
-        if validate:
-            expression = expression.cast(logical_dtype)
         return expression.cast(physical_dtype)
 
-    def logical_expression(
+    def validate_physical_expression(
         self,
         expression: pl.Expr,
         logical_dtype: pl.DataType | pld.DataTypeClass,
+        physical_dtype: pl.DataType | pld.DataTypeClass,
+    ) -> pl.Expr:
+        return expression.cast(logical_dtype).cast(physical_dtype)
+
+    def decode_expression(
+        self,
+        expression: pl.Expr,
+        logical_dtype: pl.DataType | pld.DataTypeClass,
+        physical_dtype: pl.DataType | pld.DataTypeClass,
     ) -> pl.Expr:
         return expression.cast(logical_dtype)
 
@@ -194,33 +212,47 @@ def physicalize_polars_schema(schema: pl.Schema) -> pl.Schema:
     return pl.Schema([(name, _physical_dtype(dtype)) for name, dtype in schema.items()])
 
 
-def physicalize_polars_expression(
+def encode_polars_expression(
     expression: pl.Expr,
     logical_dtype: pl.DataType | pld.DataTypeClass,
     physical_dtype: pl.DataType | pld.DataTypeClass,
-    *,
-    validate: bool,
 ) -> pl.Expr:
+    """Encode an input logical expression into its physical DuckLake representation."""
     codec = _codec_for_dtype(logical_dtype)
     if codec is not None:
-        return codec.physical_expression(
+        return codec.encode_expression(
             expression,
             logical_dtype,
             physical_dtype,
-            validate=validate,
         )
-    if validate:
-        expression = expression.cast(logical_dtype)
     return expression.cast(physical_dtype)
 
 
-def logicalize_polars_expression(
+def validate_polars_expression(
     expression: pl.Expr,
     logical_dtype: pl.DataType | pld.DataTypeClass,
+    physical_dtype: pl.DataType | pld.DataTypeClass,
 ) -> pl.Expr:
+    """Validate physical values against a logical type and keep them physical."""
     codec = _codec_for_dtype(logical_dtype)
     if codec is not None:
-        return codec.logical_expression(expression, logical_dtype)
+        return codec.validate_physical_expression(
+            expression,
+            logical_dtype,
+            physical_dtype,
+        )
+    return expression.cast(logical_dtype).cast(physical_dtype)
+
+
+def decode_polars_expression(
+    expression: pl.Expr,
+    logical_dtype: pl.DataType | pld.DataTypeClass,
+    physical_dtype: pl.DataType | pld.DataTypeClass,
+) -> pl.Expr:
+    """Decode a physical DuckLake expression into its logical Polars representation."""
+    codec = _codec_for_dtype(logical_dtype)
+    if codec is not None:
+        return codec.decode_expression(expression, logical_dtype, physical_dtype)
     return expression.cast(logical_dtype)
 
 
