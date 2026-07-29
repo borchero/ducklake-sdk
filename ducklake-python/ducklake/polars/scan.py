@@ -8,7 +8,7 @@ import polars as pl
 import polars.datatypes as pld
 
 from ducklake import typedefs
-from ducklake._native import arrow_schema_field_ids
+from ducklake._native import arrow_schema_field_ids, schema_to_arrow_with_polars_metadata
 from ducklake.table import Table
 from ducklake.typedefs import Column, Schema
 
@@ -24,6 +24,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
     #    schema because this ensures that the schema is up-to-date.
     scan_result = table.scan()
     schema = table.schema
+    arrow_schema = schema_to_arrow_with_polars_metadata(schema.columns)
 
     # 2) Then, we have to build all the inputs for the scan
     # 2.1) Deletion files: DuckLake's deletion files are the same as the ones used by Iceberg.
@@ -54,7 +55,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
 
     # 2.3) Schema and defaults. DuckLake's column-level defaults map to Iceberg's per-column
     #      `initial-default`, which is applied wherever a column is missing from a data file.
-    target_schema = pl.Schema(schema)
+    target_schema = pl.Schema(arrow_schema)
     columns_with_defaults = [
         col
         for col in schema.columns
@@ -148,7 +149,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
             categorical_to_string="allow",
         ),
         # --- Optimization ---
-        _column_mapping=("iceberg-column-mapping", schema),
+        _column_mapping=("iceberg-column-mapping", arrow_schema),
         _deletion_files=("iceberg-position-delete", dict(iceberg_position_deletes)),
         _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
         _table_statistics=table_statistics,

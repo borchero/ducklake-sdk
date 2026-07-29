@@ -7,7 +7,7 @@ from polars.io.partition import FileProviderArgs, SinkedPathsCallbackArgs
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
 
 from ducklake import typedefs
-from ducklake._native import PyDataFilePathGenerator
+from ducklake._native import PyDataFilePathGenerator, schema_to_arrow_with_polars_metadata
 from ducklake.table import Table
 from ducklake.transaction import TransactionTable
 from ducklake.typedefs import Column, Partitioning, WriteDataFile
@@ -88,7 +88,7 @@ def sink_ducklake(
         engine=engine,
         optimizations=optimizations or DEFAULT_QUERY_OPT_FLAGS,
         lazy=lazy,
-        arrow_schema=table.schema,
+        arrow_schema=schema_to_arrow_with_polars_metadata(table.schema.columns),
         _sinked_paths_callback=partial(
             _sinked_paths_callback, table, file_generator.base_path, partition_value_cache
         ),
@@ -121,7 +121,7 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
 
 def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.LazyFrame:
     # Ensure that the provided lazy frame aligns with the current schema of the table
-    lf = lf.match_to_schema(pl.Schema(table.schema))
+    lf = lf.match_to_schema(pl.Schema(schema_to_arrow_with_polars_metadata(table.schema.columns)))
 
     # Make sure that we apply the current defaults if there are any
     default_exprs = [

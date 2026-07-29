@@ -710,6 +710,8 @@ dependencies = [
  "pyo3",
  "pyo3-arrow",
  "rust_decimal",
+ "serde",
+ "serde_json",
  "tokio",
  "uuid",
 ]

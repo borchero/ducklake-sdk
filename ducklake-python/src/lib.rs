@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 mod conversion;
 mod ducklake;
 mod error;
+mod integrations;
 mod table;
 mod transaction;
 mod utils;
@@ -32,6 +33,11 @@ mod ducklake_module {
         NotInitializedError,
         OutdatedVersionError,
         TransactionConflictError,
+    };
+    #[pymodule_export]
+    use crate::integrations::polars::{
+        schema_from_arrow_with_polars_metadata,
+        schema_to_arrow_with_polars_metadata,
     };
     #[pymodule_export]
     use crate::utils::arrow::{arrow_schema_field_ids, schema_from_arrow, schema_to_arrow};
