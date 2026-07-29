@@ -99,6 +99,15 @@ def sink_ducklake(
 
 
 def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
+    if any(
+        isinstance(dtype, pl.Categorical) or isinstance(dtype, pl.Enum)
+        for dtype in df.schema.values()
+    ):
+        raise ValueError(
+            "Eagerly writing polars data frames with categorical columns is not currently "
+            "allowed as inlining of categorical data is not yet supported."
+        )
+
     table_metadata, _ = table._get_write_info()
     if df.height <= table_metadata["data_inlining_row_limit"]:
         # Inline the data

@@ -64,6 +64,39 @@ def test_scan_multi_file_and_inline(shared_ducklake: dl.Ducklake, random_table_n
     assert_frame_equal(all_data, scanned)
 
 
+# --------------------------------------- ENUM / CATEGORICAL ------------------------------------ #
+
+
+def test_scan_enum(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    schema = pl.Schema({"x": pl.Enum(["a", "b", "c"])})
+    table = shared_ducklake.create_table(random_table_name, dl.Schema(schema))
+    lf = pl.LazyFrame({"x": ["a", "b", "c", "a"]}, schema=schema)
+    table.sink_polars(lf)
+
+    # Act
+    scanned = table.scan_polars()
+
+    # Assert
+    assert scanned.collect_schema()["x"] == pl.Enum(["a", "b", "c"])
+    assert_frame_equal(lf, scanned)
+
+
+def test_scan_categorical(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    schema = pl.Schema({"x": pl.Categorical()})
+    table = shared_ducklake.create_table(random_table_name, dl.Schema(schema))
+    lf = pl.LazyFrame({"x": ["a", "b", "c", "a"]}, schema=schema)
+    table.sink_polars(lf)
+
+    # Act
+    scanned = table.scan_polars()
+
+    # Assert
+    assert scanned.collect_schema()["x"] == pl.Categorical()
+    assert_frame_equal(lf, scanned)
+
+
 # --------------------------------------- INITIAL DEFAULTS -------------------------------------- #
 
 

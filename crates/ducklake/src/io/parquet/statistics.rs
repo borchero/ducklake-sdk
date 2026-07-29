@@ -163,8 +163,9 @@ fn derive_column_stats(
     let mut field = field.clone();
     // NOTE: if we encounter a dictionary, we can treat it just like a string as the statistics
     //  store the logical values.
-    if let DataType::Dictionary(_, _) = field.data_type() {
-        field = field.with_data_type(DataType::Utf8View);
+    if let DataType::Dictionary(_, value_type) = field.data_type() {
+        let value_type = (**value_type).clone();
+        field = field.with_data_type(value_type);
     }
 
     let data_type = crate::Column::try_from(&field)?.dtype;

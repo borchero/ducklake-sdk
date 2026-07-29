@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 
 import ducklake as dl
+from ducklake._native import schema_to_arrow_with_polars_metadata
 from ducklake.typedefs import _serialize_metadata_value
 
 # ----------------------------------------- TABLE NAME ------------------------------------------ #
@@ -60,6 +61,55 @@ def test_schema_from_arrow() -> None:
         dl.Column("a", dl.Int64()),
         dl.Column("b", dl.Struct({"x": dl.Float32(), "y": dl.Decimal(10, 5)})),
     ]
+
+
+def test_schema_from_polars_enum() -> None:
+    # Arrange
+    polars_schema = pl.Schema({"e": pl.Enum(["a", "b", "c"])})
+
+    # Act
+    schema = dl.Schema(polars_schema)
+
+    # Assert
+    # Enums are stored as varchars with a `comment` tag that carries the Polars metadata.
+    assert len(schema.columns) == 1
+    assert schema.columns[0].name == "e"
+    assert schema.columns[0].data_type == dl.Varchar()
+    assert "Enum" in schema.columns[0].tags["comment"]
+
+
+def test_schema_from_polars_categorical() -> None:
+    # Arrange
+    polars_schema = pl.Schema({"c": pl.Categorical()})
+
+    # Act
+    schema = dl.Schema(polars_schema)
+
+    # Assert
+    # Categoricals are stored as varchars with a `comment` tag that carries the Polars metadata.
+    assert len(schema.columns) == 1
+    assert schema.columns[0].name == "c"
+    assert schema.columns[0].data_type == dl.Varchar()
+    assert "Categorical" in schema.columns[0].tags["comment"]
+
+
+@pytest.mark.parametrize(
+    "polars_schema",
+    [
+        pl.Schema({"e": pl.Enum(["a", "b", "c"])}),
+        pl.Schema({"c": pl.Categorical()}),
+        pl.Schema({"e": pl.Enum(["x", "y"]), "c": pl.Categorical(), "n": pl.Int64()}),
+    ],
+)
+def test_schema_polars_metadata_round_trip(polars_schema: pl.Schema) -> None:
+    # Arrange
+    schema = dl.Schema(polars_schema)
+
+    # Act
+    round_trip = pl.Schema(schema_to_arrow_with_polars_metadata(schema.columns))
+
+    # Assert
+    assert round_trip == polars_schema
 
 
 # ------------------------------------------- COLUMN -------------------------------------------- #
