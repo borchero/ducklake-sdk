@@ -161,8 +161,8 @@ fn derive_column_stats(
 
     // Compute min, max, null count statistics
     let mut field = field.clone();
-    // NOTE: if we encounter a dictionary, we can treat it just like a string as the statistics
-    //  store the logical values.
+    // NOTE: if we encounter a dictionary, we can treat it just like its value type as the
+    //  statistics store the logical values.
     if let DataType::Dictionary(_, value_type) = field.data_type() {
         let value_type = (**value_type).clone();
         field = field.with_data_type(value_type);
