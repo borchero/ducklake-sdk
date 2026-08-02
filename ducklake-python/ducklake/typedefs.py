@@ -17,22 +17,12 @@ from typing import (
     runtime_checkable,
 )
 
-from ._native import schema_from_arrow, schema_from_arrow_with_polars_metadata, schema_to_arrow
+from ._native import schema_from_arrow, schema_to_arrow
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     import dateutil.relativedelta as rd
-    import polars as pl
-
-
-try:
-    from polars import Schema as _PolarsSchema
-
-except ImportError:
-
-    class _PolarsSchema:
-        pass
 
 
 # ------------------------------------------ TABLE NAME ----------------------------------------- #
@@ -158,13 +148,10 @@ class Schema:
     columns: list[Column]
 
     def __init__(
-        self,
-        columns: Sequence[Column] | Mapping[str, DataType] | pl.Schema | ArrowSchemaExportable,
+        self, columns: Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable
     ) -> None:
         if isinstance(columns, Schema):
             self.columns = list(columns.columns)
-        elif isinstance(columns, _PolarsSchema):
-            self.columns = schema_from_arrow_with_polars_metadata(columns)  # ty: ignore
         elif isinstance(columns, ArrowSchemaExportable):
             self.columns = schema_from_arrow(columns)
         elif isinstance(columns, Sequence):

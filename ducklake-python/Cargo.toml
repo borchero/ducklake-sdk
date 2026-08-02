@@ -10,7 +10,7 @@ name = "ducklake_python"
 
 [dependencies]
 arrow-array = { workspace = true }
-arrow-schema = { workspace = true }
+arrow-schema = { workspace = true, features = ["serde"] }
 chrono = { workspace = true }
 ducklake = { workspace = true, features = ["aws", "azure", "gcp", "mysql", "postgres", "python", "sqlite"] }
 indexmap = { workspace = true }

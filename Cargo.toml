@@ -38,6 +38,17 @@ uuid = "1.23"
 ducklake = { path = "crates/ducklake", version = "0.0.0" }
 ducklake-macros = { path = "crates/ducklake-macros", version = "0.0.0" }
 
+# FIXME: Temporarily override arrow-rs with fork until https://github.com/apache/arrow-rs/pull/10514 is released
+[patch.crates-io]
+arrow-arith = { git = "https://github.com/borchero/arrow-rs", rev = "cd0d163f047812fc6e450c8503a4cf6328cdc252" }
+arrow-array = { git = "https://github.com/borchero/arrow-rs", rev = "cd0d163f047812fc6e450c8503a4cf6328cdc252" }
+arrow-buffer = { git = "https://github.com/borchero/arrow-rs", rev = "cd0d163f047812fc6e450c8503a4cf6328cdc252" }
+arrow-cast = { git = "https://github.com/borchero/arrow-rs", rev = "cd0d163f047812fc6e450c8503a4cf6328cdc252" }
+arrow-ord = { git = "https://github.com/borchero/arrow-rs", rev = "cd0d163f047812fc6e450c8503a4cf6328cdc252" }
+arrow-schema = { git = "https://github.com/borchero/arrow-rs", rev = "cd0d163f047812fc6e450c8503a4cf6328cdc252" }
+arrow-select = { git = "https://github.com/borchero/arrow-rs", rev = "cd0d163f047812fc6e450c8503a4cf6328cdc252" }
+parquet = { git = "https://github.com/borchero/arrow-rs", rev = "cd0d163f047812fc6e450c8503a4cf6328cdc252" }
+
 [profile.release]
 codegen-units = 1
 lto = true
