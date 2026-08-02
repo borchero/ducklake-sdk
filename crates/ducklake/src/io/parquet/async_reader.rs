@@ -5,9 +5,9 @@ use bytes::Bytes;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use object_store::path::Path as ObjectStorePath;
-use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt};
+use object_store::{ObjectStore, ObjectStoreExt};
 use parquet::arrow::arrow_reader::ArrowReaderOptions;
-use parquet::arrow::async_reader::{AsyncFileReader, MetadataSuffixFetch};
+use parquet::arrow::async_reader::AsyncFileReader;
 use parquet::errors::{ParquetError, Result as ParquetResult};
 use parquet::file::FOOTER_SIZE;
 use parquet::file::metadata::{FooterTail, ParquetMetaData, ParquetMetaDataReader};
@@ -16,14 +16,16 @@ use parquet::file::metadata::{FooterTail, ParquetMetaData, ParquetMetaDataReader
 pub(super) struct ObjectStoreReader {
     store: Arc<dyn ObjectStore>,
     path: ObjectStorePath,
+    file_size: u64,
     footer_size: Option<usize>,
 }
 
 impl ObjectStoreReader {
-    pub(super) fn new(store: Arc<dyn ObjectStore>, path: ObjectStorePath) -> Self {
+    pub(super) fn new(store: Arc<dyn ObjectStore>, path: ObjectStorePath, file_size: u64) -> Self {
         Self {
             store,
             path,
+            file_size,
             footer_size: None,
         }
     }
@@ -34,28 +36,31 @@ impl ObjectStoreReader {
     pub(super) fn footer_size(&self) -> Option<usize> {
         self.footer_size
     }
+
+    /// Derives the footer size from the footer tail contained in the last 8 bytes of `bytes`.
+    fn record_footer_size(&mut self, bytes: &Bytes) {
+        if let Some(start) = bytes.len().checked_sub(FOOTER_SIZE)
+            && let Ok(footer) = FooterTail::try_from(&bytes[start..])
+        {
+            self.footer_size = Some(footer.metadata_length());
+        }
+    }
 }
 
 impl AsyncFileReader for ObjectStoreReader {
     fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, ParquetResult<Bytes>> {
+        // A read reaching the end of the file ends with the footer tail.
+        let at_eof = range.end == self.file_size;
         async move {
-            self.store
+            let bytes = self
+                .store
                 .get_range(&self.path, range)
                 .await
-                .map_err(to_parquet_err)
-        }
-        .boxed()
-    }
-
-    fn get_byte_ranges(
-        &mut self,
-        ranges: Vec<Range<u64>>,
-    ) -> BoxFuture<'_, ParquetResult<Vec<Bytes>>> {
-        async move {
-            self.store
-                .get_ranges(&self.path, &ranges)
-                .await
-                .map_err(to_parquet_err)
+                .map_err(to_parquet_err)?;
+            if at_eof && self.footer_size.is_none() {
+                self.record_footer_size(&bytes);
+            }
+            Ok(bytes)
         }
         .boxed()
     }
@@ -64,40 +69,15 @@ impl AsyncFileReader for ObjectStoreReader {
         &'a mut self,
         _options: Option<&'a ArrowReaderOptions>,
     ) -> BoxFuture<'a, ParquetResult<Arc<ParquetMetaData>>> {
+        // Bounded range requests (rather than suffix requests) are supported by all backends.
+        let file_size = self.file_size;
         async move {
+            // FIXME: Enable `.with_arrow_reader_options(options)` once removing the
+            // `patch.crates-io` section in `Cargo.toml`.
             let metadata = ParquetMetaDataReader::new()
-                // FIXME: Enable once removing the `patch.crates-io` section in `Cargo.toml`
-                // .with_arrow_reader_options(options)
-                .load_via_suffix_and_finish(self)
+                .load_and_finish(self, file_size)
                 .await?;
             Ok(Arc::new(metadata))
-        }
-        .boxed()
-    }
-}
-
-impl MetadataSuffixFetch for &mut ObjectStoreReader {
-    fn fetch_suffix(&mut self, suffix: usize) -> BoxFuture<'_, ParquetResult<Bytes>> {
-        let options = GetOptions {
-            range: Some(GetRange::Suffix(suffix as u64)),
-            ..Default::default()
-        };
-        async move {
-            let resp = self
-                .store
-                .get_opts(&self.path, options)
-                .await
-                .map_err(to_parquet_err)?;
-            let bytes = resp.bytes().await.map_err(to_parquet_err)?;
-
-            // The last 8 bytes of a suffix are the footer tail, from which the footer size can
-            // be derived without an additional request.
-            let start = bytes.len() - FOOTER_SIZE;
-            if let Ok(footer) = FooterTail::try_from(&bytes[start..]) {
-                self.footer_size = Some(footer.metadata_length());
-            }
-
-            Ok(bytes)
         }
         .boxed()
     }

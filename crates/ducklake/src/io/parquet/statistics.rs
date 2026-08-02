@@ -22,8 +22,9 @@ pub(crate) async fn read_file_statistics(
     let object_path = path.path();
     let file_meta = store.head(&object_path).await?;
 
-    // Read the parquet metadata using the async reader
-    let mut reader = ObjectStoreReader::new(store, object_path);
+    // Read the parquet metadata using the async reader. Passing the file size lets it use
+    // bounded range requests, which are supported by all backends.
+    let mut reader = ObjectStoreReader::new(store, object_path, file_meta.size);
     let metadata = reader.get_metadata(None).await?;
 
     // Read column statistics from the metadata
