@@ -13,6 +13,7 @@ arrow-arith = { workspace = true }
 arrow-array = { workspace = true }
 arrow-schema = { workspace = true, features = ["canonical_extension_types"] }
 async-recursion = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 ducklake-macros = { workspace = true }
 futures = { workspace = true }
@@ -20,7 +21,7 @@ hex = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 object_store = { workspace = true }
-parquet = { workspace = true, features = ["async", "object_store"] }
+parquet = { workspace = true, features = ["async"] }
 percent-encoding = { workspace = true }
 regex = { workspace = true }
 rust_decimal = { workspace = true }

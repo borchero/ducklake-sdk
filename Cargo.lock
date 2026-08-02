@@ -81,11 +81,11 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 [[package]]
 name = "arrow-arith"
 version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
- "arrow-data 59.1.0 (git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252)",
+ "arrow-data",
  "arrow-schema",
  "chrono",
  "num-traits",
@@ -94,11 +94,11 @@ dependencies = [
 [[package]]
 name = "arrow-array"
 version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "ahash 0.8.12",
  "arrow-buffer",
- "arrow-data 59.1.0 (git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252)",
+ "arrow-data",
  "arrow-schema",
  "chrono",
  "chrono-tz",
@@ -113,7 +113,7 @@ dependencies = [
 [[package]]
 name = "arrow-buffer"
 version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "bytes",
  "half",
@@ -124,11 +124,11 @@ dependencies = [
 [[package]]
 name = "arrow-cast"
 version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
- "arrow-data 59.1.0 (git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252)",
+ "arrow-data",
  "arrow-ord",
  "arrow-schema",
  "arrow-select",
@@ -145,20 +145,7 @@ dependencies = [
 [[package]]
 name = "arrow-data"
 version = "59.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b38fe43e2e8704360f1464e6e8cc4fc381ef02cc4fb0192afa8df1aaa0115c66"
-dependencies = [
- "arrow-buffer",
- "arrow-schema",
- "half",
- "num-integer",
- "num-traits",
-]
-
-[[package]]
-name = "arrow-data"
-version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "arrow-buffer",
  "arrow-schema",
@@ -170,11 +157,11 @@ dependencies = [
 [[package]]
 name = "arrow-ipc"
 version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
- "arrow-data 59.1.0 (git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252)",
+ "arrow-data",
  "arrow-schema",
  "arrow-select",
  "flatbuffers",
@@ -183,11 +170,11 @@ dependencies = [
 [[package]]
 name = "arrow-ord"
 version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
- "arrow-data 59.1.0 (git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252)",
+ "arrow-data",
  "arrow-schema",
  "arrow-select",
 ]
@@ -195,7 +182,7 @@ dependencies = [
 [[package]]
 name = "arrow-schema"
 version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "bitflags",
  "serde",
@@ -206,12 +193,12 @@ dependencies = [
 [[package]]
 name = "arrow-select"
 version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "ahash 0.8.12",
  "arrow-array",
  "arrow-buffer",
- "arrow-data 59.1.0 (git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252)",
+ "arrow-data",
  "arrow-schema",
  "num-traits",
 ]
@@ -668,6 +655,7 @@ dependencies = [
  "arrow-array",
  "arrow-schema",
  "async-recursion",
+ "bytes",
  "chrono",
  "ducklake-macros",
  "futures",
@@ -1715,12 +1703,12 @@ dependencies = [
 [[package]]
 name = "parquet"
 version = "59.1.0"
-source = "git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252#cd0d163f047812fc6e450c8503a4cf6328cdc252"
+source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "ahash 0.8.12",
  "arrow-array",
  "arrow-buffer",
- "arrow-data 59.1.0 (git+https://github.com/borchero/arrow-rs?rev=cd0d163f047812fc6e450c8503a4cf6328cdc252)",
+ "arrow-data",
  "arrow-ipc",
  "arrow-schema",
  "arrow-select",
@@ -1736,7 +1724,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "object_store",
  "seq-macro",
  "simdutf8",
  "snap",
@@ -1878,7 +1865,7 @@ dependencies = [
  "arrow-array",
  "arrow-buffer",
  "arrow-cast",
- "arrow-data 59.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "arrow-data",
  "arrow-schema",
  "arrow-select",
  "chrono",
