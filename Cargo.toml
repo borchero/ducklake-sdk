@@ -7,6 +7,7 @@ arrow-arith = "59.0"
 arrow-array = "59.0"
 arrow-schema = "59.0"
 async-recursion = "1.1"
+bytes = "1.12"
 chrono = "0.4"
 futures = "0.3"
 heck = "0.5"
@@ -35,6 +36,17 @@ uuid = "1.23"
 
 ducklake = { path = "crates/ducklake", version = "0.0.0" }
 ducklake-macros = { path = "crates/ducklake-macros", version = "0.0.0" }
+
+# FIXME: Temporarily override arrow-rs with main until https://github.com/apache/arrow-rs/pull/10514 is released
+[patch.crates-io]
+arrow-arith = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
+arrow-array = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
+arrow-buffer = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
+arrow-cast = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
+arrow-ord = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
+arrow-schema = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
+arrow-select = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
+parquet = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
 
 [profile.release]
 codegen-units = 1

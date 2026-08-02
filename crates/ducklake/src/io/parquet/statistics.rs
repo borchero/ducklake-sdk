@@ -5,17 +5,12 @@ use arrow_arith::aggregate;
 use arrow_schema::{DataType, Field, Schema};
 use object_store::ObjectStoreExt;
 use parquet::arrow::arrow_reader::statistics::StatisticsConverter;
-use parquet::arrow::async_reader::ParquetObjectReader;
+use parquet::arrow::async_reader::AsyncFileReader;
 use parquet::arrow::{PARQUET_FIELD_ID_META_KEY, parquet_to_arrow_schema};
-use parquet::file::FOOTER_SIZE;
-use parquet::file::metadata::{
-    FooterTail,
-    ParquetMetaData,
-    ParquetMetaDataReader,
-    RowGroupMetaData,
-};
+use parquet::file::metadata::{ParquetMetaData, RowGroupMetaData};
 use parquet::schema::types::{SchemaDescriptor, Type};
 
+use super::async_reader::ObjectStoreReader;
 use crate::{DucklakeResult, FileColumnStats, io};
 
 pub(crate) async fn read_file_statistics(
@@ -27,22 +22,10 @@ pub(crate) async fn read_file_statistics(
     let object_path = path.path();
     let file_meta = store.head(&object_path).await?;
 
-    // Read the parquet footer tail (last 8 bytes) to determine the on-disk size of the
-    // metadata. `ParquetMetaDataReader::metadata_size()` is only populated by the synchronous
-    // `parse_metadata` path; the async `try_load` path leaves it as `None`.
-    let footer_tail_start = file_meta.size - FOOTER_SIZE as u64;
-    let footer_tail_bytes = store
-        .get_range(&object_path, footer_tail_start..file_meta.size)
-        .await?;
-    let footer_tail_array: &[u8; FOOTER_SIZE] = footer_tail_bytes.as_ref().try_into().unwrap();
-    let footer_size = FooterTail::try_new(footer_tail_array)?.metadata_length();
-
-    // Read the file metadata
-    let mut reader =
-        ParquetObjectReader::new(store, file_meta.location).with_file_size(file_meta.size);
-    let mut meta_reader = ParquetMetaDataReader::new();
-    meta_reader.try_load(&mut reader, file_meta.size).await?;
-    let metadata = meta_reader.finish()?;
+    // Read the parquet metadata using the async reader. The prefetch hint lets the reader
+    // fetch the whole footer in a single request and capture its size along the way.
+    let mut reader = ObjectStoreReader::new(store, object_path);
+    let metadata = reader.get_metadata(None).await?;
 
     // Read column statistics from the metadata
     let file_metadata = metadata.file_metadata();
@@ -107,7 +90,7 @@ pub(crate) async fn read_file_statistics(
     Ok(crate::DataFileStatistics {
         num_rows: metadata.file_metadata().num_rows() as usize,
         file_size_bytes: Some(file_meta.size as usize),
-        footer_size_bytes: Some(footer_size),
+        footer_size_bytes: reader.footer_size(),
         column_stats,
     })
 }
