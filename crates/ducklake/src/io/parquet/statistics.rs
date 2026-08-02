@@ -22,8 +22,7 @@ pub(crate) async fn read_file_statistics(
     let object_path = path.path();
     let file_meta = store.head(&object_path).await?;
 
-    // Read the parquet metadata using the async reader. The prefetch hint lets the reader
-    // fetch the whole footer in a single request and capture its size along the way.
+    // Read the parquet metadata using the async reader
     let mut reader = ObjectStoreReader::new(store, object_path);
     let metadata = reader.get_metadata(None).await?;
 

@@ -28,8 +28,9 @@ impl ObjectStoreReader {
         }
     }
 
-    /// Size of the parquet footer (thrift metadata plus the 8-byte trailer), captured while
-    /// reading the metadata via [`AsyncFileReader::get_metadata`].
+    /// Size of the parquet footer (thrift metadata excluding the 8-byte trailer).
+    ///
+    /// This is only available after [`AsyncFileReader::get_metadata`] has been called.
     pub(super) fn footer_size(&self) -> Option<usize> {
         self.footer_size
     }
@@ -61,12 +62,12 @@ impl AsyncFileReader for ObjectStoreReader {
 
     fn get_metadata<'a>(
         &'a mut self,
-        options: Option<&'a ArrowReaderOptions>,
+        _options: Option<&'a ArrowReaderOptions>,
     ) -> BoxFuture<'a, ParquetResult<Arc<ParquetMetaData>>> {
         async move {
             let metadata = ParquetMetaDataReader::new()
-                .with_arrow_reader_options(options)
-                .with_prefetch_hint(self.footer_size.map(|s| s + FOOTER_SIZE))
+                // FIXME: Enable once removing the `patch.crates-io` section in `Cargo.toml`
+                // .with_arrow_reader_options(options)
                 .load_via_suffix_and_finish(self)
                 .await?;
             Ok(Arc::new(metadata))

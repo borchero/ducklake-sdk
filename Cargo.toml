@@ -43,6 +43,7 @@ arrow-arith = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85e
 arrow-array = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
 arrow-buffer = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
 arrow-cast = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
+arrow-data = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
 arrow-ord = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
 arrow-schema = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
 arrow-select = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
