@@ -427,6 +427,7 @@ impl Transaction {
 
 /* ------------------------------------------- UTILS ------------------------------------------- */
 
+#[allow(clippy::print_stdout)]
 fn log_sql(sql: &str, values: Option<&sea_query_sqlx::SqlxValues>) {
     static VERBOSE: OnceLock<bool> = OnceLock::new();
     let verbose =
