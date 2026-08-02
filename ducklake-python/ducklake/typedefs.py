@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 
     import dateutil.relativedelta as rd
 
-
 # ------------------------------------------ TABLE NAME ----------------------------------------- #
 
 
@@ -148,7 +147,8 @@ class Schema:
     columns: list[Column]
 
     def __init__(
-        self, columns: Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable
+        self,
+        columns: Sequence[Column] | Mapping[str, DataType] | ArrowSchemaExportable,
     ) -> None:
         if isinstance(columns, Schema):
             self.columns = list(columns.columns)
