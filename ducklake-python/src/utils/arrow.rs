@@ -12,7 +12,7 @@ use crate::conversion::Wrap;
 use crate::error;
 
 const COMMENT_TAG: &str = "comment";
-const SOURCE_KEY: &str = "ducklake-sdk:v1:arrow";
+const SOURCE_KEY: &str = "ducklake-sdk:arrow-field-metadata:v1";
 
 #[derive(Serialize, Deserialize)]
 struct ArrowFieldMetadata {
