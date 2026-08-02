@@ -185,6 +185,7 @@ version = "59.1.0"
 source = "git+https://github.com/apache/arrow-rs?rev=ed92960c8a85eda657fce3525c905616ccc5a983#ed92960c8a85eda657fce3525c905616ccc5a983"
 dependencies = [
  "bitflags",
+ "serde",
  "serde_core",
  "serde_json",
 ]
@@ -700,6 +701,8 @@ dependencies = [
  "pyo3",
  "pyo3-arrow",
  "rust_decimal",
+ "serde",
+ "serde_json",
  "tokio",
  "uuid",
 ]

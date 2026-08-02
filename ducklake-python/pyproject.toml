@@ -26,7 +26,7 @@ version = "0.0.0"
 
 [project.optional-dependencies]
 arrow = ["duckdb", "pyarrow"]
-polars = ["polars>=1.40"]
+polars = ["polars>=1.43.2"]
 sqlalchemy = ["sqlalchemy"]
 
 [project.urls]

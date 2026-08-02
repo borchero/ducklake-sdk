@@ -62,6 +62,55 @@ def test_schema_from_arrow() -> None:
     ]
 
 
+def test_schema_from_polars_enum() -> None:
+    # Arrange
+    polars_schema = pl.Schema({"e": pl.Enum(["a", "b", "c"])})
+
+    # Act
+    schema = dl.Schema(polars_schema)
+
+    # Assert
+    # Enums are stored as varchars with a `comment` tag that carries the Polars metadata.
+    assert len(schema.columns) == 1
+    assert schema.columns[0].name == "e"
+    assert schema.columns[0].data_type == dl.Varchar()
+    assert "_PL_ENUM_VALUES2" in schema.columns[0].tags["comment"]
+
+
+def test_schema_from_polars_categorical() -> None:
+    # Arrange
+    polars_schema = pl.Schema({"c": pl.Categorical()})
+
+    # Act
+    schema = dl.Schema(polars_schema)
+
+    # Assert
+    # Categoricals are stored as varchars with a `comment` tag that carries the Polars metadata.
+    assert len(schema.columns) == 1
+    assert schema.columns[0].name == "c"
+    assert schema.columns[0].data_type == dl.Varchar()
+    assert "_PL_CATEGORICAL2" in schema.columns[0].tags["comment"]
+
+
+@pytest.mark.parametrize(
+    "polars_schema",
+    [
+        pl.Schema({"e": pl.Enum(["a", "b", "c"])}),
+        pl.Schema({"c": pl.Categorical()}),
+        pl.Schema({"e": pl.Enum(["x", "y"]), "c": pl.Categorical(), "n": pl.Int64()}),
+    ],
+)
+def test_schema_polars_metadata_round_trip(polars_schema: pl.Schema) -> None:
+    # Arrange
+    schema = dl.Schema(polars_schema)
+
+    # Act
+    round_trip = pl.Schema(schema)
+
+    # Assert
+    assert round_trip == polars_schema
+
+
 # ------------------------------------------- COLUMN -------------------------------------------- #
 
 

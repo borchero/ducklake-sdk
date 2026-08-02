@@ -13,7 +13,7 @@ duckdb = ">=1.5.3"
 duckdb-engine = "*"
 # NOTE: This is the oldest supported polars version. It should always match the version in
 # feature.polars-minimal. The latest polars version is in feature.polars-latest.
-polars = ">=1.40,<2"
+polars = ">=1.43.2,<2"
 pyarrow = "*"
 python-dateutil = "*"
 
@@ -75,10 +75,10 @@ pytest = ">=9"
 [feature.polars-minimal.dependencies]
 # NOTE: This is the oldest supported polars version. It should always match the floor in
 # feature.optionals.
-polars = "1.40.*"
+polars = "=1.43.2"
 
 [feature.polars-latest.dependencies]
-polars = "1.43.*"
+polars = "=1.43.2"
 
 # --------------------------------------- PYTHON - NIGHTLY -------------------------------------- #
 

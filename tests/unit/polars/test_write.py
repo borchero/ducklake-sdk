@@ -272,6 +272,60 @@ def test_write_parquet_default_list(shared_ducklake: dl.Ducklake, random_table_n
     assert_frame_equal(expected, actual)
 
 
+# --------------------------------------- ENUM / CATEGORICAL ------------------------------------ #
+
+
+def test_sink_parquet_enum(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    schema = pl.Schema({"x": pl.Enum(["a", "b", "c"]), "y": pl.Int64()})
+    table = shared_ducklake.create_table(random_table_name, dl.Schema(schema))
+    lf = pl.LazyFrame({"x": ["a", "b", "c", "a"], "y": [1, 2, 3, 4]}, schema=schema)
+
+    # Act
+    table.sink_polars(lf)
+    actual = table.scan_polars()
+
+    # Assert
+    assert actual.collect_schema()["x"] == pl.Enum(["a", "b", "c"])
+    assert_frame_equal(lf, actual)
+
+
+@pytest.mark.parametrize("physical_dtype", [pl.UInt8(), pl.UInt16(), pl.UInt32()])
+def test_sink_parquet_categorical(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    physical_dtype: pl.DataType,
+    request: pytest.FixtureRequest,
+) -> None:
+    # Arrange
+    dtype = pl.Categorical(pl.Categories(request.node.name, physical=physical_dtype))
+    schema = pl.Schema({"x": dtype, "y": pl.Int64()})
+    table = shared_ducklake.create_table(random_table_name, dl.Schema(schema))
+    lf = pl.LazyFrame({"x": ["a", "b", "c", "a"], "y": [1, 2, 3, 4]}, schema=schema)
+
+    # Act
+    table.sink_polars(lf)
+    actual = table.scan_polars()
+
+    # Assert
+    assert actual.collect_schema()["x"] == dtype
+    assert_frame_equal(lf, actual)
+
+
+@pytest.mark.parametrize("dtype", [pl.Enum(["a", "b", "c"]), pl.Categorical()])
+def test_write_parquet_inline_panics(
+    shared_ducklake: dl.Ducklake, random_table_name: str, dtype: pl.DataType
+) -> None:
+    # Arrange
+    schema = pl.Schema({"x": dtype, "y": pl.Int64()})
+    table = shared_ducklake.create_table(random_table_name, dl.Schema(schema))
+    df = pl.DataFrame({"x": ["a", "b", "c"], "y": range(3)}, schema=schema)
+
+    # Act
+    with pytest.raises(ValueError, match="not yet supported"):
+        table.write_polars(df)
+
+
 # ------------------------------------------ MANY FILES ----------------------------------------- #
 
 

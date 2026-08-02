@@ -10,7 +10,7 @@ name = "ducklake_python"
 
 [dependencies]
 arrow-array = { workspace = true }
-arrow-schema = { workspace = true }
+arrow-schema = { workspace = true, features = ["serde"] }
 chrono = { workspace = true }
 ducklake = { workspace = true, features = ["aws", "azure", "gcp", "mysql", "postgres", "python", "sqlite"] }
 indexmap = { workspace = true }
@@ -18,6 +18,8 @@ parquet = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "extension-module"] }
 pyo3-arrow = { workspace = true }
 rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 uuid = { workspace = true }
 

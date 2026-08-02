@@ -142,7 +142,15 @@ fn derive_column_stats(
         .sum();
 
     // Compute min, max, null count statistics
-    let data_type = crate::Column::try_from(field)?.dtype;
+    let mut field = field.clone();
+    // NOTE: if we encounter a dictionary, we can treat it just like its value type as the
+    //  statistics store the logical values.
+    if let DataType::Dictionary(_, value_type) = field.data_type() {
+        let value_type = (**value_type).clone();
+        field = field.with_data_type(value_type);
+    }
+
+    let data_type = crate::Column::try_from(&field)?.dtype;
     let min_value = converter
         .row_group_mins(row_groups)
         .ok()
