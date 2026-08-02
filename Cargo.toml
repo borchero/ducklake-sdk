@@ -57,3 +57,7 @@ strip = "symbols"
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 unreachable_pub = "deny"
+
+[workspace.lints.clippy]
+print_stderr = "warn"
+print_stdout = "warn"
