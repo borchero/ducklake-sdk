@@ -204,16 +204,19 @@ impl Path {
     }
 
     pub(crate) fn path(&self) -> ObjectStorePath {
-        let path = match self {
-            Path::Local { path } => path,
+        match self {
+            // Local paths are OS-native filesystem paths (e.g. `C:\dir\file` on Windows), so they
+            // must be converted via `from_absolute_path`, which normalizes the platform's path
+            // separators. Using `ObjectStorePath::parse` would instead percent-encode backslashes
+            // (`%5C`), producing a path the local filesystem store cannot resolve on Windows.
+            Path::Local { path } => ObjectStorePath::from_absolute_path(path).unwrap(),
             #[cfg(feature = "aws")]
-            Path::S3 { path, .. } => path,
+            Path::S3 { path, .. } => ObjectStorePath::parse(path).unwrap(),
             #[cfg(feature = "azure")]
-            Path::Azure { path, .. } => path,
+            Path::Azure { path, .. } => ObjectStorePath::parse(path).unwrap(),
             #[cfg(feature = "gcp")]
-            Path::GCS { path, .. } => path,
-        };
-        ObjectStorePath::parse(path).unwrap()
+            Path::GCS { path, .. } => ObjectStorePath::parse(path).unwrap(),
+        }
     }
 
     pub(crate) fn display_location(&self, location: &ObjectStorePath) -> String {
