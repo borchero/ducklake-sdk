@@ -221,7 +221,14 @@ impl Path {
 
     pub(crate) fn display_location(&self, location: &ObjectStorePath) -> String {
         match self {
+            // Local locations must be rendered as OS-native filesystem paths. On Unix the location
+            // is rooted-relative (e.g. `tmp/file`), so a leading `/` yields `/tmp/file`. On Windows
+            // it is drive-lettered with forward slashes (e.g. `C:/dir/file`), so no leading `/` is
+            // added and separators are converted to backslashes to give `C:\dir\file`.
+            #[cfg(not(windows))]
             Path::Local { .. } => format!("/{}", location),
+            #[cfg(windows)]
+            Path::Local { .. } => location.as_ref().replace('/', "\\"),
             #[cfg(feature = "aws")]
             Path::S3 { bucket, .. } => format!("s3://{}/{}", bucket, location),
             #[cfg(feature = "azure")]
