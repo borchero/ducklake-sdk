@@ -31,14 +31,17 @@ impl DucklakePath {
         if is_relative {
             DucklakePath::Relative(path.to_string())
         } else {
+            // An absolute local filesystem path must be converted to a `file://` URL directly.
+            // This must happen before `Url::parse`, as on Windows the drive letter of a path such
+            // as `C:\data` would otherwise be interpreted as a URL scheme (`c`), yielding a
+            // cannot-be-a-base URL that panics when later joined.
+            if std::path::Path::new(path).is_absolute() {
+                return DucklakePath::Absolute(Url::from_file_path(path).unwrap());
+            }
             let url = match Url::parse(path) {
                 Ok(url) => url,
                 Err(url::ParseError::RelativeUrlWithoutBase) => {
-                    if std::path::Path::new(path).is_absolute() {
-                        Url::from_file_path(path).unwrap()
-                    } else {
-                        panic!("Invalid absolute path: {}", path);
-                    }
+                    panic!("Invalid absolute path: {}", path);
                 }
                 Err(e) => panic!("Invalid URL: {}", e),
             };
@@ -122,14 +125,17 @@ impl FromStr for DucklakePath {
     type Err = url::ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // An absolute local filesystem path must be converted to a `file://` URL directly. This
+        // must happen before `Url::parse`, as on Windows the drive letter of a path such as
+        // `C:\data` would otherwise be interpreted as a URL scheme (`c`), yielding a
+        // cannot-be-a-base URL that panics when later joined.
+        if std::path::Path::new(s).is_absolute() {
+            return Ok(DucklakePath::Absolute(Url::from_file_path(s).unwrap()));
+        }
         match Url::parse(s) {
             Ok(url) => Ok(DucklakePath::Absolute(url)),
             Err(url::ParseError::RelativeUrlWithoutBase) => {
-                if std::path::Path::new(s).is_absolute() {
-                    Ok(DucklakePath::Absolute(Url::from_file_path(s).unwrap()))
-                } else {
-                    Ok(DucklakePath::Relative(s.to_string()))
-                }
+                Ok(DucklakePath::Relative(s.to_string()))
             }
             Err(e) => Err(e),
         }
@@ -372,9 +378,38 @@ mod tests {
     #[case("foo/bar/", relative("foo/bar/"))]
     #[case("s3://bucket/prefix/", absolute("s3://bucket/prefix/"))]
     #[case("file:///data/", absolute("file:///data/"))]
-    #[case("/absolute/path", absolute("file:///absolute/path"))]
     fn test_from_str(#[case] input: &str, #[case] expected: DucklakePath) {
         assert_eq!(input.parse::<DucklakePath>().unwrap(), expected);
+    }
+
+    // Absolute local paths are platform-specific: on Unix they start with `/`, whereas on Windows
+    // they are rooted at a drive letter. In particular, a Windows drive-lettered path must not be
+    // misinterpreted as a URL whose scheme is the drive letter.
+    #[cfg(unix)]
+    #[test]
+    fn test_from_str_absolute_local_path() {
+        assert_eq!(
+            "/absolute/path".parse::<DucklakePath>().unwrap(),
+            absolute("file:///absolute/path")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_from_str_absolute_local_path() {
+        assert_eq!(
+            "C:\\data\\path".parse::<DucklakePath>().unwrap(),
+            absolute("file:///C:/data/path")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_new_absolute_local_path() {
+        assert_eq!(
+            DucklakePath::new("C:\\data\\path", false),
+            absolute("file:///C:/data/path")
+        );
     }
 
     #[test]
@@ -512,12 +547,27 @@ mod tests {
         }
     }
 
+    // Resolving a `file://` URL to a local path is platform-specific: Unix yields a `/`-rooted
+    // path, whereas Windows yields a drive-lettered path with backslash separators.
+    #[cfg(unix)]
     #[test]
     fn test_resolve_local() {
         let path = absolute("file:///tmp/file.parquet").resolve().unwrap();
         match path {
             Path::Local { path } => {
                 assert_eq!(path, "/tmp/file.parquet");
+            }
+            _ => panic!("expected Local path"),
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_resolve_local() {
+        let path = absolute("file:///C:/tmp/file.parquet").resolve().unwrap();
+        match path {
+            Path::Local { path } => {
+                assert_eq!(path, "C:\\tmp\\file.parquet");
             }
             _ => panic!("expected Local path"),
         }
