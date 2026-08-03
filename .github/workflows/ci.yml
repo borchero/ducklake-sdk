@@ -32,11 +32,15 @@ jobs:
   # -------------------------------------------- RUST ------------------------------------------- #
 
   unit-tests-rs:
-    name: Unit Tests (Rust)
-    runs-on: ubuntu-latest
+    name: Unit Tests (Rust - ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -210,3 +214,27 @@ jobs:
         run: pixi run install-py --release
       - name: Run tests
         run: pixi run test-py -v
+
+  # The service containers backing the Postgres, MySQL and object-storage tests only run on Linux
+  # runners, so the Windows job is restricted to the sqlite catalog with local storage.
+  unit-tests-py-windows:
+    name: Unit Tests (py314 - sqlite - local - Windows)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f # v0.10.0
+        with:
+          environments: test-py314
+          activate-environment: true
+      - name: Install Rust
+        run: rustup show
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install Python package
+        run: pixi run install-py
+      - name: Run tests
+        run: pixi run test-py -v --catalog sqlite --storage local
