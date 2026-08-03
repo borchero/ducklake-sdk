@@ -6,6 +6,7 @@ import uuid
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, TypeVar
 from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import boto3
 import sqlalchemy as sa
@@ -306,8 +307,10 @@ def storage_file_exists(ducklake: dl.Ducklake, path: str) -> bool:
     bucket = parsed.netloc
     key = parsed.path.lstrip("/")
     match parsed.scheme:
-        case "" | "file":
-            return os.path.exists(parsed.path if parsed.scheme == "file" else path)
+        case "file":
+            # Convert the URL path back to an OS-native filesystem path (e.g. `/C:/dir/file` back
+            # to `C:\dir\file` on Windows).
+            return os.path.exists(url2pathname(parsed.path))
         case "s3" | "gs":
             # GCS test buckets are backed by the same S3-compatible store (see `make_storage_path`),
             # so both are inspected through the S3 client.
@@ -336,7 +339,10 @@ def storage_file_exists(ducklake: dl.Ducklake, path: str) -> bool:
             )
             return blob_service_client.get_blob_client(container=bucket, blob=key).exists()
         case _:
-            raise NotImplementedError
+            # Any remaining path is an OS-native local filesystem path. On Windows, `urlparse`
+            # interprets the drive letter as a scheme (e.g. `c` for `C:\dir\file`), so such paths
+            # only reach this arm rather than the `file` case.
+            return os.path.exists(path)
 
 
 def _storage_options(
