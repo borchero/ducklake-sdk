@@ -56,10 +56,6 @@ jobs:
       - name: Run tests
         run: pixi run test-rs-coverage --locked --output-path coverage-rs.lcov
       - name: Upload coverage
-        # Only the Linux runner uploads coverage. The Windows report additionally instruments the
-        # `#[cfg(windows)]` branches, which are not exercised by the unit tests and would otherwise
-        # lower the reported coverage below the baseline.
-        if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage-rs.lcov
@@ -219,8 +215,6 @@ jobs:
       - name: Run tests
         run: pixi run test-py -v
 
-  # The service containers backing the Postgres, MySQL and object-storage tests only run on Linux
-  # runners, so the Windows job is restricted to the sqlite catalog with local storage.
   unit-tests-py-windows:
     name: Unit Tests (py314 - sqlite - local - Windows)
     runs-on: windows-latest
@@ -241,4 +235,4 @@ jobs:
       - name: Install Python package
         run: pixi run install-py
       - name: Run tests
-        run: pixi run test-py -v --catalog sqlite --storage local
+        run: pixi run test-py -v

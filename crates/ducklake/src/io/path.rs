@@ -33,16 +33,12 @@ impl DucklakePath {
         } else {
             // An absolute local filesystem path must be converted to a `file://` URL directly.
             // This must happen before `Url::parse`, as on Windows the drive letter of a path such
-            // as `C:\data` would otherwise be interpreted as a URL scheme (`c`), yielding a
-            // cannot-be-a-base URL that panics when later joined.
+            // as `C:\data` would otherwise be interpreted as a URL scheme (`c`).
             if std::path::Path::new(path).is_absolute() {
                 return DucklakePath::Absolute(Url::from_file_path(path).unwrap());
             }
             let url = match Url::parse(path) {
                 Ok(url) => url,
-                Err(url::ParseError::RelativeUrlWithoutBase) => {
-                    panic!("Invalid absolute path: {}", path);
-                }
                 Err(e) => panic!("Invalid URL: {}", e),
             };
             DucklakePath::Absolute(url)
@@ -127,8 +123,7 @@ impl FromStr for DucklakePath {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // An absolute local filesystem path must be converted to a `file://` URL directly. This
         // must happen before `Url::parse`, as on Windows the drive letter of a path such as
-        // `C:\data` would otherwise be interpreted as a URL scheme (`c`), yielding a
-        // cannot-be-a-base URL that panics when later joined.
+        // `C:\data` would otherwise be interpreted as a URL scheme (`c`).
         if std::path::Path::new(s).is_absolute() {
             return Ok(DucklakePath::Absolute(Url::from_file_path(s).unwrap()));
         }
@@ -207,8 +202,7 @@ impl Path {
         match self {
             // Local paths are OS-native filesystem paths (e.g. `C:\dir\file` on Windows), so they
             // must be converted via `from_absolute_path`, which normalizes the platform's path
-            // separators. Using `ObjectStorePath::parse` would instead percent-encode backslashes
-            // (`%5C`), producing a path the local filesystem store cannot resolve on Windows.
+            // separators.
             Path::Local { path } => ObjectStorePath::from_absolute_path(path).unwrap(),
             #[cfg(feature = "aws")]
             Path::S3 { path, .. } => ObjectStorePath::parse(path).unwrap(),
@@ -221,10 +215,6 @@ impl Path {
 
     pub(crate) fn display_location(&self, location: &ObjectStorePath) -> String {
         match self {
-            // Local locations must be rendered as OS-native filesystem paths. On Unix the location
-            // is rooted-relative (e.g. `tmp/file`), so a leading `/` yields `/tmp/file`. On Windows
-            // it is drive-lettered with forward slashes (e.g. `C:/dir/file`), so no leading `/` is
-            // added and separators are converted to backslashes to give `C:\dir\file`.
             #[cfg(not(windows))]
             Path::Local { .. } => format!("/{}", location),
             #[cfg(windows)]
