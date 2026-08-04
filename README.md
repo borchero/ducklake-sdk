@@ -157,7 +157,6 @@ See the DuckLake [release calendar](https://ducklake.select/release_calendar) fo
 - [ ] Tables partitioned with a non-identity transform do not benefit from file pruning yet.
 - [ ] Filters are not pushed down into the metadata query. Statistics are still loaded eagerly and used by readers to
       prune files, but the metadata query may transmit more data than necessary.
-- [ ] Not tested on Windows.
 
 **Python SDK**:
 
