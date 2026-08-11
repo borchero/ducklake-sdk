@@ -166,11 +166,27 @@ class TransactionTable:
     #                                            WRITES                                           #
     # ------------------------------------------------------------------------------------------- #
 
+    def write_data_files(self, files: Sequence[str | WriteDataFile]) -> None:
+        """Register existing Parquet files with the table without rewriting them.
+
+        Args:
+            files: The data files to add. Each entry may either be a path to a Parquet file or a
+                :class:`WriteDataFile` for full control over statistics and partition values. Paths
+                may be relative to the table's data path or absolute (including remote URLs such as
+                ``s3://``).
+
+        Note:
+            For any file whose statistics are not provided, the statistics are computed by reading
+            the file's Parquet footer when committing. Ownership of the added files is transferred
+            to DuckLake, i.e. they may be deleted by subsequent maintenance operations and must not
+            be modified externally.
+        """
+        self._pytxtable.write_data_files(
+            [WriteDataFile(f) if isinstance(f, str) else f for f in files]
+        )
+
     def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator]:
         return self._pytxtable.get_write_info()
-
-    def _write_data_files(self, new_data_files: list[WriteDataFile]) -> None:
-        self._pytxtable.write_data_files(new_data_files)
 
     def _write_inline_data(self, data: ArrowStreamExportable) -> None:
         self._pytxtable.write_inline_data(data)
