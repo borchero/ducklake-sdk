@@ -301,7 +301,7 @@ impl Ducklake {
         name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<bool> {
         let name = name.try_into().map_err(|e| e.into())?;
-        let snapshot = self.conn.latest_snapshot(true).await?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
         let catalog = snapshot.catalog().await?;
         Ok(catalog.table(&name).is_ok())
     }
