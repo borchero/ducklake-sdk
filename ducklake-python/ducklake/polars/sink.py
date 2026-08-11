@@ -253,4 +253,4 @@ def _sinked_paths_callback(
         )
         new_data_files.append(data_file)
 
-    table._write_data_files(new_data_files)
+    table.write_data_files(new_data_files)
