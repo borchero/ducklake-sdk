@@ -62,7 +62,9 @@ class Ducklake:
     @cached_property
     def _duckdb_connection(self) -> duckdb.DuckDBPyConnection:
         return _make_duckdb_connection(
-            self._connection_args, storage_options=self._storage_options
+            self._connection_args,
+            storage_options=self._storage_options,
+            readonly=self._pyducklake.is_readonly(),
         )
 
     # ---------------------------------------- SNAPSHOTS ---------------------------------------- #
@@ -609,6 +611,7 @@ def _make_duckdb_connection(
     *,
     data_path: str | None = None,
     storage_options: StorageOptionSet | None = None,
+    readonly: bool = False,
 ) -> duckdb.DuckDBPyConnection:
     import duckdb
 
@@ -616,13 +619,14 @@ def _make_duckdb_connection(
     con.execute("INSTALL ducklake;")
 
     # Build options based on parameters
-    init_options = ""
+    options = []
     if data_path is not None:
         if not data_path.endswith("/"):
             data_path += "/"
-        init_options += f"DATA_PATH '{data_path}'"
-    if init_options:
-        init_options = f"({init_options})"
+        options.append(f"DATA_PATH '{data_path}'")
+    if readonly:
+        options.append("READ_ONLY")
+    init_options = f"({', '.join(options)})" if options else ""
 
     # Attach based on the URL
     match args.dialect:

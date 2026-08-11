@@ -419,16 +419,23 @@ impl DucklakeConnection {
         }
     }
 
+    /// Whether this connection rejects writes.
+    pub(crate) fn is_readonly(&self) -> bool {
+        !matches!(self.0.mode, ConnectionMode::ReadWrite)
+    }
+
     /// Resolve the snapshot for the given [`SnapshotAccess`] intent, applying the mutability check
     /// implied by that intent in the same step. When the head is resolved from the database,
     /// future calls to [`DucklakeConnection::current_snapshot`] will also return that snapshot.
     pub(crate) async fn snapshot(&self, access: SnapshotAccess) -> DucklakeResult<Arc<Snapshot>> {
         match (access, &self.0.mode) {
             // Writes are disallowed for read-only or time-travel connections.
-            // Head access is disallowed for time-travel connections.
-            (SnapshotAccess::Write, ConnectionMode::ReadOnly | ConnectionMode::TimeTravel(_))
-            | (SnapshotAccess::Head, ConnectionMode::TimeTravel(_)) => {
+            (SnapshotAccess::Write, ConnectionMode::ReadOnly | ConnectionMode::TimeTravel(_)) => {
                 Err(DucklakeError::ReadonlyDucklake)
+            }
+            // Head access is disallowed for time-travel connections.
+            (SnapshotAccess::Head, ConnectionMode::TimeTravel(_)) => {
+                Err(DucklakeError::SnapshotPinned)
             }
             (SnapshotAccess::Any, ConnectionMode::TimeTravel(travel_snapshot)) => {
                 Ok(travel_snapshot.clone())
@@ -529,6 +536,12 @@ impl DucklakeConnection {
 impl Ducklake {
     pub fn metadata(&self) -> GlobalMetadata {
         self.conn.metadata().global_metadata()
+    }
+
+    /// Whether this connection rejects writes. This is `true` for both read-only and
+    /// time-traveling connections.
+    pub fn is_readonly(&self) -> bool {
+        self.conn.is_readonly()
     }
 }
 

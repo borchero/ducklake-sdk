@@ -89,6 +89,8 @@ pub enum DucklakeError {
     ObjectStore(#[from] object_store::Error),
     #[error("the DuckLake connection is read-only, no changes may be performed")]
     ReadonlyDucklake,
+    #[error("the connection is pinned to a snapshot")]
+    SnapshotPinned,
 }
 
 impl From<Infallible> for DucklakeError {

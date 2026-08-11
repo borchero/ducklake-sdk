@@ -77,6 +77,10 @@ impl PyDucklake {
         PyDucklake(self.0.readonly())
     }
 
+    pub fn is_readonly(&self) -> bool {
+        self.0.is_readonly()
+    }
+
     pub fn get_latest_snapshot(&self, py: Python) -> PyResult<Wrap<SnapshotMetadata>> {
         block_on(py, self.0.latest_snapshot())
             .map(Wrap)

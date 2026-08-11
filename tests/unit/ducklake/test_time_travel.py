@@ -80,6 +80,18 @@ def test_time_travel_no_transaction(shared_ducklake: dl.Ducklake, random_table_n
         time_traveled_table.add_tag("foo", "bar")
 
 
+def test_time_travel_get_latest_snapshot_raises(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    snapshot_id = shared_ducklake.get_latest_snapshot().id
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="pinned"):
+        shared_ducklake.at(snapshot_id).get_latest_snapshot()
+
+
 def test_time_travel_list_snapshots_returns_only_traveled(
     shared_ducklake: dl.Ducklake, random_table_name: str
 ) -> None:

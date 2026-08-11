@@ -6,6 +6,12 @@ import ducklake as dl
 import ducklake.exceptions as dlexc
 
 
+@pytest.fixture()
+def readonly_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> dl.Table:
+    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    return shared_ducklake.readonly().get_table(random_table_name)
+
+
 def test_readonly_reads_follow_head(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
@@ -60,24 +66,12 @@ def test_readonly_blocks_transaction(shared_ducklake: dl.Ducklake, random_table_
         readonly.create_table(random_table_name, {"x": dl.Int64()})
 
 
-def test_readonly_blocks_table_write(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
-    # Arrange
-    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    readonly_table = shared_ducklake.readonly().get_table(random_table_name)
-
-    # Act & Assert
+def test_readonly_blocks_table_write(readonly_table: dl.Table) -> None:
     with pytest.raises(dlexc.ReadonlyDucklakeError):
         readonly_table.sink_polars(pl.LazyFrame({"x": [1, 2, 3]}))
 
 
-def test_readonly_blocks_table_metadata(
-    shared_ducklake: dl.Ducklake, random_table_name: str
-) -> None:
-    # Arrange
-    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    readonly_table = shared_ducklake.readonly().get_table(random_table_name)
-
-    # Act & Assert
+def test_readonly_blocks_table_metadata(readonly_table: dl.Table) -> None:
     with pytest.raises(dlexc.ReadonlyDucklakeError):
         readonly_table.add_tag("foo", "bar")
 
@@ -94,6 +88,20 @@ def test_readonly_allows_reads(shared_ducklake: dl.Ducklake, random_table_name: 
 
     # Act & Assert: read paths must not be affected.
     assert random_table_name in [table.name[1] for table in readonly.list_tables()]
+
+
+def test_readonly_blocks_duckdb_write(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange: the DuckDB attachment is independent of the native handle, so it must also be
+    # opened read-only.
+    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    readonly = shared_ducklake.readonly()
+
+    # Act & Assert: reads work via DuckDB, but catalog-mutating SQL is rejected by the extension.
+    readonly.execute_sql(f"SELECT * FROM {random_table_name}")
+    with pytest.raises(Exception, match="read.only|READ_ONLY"):
+        readonly.execute_sql(f"INSERT INTO {random_table_name} VALUES (1)")
 
 
 def test_connect_readonly(catalog_url: str, storage_path: str, random_table_name: str) -> None:
