@@ -87,8 +87,10 @@ pub enum DucklakeError {
     Parquet(#[from] parquet::errors::ParquetError),
     #[error("object store error: {0}")]
     ObjectStore(#[from] object_store::Error),
-    #[error("when time-traveling in a DuckLake connection, no changes may be performed")]
-    ImmutableDucklake,
+    #[error("the DuckLake connection is read-only, no changes may be performed")]
+    ReadonlyDucklake,
+    #[error("the connection is pinned to a snapshot")]
+    SnapshotPinned,
 }
 
 impl From<Infallible> for DucklakeError {

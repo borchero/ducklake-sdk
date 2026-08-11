@@ -62,7 +62,9 @@ class Ducklake:
     @cached_property
     def _duckdb_connection(self) -> duckdb.DuckDBPyConnection:
         return _make_duckdb_connection(
-            self._connection_args, storage_options=self._storage_options
+            self._connection_args,
+            storage_options=self._storage_options,
+            readonly=self._pyducklake.is_readonly(),
         )
 
     # ---------------------------------------- SNAPSHOTS ---------------------------------------- #
@@ -83,6 +85,20 @@ class Ducklake:
             else self._pyducklake.at_snapshot_timestamp(at)
         )
         return Ducklake._from_pyducklake(pyducklake, self._connection_args, self._storage_options)
+
+    def readonly(self) -> Ducklake:
+        """Obtain a read-only view of this DuckLake.
+
+        Unlike time travel (see :meth:`at`), the returned instance still follows the latest
+        snapshot for reads; it only rejects write operations. Any attempt to make modifications
+        raises an exception.
+
+        Returns:
+            A new :class:`Ducklake` instance that rejects all write operations.
+        """
+        return Ducklake._from_pyducklake(
+            self._pyducklake.readonly(), self._connection_args, self._storage_options
+        )
 
     def get_latest_snapshot(self) -> SnapshotMetadata:
         """Get metadata for the latest snapshot in the catalog.
@@ -595,6 +611,7 @@ def _make_duckdb_connection(
     *,
     data_path: str | None = None,
     storage_options: StorageOptionSet | None = None,
+    readonly: bool = False,
 ) -> duckdb.DuckDBPyConnection:
     import duckdb
 
@@ -602,13 +619,14 @@ def _make_duckdb_connection(
     con.execute("INSTALL ducklake;")
 
     # Build options based on parameters
-    init_options = ""
+    options = []
     if data_path is not None:
         if not data_path.endswith("/"):
             data_path += "/"
-        init_options += f"DATA_PATH '{data_path}'"
-    if init_options:
-        init_options = f"({init_options})"
+        options.append(f"DATA_PATH '{data_path}'")
+    if readonly:
+        options.append("READ_ONLY")
+    init_options = f"({', '.join(options)})" if options else ""
 
     # Attach based on the URL
     match args.dialect:

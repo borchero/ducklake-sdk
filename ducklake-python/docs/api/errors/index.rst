@@ -10,11 +10,11 @@ Errors
 
     AlreadyExistsError
     AlreadyInitializedError
-    ImmutableDucklakeError
     InvalidCastError
     InvalidNullabilityChangeError
     InvalidNullValueError
     NotFoundError
     NotInitializedError
     OutdatedVersionError
+    ReadonlyDucklakeError
     TransactionConflictError

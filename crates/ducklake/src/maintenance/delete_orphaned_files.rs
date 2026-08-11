@@ -6,6 +6,7 @@ use object_store::path::Path as ObjectStorePath;
 use sea_query::{Query, UnionType};
 
 use super::DryRun;
+use crate::ducklake::SnapshotAccess;
 use crate::spec::*;
 use crate::{Ducklake, DucklakeResult, io};
 
@@ -85,6 +86,7 @@ impl Ducklake {
         // `delete_stream` so the object store can use batch APIs where available, and tolerate
         // files that are already gone to keep the operation idempotent.
         if matches!(dry_run, DryRun::No) {
+            self.conn.check_writable()?;
             let locations = orphans.clone();
             let mut deletion =
                 store.delete_stream(stream::iter(locations.into_iter().map(Ok)).boxed());
@@ -109,7 +111,7 @@ impl Ducklake {
         data_path: &io::DucklakePath,
     ) -> DucklakeResult<HashSet<ObjectStorePath>> {
         let pool = self.conn.pool();
-        let snapshot = self.conn.latest_snapshot(false).await?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Head).await?;
         let catalog = snapshot.catalog().await?;
 
         // Fetch the file paths from all relevant catalog tables.

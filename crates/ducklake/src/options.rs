@@ -43,6 +43,7 @@ pub(crate) enum ConnectionType {
 pub struct ConnectOptions {
     pub(crate) url: String,
     pub(crate) migrate: bool,
+    pub(crate) readonly: bool,
     pub(crate) storage_options: Vec<(String, String)>,
     pub(crate) connection_type: ConnectionType,
 }
@@ -53,6 +54,7 @@ impl ConnectOptions {
         Self {
             url: url.to_string(),
             migrate: false,
+            readonly: false,
             storage_options: Vec::new(),
             connection_type: ConnectionType::Latest,
         }
@@ -61,6 +63,13 @@ impl ConnectOptions {
     /// Set whether to automatically run migrations if the catalog version is outdated.
     pub fn with_migrate(mut self, migrate: bool) -> Self {
         self.migrate = migrate;
+        self
+    }
+
+    /// Set whether the connection should be read-only. A read-only connection follows the latest
+    /// snapshot for reads but rejects all write operations.
+    pub fn with_readonly(mut self, readonly: bool) -> Self {
+        self.readonly = readonly;
         self
     }
 

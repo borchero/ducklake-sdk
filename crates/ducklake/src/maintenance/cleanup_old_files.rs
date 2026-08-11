@@ -86,6 +86,7 @@ impl Ducklake {
         if matches!(dry_run, DryRun::Yes) {
             return Ok(paths.iter().map(|path| path.to_string()).collect());
         }
+        self.conn.check_writable()?;
 
         // 3) Delete the files from the object store, batching deletes per store.
         delete_files(&paths, &storage_options).await?;

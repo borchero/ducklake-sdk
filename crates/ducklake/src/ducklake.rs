@@ -31,9 +31,32 @@ struct DucklakeConnectionInner {
     snapshot_cache: Arc<SnapshotCache>,
     /// Storage options to use for connecting to cloud storage.
     storage_options: Vec<(String, String)>,
-    /// Fixed snapshot to use for all operations. This is relevant if the user performed time
-    /// travel to a particular snapshot.
-    travel_snapshot: Option<Arc<Snapshot>>,
+    /// The access mode of the connection, i.e. whether it is writable, read-only, or pinned to a
+    /// historical snapshot via time travel.
+    mode: ConnectionMode,
+}
+
+/// The access mode of a [`DucklakeConnection`].
+#[derive(Clone)]
+enum ConnectionMode {
+    /// Follows the latest snapshot and permits modifications.
+    ReadWrite,
+    /// Follows the latest snapshot but rejects all modifications.
+    ReadOnly,
+    /// Pinned to a fixed historical snapshot; reads are stable and modifications are rejected.
+    TimeTravel(Arc<Snapshot>),
+}
+
+/// The intent with which a snapshot is resolved via [`DucklakeConnection::snapshot`].
+#[derive(Clone, Copy)]
+pub(crate) enum SnapshotAccess {
+    /// Resolve the head snapshot for a write. Only permitted on a `ReadWrite` connection.
+    Write,
+    /// Resolve the head snapshot for a read where "latest" must be meaningful. Permitted on
+    /// `ReadWrite` and `ReadOnly` connections.
+    Head,
+    /// Resolve the snapshot appropriate for a read. Always allowed.
+    Any,
 }
 
 /* ----------------------------------------- CONNECTION ---------------------------------------- */
@@ -65,7 +88,7 @@ impl Ducklake {
         spec::init_catalog(&pool, config).await?;
 
         // Create the ducklake instance
-        Self::new(pool, None, options.storage_options).await
+        Self::new(pool, None, false, options.storage_options).await
     }
 
     /// Connect to an existing DuckLake by attaching to an existing catalog database.
@@ -87,7 +110,7 @@ impl Ducklake {
                 Some(SnapshotInfo::load_for_timestamp(&pool, timestamp).await?)
             }
         };
-        Self::new(pool, snapshot, options.storage_options).await
+        Self::new(pool, snapshot, options.readonly, options.storage_options).await
     }
 
     /// Disconnect from the catalog database, gracefully closing the underlying connection pool.
@@ -135,6 +158,7 @@ impl Ducklake {
     async fn new(
         pool: db::Pool,
         travel_snapshot: Option<SnapshotInfo>,
+        readonly: bool,
         storage_options: Vec<(String, String)>,
     ) -> DucklakeResult<Self> {
         let has_travel_snapshot = travel_snapshot.is_some();
@@ -143,18 +167,20 @@ impl Ducklake {
         let snapshot_cache = SnapshotCache::new(pool.clone(), travel_snapshot).await?;
         let metadata_cache = MetadataCache::new(pool.clone()).await?;
 
-        // Construct the ducklake
-        let travel_snapshot = if has_travel_snapshot {
-            Some(snapshot_cache.get_current())
+        // Determine the access mode
+        let mode = if has_travel_snapshot {
+            ConnectionMode::TimeTravel(snapshot_cache.get_current())
+        } else if readonly {
+            ConnectionMode::ReadOnly
         } else {
-            None
+            ConnectionMode::ReadWrite
         };
         let connection = DucklakeConnectionInner {
             pool,
             metadata_cache: Arc::new(metadata_cache),
             snapshot_cache: Arc::new(snapshot_cache),
             storage_options,
-            travel_snapshot,
+            mode,
         };
         let ducklake = Ducklake {
             conn: DucklakeConnection(Arc::new(connection)),
@@ -183,17 +209,39 @@ impl Ducklake {
 
     fn at_snapshot(&self, snapshot_info: SnapshotInfo) -> DucklakeResult<Self> {
         let travel_snapshot = self.conn.0.snapshot_cache.insert_snapshot(snapshot_info);
+        Ok(self.with_mode(ConnectionMode::TimeTravel(travel_snapshot)))
+    }
+
+    /// Obtain a read-only view of this DuckLake.
+    ///
+    /// Unlike time travel (see [`Ducklake::at_snapshot_id`]), the returned instance still follows
+    /// the latest snapshot for reads; it merely rejects all write operations with
+    /// [`DucklakeError::ReadonlyDucklake`].
+    ///
+    /// If `self` is already time-traveling, the pinned snapshot is retained.
+    pub fn readonly(&self) -> Self {
+        let mode = match &self.conn.0.mode {
+            // Preserve the pinned snapshot: time travel is already read-only, and downgrading to
+            // `ReadOnly` would silently switch reads from the historical snapshot back to head.
+            mode @ ConnectionMode::TimeTravel(_) => mode.clone(),
+            _ => ConnectionMode::ReadOnly,
+        };
+        self.with_mode(mode)
+    }
+
+    /// Construct a new [`Ducklake`] that shares the underlying connection pool and caches with
+    /// `self` but uses the provided access mode.
+    fn with_mode(&self, mode: ConnectionMode) -> Self {
         let connection = DucklakeConnectionInner {
             pool: self.conn.0.pool.clone(),
             metadata_cache: self.conn.0.metadata_cache.clone(),
             snapshot_cache: self.conn.0.snapshot_cache.clone(),
             storage_options: self.conn.0.storage_options.clone(),
-            travel_snapshot: Some(travel_snapshot),
+            mode,
         };
-        let ducklake = Ducklake {
+        Ducklake {
             conn: DucklakeConnection(Arc::new(connection)),
-        };
-        Ok(ducklake)
+        }
     }
 }
 
@@ -208,10 +256,10 @@ pub struct SnapshotMetadata {
 }
 
 impl Ducklake {
-    /// Obtain the ID and timestamp of the latest snapshot in the catalog. This fails when run on
-    /// an immutable DuckLake instance.
+    /// Obtain the ID and timestamp of the latest snapshot in the catalog. This fails when run on a
+    /// time-traveling DuckLake instance.
     pub async fn latest_snapshot(&self) -> DucklakeResult<SnapshotMetadata> {
-        let snapshot = self.conn.latest_snapshot(false).await?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Head).await?;
         let info = snapshot.info();
         Ok(SnapshotMetadata {
             id: info.id,
@@ -221,7 +269,7 @@ impl Ducklake {
 
     /// List all snapshots in the catalog.
     pub async fn list_snapshots(&self) -> DucklakeResult<Vec<SnapshotMetadata>> {
-        if let Some(travel_snapshot) = &self.conn.0.travel_snapshot {
+        if let ConnectionMode::TimeTravel(travel_snapshot) = &self.conn.0.mode {
             let info = travel_snapshot.info();
             Ok(vec![SnapshotMetadata {
                 id: info.id,
@@ -242,7 +290,7 @@ impl Ducklake {
         name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<Table> {
         let name = name.try_into().map_err(|e| e.into())?;
-        let snapshot = self.conn.latest_snapshot(true).await?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
         let catalog = snapshot.catalog().await?;
         Ok(self.maybe_table_from_catalog(catalog, &name)?.unwrap())
     }
@@ -253,7 +301,7 @@ impl Ducklake {
         name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<bool> {
         let name = name.try_into().map_err(|e| e.into())?;
-        let snapshot = self.conn.latest_snapshot(true).await?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
         let catalog = snapshot.catalog().await?;
         Ok(catalog.table(&name).is_ok())
     }
@@ -274,7 +322,7 @@ impl Ducklake {
 
     /// List all tables in the catalog, optionally restricted to a specific schema.
     pub async fn list_tables(&self, schema: Option<&str>) -> DucklakeResult<Vec<Table>> {
-        let snapshot = self.conn.latest_snapshot(true).await?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
         let catalog = snapshot.catalog().await?;
         let tables = if let Some(schema) = schema {
             self.list_tables_in_schema(catalog.schema(schema)?)
@@ -298,7 +346,7 @@ impl Ducklake {
 
     /// List the names of all schemas in the catalog.
     pub async fn list_schemas(&self) -> DucklakeResult<Vec<String>> {
-        let snapshot = self.conn.latest_snapshot(true).await?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
         let catalog = snapshot.catalog().await?;
         Ok(catalog
             .list_schemas()
@@ -347,7 +395,7 @@ impl DucklakeConnection {
         &self,
         author_info: Option<AuthorInfo>,
     ) -> DucklakeResult<Transaction<'_>> {
-        let snapshot = self.latest_snapshot(false).await?;
+        let snapshot = self.snapshot(SnapshotAccess::Write).await?;
         let metadata = self.0.metadata_cache.get_metadata();
         let tx = Transaction::new(
             &self.0.snapshot_cache,
@@ -361,30 +409,52 @@ impl DucklakeConnection {
         Ok(tx)
     }
 
-    /// Read the latest snapshot from the database and return it. Future calls to
-    /// [`DucklakeConnection::current_snapshot`] will also return this snapshot.
-    pub(crate) async fn latest_snapshot(
-        &self,
-        tolerate_immutable: bool,
-    ) -> DucklakeResult<Arc<Snapshot>> {
-        if let Some(travel_snapshot) = &self.0.travel_snapshot {
-            if !tolerate_immutable {
-                return Err(DucklakeError::ImmutableDucklake);
+    /// Ensure that write operations are permitted on this connection.
+    pub(crate) fn check_writable(&self) -> DucklakeResult<()> {
+        match self.0.mode {
+            ConnectionMode::ReadWrite => Ok(()),
+            ConnectionMode::ReadOnly | ConnectionMode::TimeTravel(_) => {
+                Err(DucklakeError::ReadonlyDucklake)
             }
-            Ok(travel_snapshot.clone())
-        } else {
-            self.0.snapshot_cache.get_latest().await
+        }
+    }
+
+    /// Whether this connection rejects writes.
+    pub(crate) fn is_readonly(&self) -> bool {
+        !matches!(self.0.mode, ConnectionMode::ReadWrite)
+    }
+
+    /// Resolve the snapshot for the given [`SnapshotAccess`] intent, applying the mutability check
+    /// implied by that intent in the same step. When the head is resolved from the database,
+    /// future calls to [`DucklakeConnection::current_snapshot`] will also return that snapshot.
+    pub(crate) async fn snapshot(&self, access: SnapshotAccess) -> DucklakeResult<Arc<Snapshot>> {
+        match (access, &self.0.mode) {
+            // Writes are disallowed for read-only or time-travel connections.
+            (SnapshotAccess::Write, ConnectionMode::ReadOnly | ConnectionMode::TimeTravel(_)) => {
+                Err(DucklakeError::ReadonlyDucklake)
+            }
+            // Head access is disallowed for time-travel connections.
+            (SnapshotAccess::Head, ConnectionMode::TimeTravel(_)) => {
+                Err(DucklakeError::SnapshotPinned)
+            }
+            (SnapshotAccess::Any, ConnectionMode::TimeTravel(travel_snapshot)) => {
+                Ok(travel_snapshot.clone())
+            }
+            (_, ConnectionMode::ReadWrite | ConnectionMode::ReadOnly) => {
+                self.0.snapshot_cache.get_latest().await
+            }
         }
     }
 
     /// Read the current snapshot from the in-memory cache. This might be stale if another
     /// process has committed a new snapshot since the last time
-    /// [`DucklakeConnection::latest_snapshot`] was called.
+    /// [`DucklakeConnection::snapshot`] resolved the head.
     pub(crate) fn current_snapshot(&self) -> Arc<Snapshot> {
-        if let Some(travel_snapshot) = &self.0.travel_snapshot {
-            travel_snapshot.clone()
-        } else {
-            self.0.snapshot_cache.get_current()
+        match &self.0.mode {
+            ConnectionMode::TimeTravel(travel_snapshot) => travel_snapshot.clone(),
+            ConnectionMode::ReadWrite | ConnectionMode::ReadOnly => {
+                self.0.snapshot_cache.get_current()
+            }
         }
     }
 }
@@ -467,6 +537,12 @@ impl Ducklake {
     pub fn metadata(&self) -> GlobalMetadata {
         self.conn.metadata().global_metadata()
     }
+
+    /// Whether this connection rejects writes. This is `true` for both read-only and
+    /// time-traveling connections.
+    pub fn is_readonly(&self) -> bool {
+        self.conn.is_readonly()
+    }
 }
 
 /* -------------------------------------------- SET -------------------------------------------- */
@@ -479,8 +555,9 @@ impl Ducklake {
         value: &str,
         schema: Option<&str>,
     ) -> DucklakeResult<()> {
+        self.conn.check_writable()?;
         if let Some(schema_name) = schema {
-            let snapshot = self.conn.latest_snapshot(true).await?;
+            let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
             let catalog = snapshot.catalog().await?;
             let schema_id = catalog.schema(schema_name)?.id().unwrap();
             self.conn
@@ -500,8 +577,9 @@ impl Ducklake {
 
     /// Unset a metadata option at the global or schema scope.
     pub async fn unset_metadata(&self, key: &str, schema: Option<&str>) -> DucklakeResult<()> {
+        self.conn.check_writable()?;
         if let Some(schema_name) = schema {
-            let snapshot = self.conn.latest_snapshot(true).await?;
+            let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
             let catalog = snapshot.catalog().await?;
             let schema_id = catalog.schema(schema_name)?.id().unwrap();
             self.conn
@@ -523,6 +601,7 @@ impl DucklakeConnection {
         value: &str,
         table_id: i64,
     ) -> DucklakeResult<()> {
+        self.check_writable()?;
         self.0
             .metadata_cache
             .set_table(table_id, key.to_string(), value.to_string())
@@ -534,6 +613,7 @@ impl DucklakeConnection {
         key: &str,
         table_id: i64,
     ) -> DucklakeResult<()> {
+        self.check_writable()?;
         self.0.metadata_cache.unset_table(table_id, key).await
     }
 }

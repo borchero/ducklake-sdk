@@ -19,6 +19,7 @@ use sea_query::{
 use super::DryRun;
 use super::utils::LookupTableHandle;
 use crate::catalog::Catalog;
+use crate::ducklake::SnapshotAccess;
 use crate::spec::*;
 use crate::{Ducklake, DucklakeResult, SnapshotMetadata, db, io};
 
@@ -87,7 +88,7 @@ impl Ducklake {
         // NOTE: We must fetch the catalog before we start the transaction as we could otherwise
         //  deadlock if there's only one connection in the connection pool.
         let catalog = if matches!(dry_run, DryRun::No) {
-            let latest_snapshot = self.conn.latest_snapshot(false).await?;
+            let latest_snapshot = self.conn.snapshot(SnapshotAccess::Write).await?;
             Some(latest_snapshot.catalog().await?.clone())
         } else {
             None

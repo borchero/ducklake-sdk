@@ -24,13 +24,13 @@ mod ducklake_module {
     use crate::error::{
         AlreadyExistsError,
         AlreadyInitializedError,
-        ImmutableDucklakeError,
         InvalidCastError,
         InvalidNullValueError,
         InvalidNullabilityChangeError,
         NotFoundError,
         NotInitializedError,
         OutdatedVersionError,
+        ReadonlyDucklakeError,
         TransactionConflictError,
     };
     #[pymodule_export]

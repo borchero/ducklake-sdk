@@ -1,6 +1,6 @@
 use arrow_array::RecordBatch;
 
-use crate::ducklake::DucklakeConnection;
+use crate::ducklake::{DucklakeConnection, SnapshotAccess};
 use crate::{DucklakeResult, IntoColumnName, TableMetadata, TableName, scan, utils};
 
 /// Handle to a table in the DuckLake catalog.
@@ -125,7 +125,7 @@ impl Table {
     pub async fn get_write_info(
         &self,
     ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator)> {
-        let snapshot = self.conn.latest_snapshot(false).await?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Write).await?;
         let catalog = snapshot.catalog().await?;
         let meta = self.conn.metadata();
         let metadata = meta.table_metadata(Some(self.schema_id), Some(self.id));
@@ -259,7 +259,7 @@ impl Table {
     ///
     /// Currently, this fails if any data is inlined.
     pub async fn scan(&self) -> DucklakeResult<crate::ScanResult> {
-        let snapshot = self.conn.latest_snapshot(true).await?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
         let data_path = snapshot
             .catalog()
             .await?
