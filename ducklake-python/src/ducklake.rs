@@ -152,6 +152,10 @@ impl PyDucklake {
             .map_err(error::into_pyerr)
     }
 
+    pub fn has_table(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<bool> {
+        block_on(py, self.0.table_exists(name.0)).map_err(error::into_pyerr)
+    }
+
     pub fn list_tables(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyTable>> {
         block_on(py, self.0.list_tables(schema.as_deref()))
             .map(|tables| tables.into_iter().map(PyTable::new).collect())

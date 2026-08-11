@@ -45,6 +45,17 @@ def test_get_table_not_found(shared_ducklake: dl.Ducklake, random_table_name: st
         shared_ducklake.get_table(random_table_name)
 
 
+def test_has_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    assert not shared_ducklake.has_table(random_table_name)
+    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+
+    # Act & Assert
+    assert shared_ducklake.has_table(random_table_name)
+    assert shared_ducklake.has_table(("main", random_table_name))
+    assert not shared_ducklake.has_table(f"nonexistent_schema.{random_table_name}")
+
+
 def test_get_table_by_tuple(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})

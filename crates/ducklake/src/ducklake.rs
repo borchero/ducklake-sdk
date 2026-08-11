@@ -247,6 +247,17 @@ impl Ducklake {
         Ok(self.maybe_table_from_catalog(catalog, &name)?.unwrap())
     }
 
+    /// Returns whether a table with the provided name exists in the catalog.
+    pub async fn table_exists(
+        &self,
+        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+    ) -> DucklakeResult<bool> {
+        let name = name.try_into().map_err(|e| e.into())?;
+        let snapshot = self.conn.latest_snapshot(true).await?;
+        let catalog = snapshot.catalog().await?;
+        Ok(catalog.table(&name).is_ok())
+    }
+
     fn maybe_table_from_catalog(
         &self,
         catalog: &Catalog,
