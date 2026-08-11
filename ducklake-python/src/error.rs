@@ -16,7 +16,7 @@ create_exception!(
     PyException
 );
 create_exception!(ducklake.exceptions, TransactionConflictError, PyException);
-create_exception!(ducklake.exceptions, ImmutableDucklakeError, PyException);
+create_exception!(ducklake.exceptions, ReadonlyDucklakeError, PyException);
 
 pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
     use DucklakeError::*;
@@ -39,7 +39,7 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
             InvalidNullabilityChangeError::new_err(error.to_string())
         }
         TransactionConflict(_) => TransactionConflictError::new_err(error.to_string()),
-        ImmutableDucklake => ImmutableDucklakeError::new_err(error.to_string()),
+        ReadonlyDucklake => ReadonlyDucklakeError::new_err(error.to_string()),
         InvalidChanges(_) => PyValueError::new_err(error.to_string()),
         _ => pyo3::exceptions::PyRuntimeError::new_err(error.to_string()),
     }

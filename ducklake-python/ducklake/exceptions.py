@@ -1,25 +1,25 @@
 from ._native import (
     AlreadyExistsError,
     AlreadyInitializedError,
-    ImmutableDucklakeError,
     InvalidCastError,
     InvalidNullabilityChangeError,
     InvalidNullValueError,
     NotFoundError,
     NotInitializedError,
     OutdatedVersionError,
+    ReadonlyDucklakeError,
     TransactionConflictError,
 )
 
 __all__ = [
     "AlreadyExistsError",
     "AlreadyInitializedError",
-    "ImmutableDucklakeError",
     "InvalidCastError",
     "InvalidNullabilityChangeError",
     "InvalidNullValueError",
     "NotFoundError",
     "NotInitializedError",
     "OutdatedVersionError",
+    "ReadonlyDucklakeError",
     "TransactionConflictError",
 ]

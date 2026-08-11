@@ -84,6 +84,20 @@ class Ducklake:
         )
         return Ducklake._from_pyducklake(pyducklake, self._connection_args, self._storage_options)
 
+    def readonly(self) -> Ducklake:
+        """Obtain a read-only view of this DuckLake.
+
+        Unlike time travel (see :meth:`at`), the returned instance still follows the latest
+        snapshot for reads; it only rejects write operations. Any attempt to make modifications
+        raises an exception.
+
+        Returns:
+            A new :class:`Ducklake` instance that rejects all write operations.
+        """
+        return Ducklake._from_pyducklake(
+            self._pyducklake.readonly(), self._connection_args, self._storage_options
+        )
+
     def get_latest_snapshot(self) -> SnapshotMetadata:
         """Get metadata for the latest snapshot in the catalog.
 

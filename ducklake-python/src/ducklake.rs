@@ -37,10 +37,12 @@ pub(crate) fn connect(
     snapshot_id: Option<i64>,
     snapshot_timestamp: Option<chrono::DateTime<chrono::Utc>>,
     migrate: bool,
+    readonly: bool,
     storage_options: Vec<(String, String)>,
 ) -> PyResult<PyDucklake> {
     let mut options = ConnectOptions::new(url)
         .with_migrate(migrate)
+        .with_readonly(readonly)
         .with_storage_options(storage_options);
     if let Some(id) = snapshot_id {
         options = options.with_snapshot_id(id);
@@ -69,6 +71,10 @@ impl PyDucklake {
         block_on(py, self.0.at_snapshot_timestamp(timestamp))
             .map(PyDucklake)
             .map_err(error::into_pyerr)
+    }
+
+    pub fn readonly(&self) -> PyDucklake {
+        PyDucklake(self.0.readonly())
     }
 
     pub fn get_latest_snapshot(&self, py: Python) -> PyResult<Wrap<SnapshotMetadata>> {

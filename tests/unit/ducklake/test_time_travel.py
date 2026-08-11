@@ -76,7 +76,7 @@ def test_time_travel_no_transaction(shared_ducklake: dl.Ducklake, random_table_n
     time_traveled_table = shared_ducklake.at(snapshot_id).get_table(random_table_name)
 
     # Act
-    with pytest.raises(dlexc.ImmutableDucklakeError):
+    with pytest.raises(dlexc.ReadonlyDucklakeError):
         time_traveled_table.add_tag("foo", "bar")
 
 
