@@ -254,6 +254,21 @@ class Ducklake:
         pytable = self._pyducklake.table(name)
         return Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
 
+    def has_table(self, name: str | tuple[str, str] | TableName) -> bool:
+        """Check whether a table exists in the catalog.
+
+        Args:
+            name: The name of the table. This can either be a string or a TableName tuple. If
+                a string is provided, it is parsed just like DuckDB parses table names: it must
+                be of the format `<schema>.<table>` where the schema is optional and defaults to
+                "main". If either the schema or table name contains special characters, both must
+                be quoted using double quotes.
+
+        Returns:
+            Whether a table with the given name exists.
+        """
+        return self._pyducklake.has_table(name)
+
     def list_tables(self, schema: str | None = None) -> list[Table]:
         """List all tables in the catalog.
 
