@@ -108,21 +108,23 @@ class Table:
         """Scan the table and return all data files with their associated delete files."""
         return self._pytable.scan()
 
-    def write_data_files(self, files: Sequence[str | WriteDataFile]) -> None:
+    def write_data_files(self, files: str | WriteDataFile | Sequence[str | WriteDataFile]) -> None:
         """Register existing Parquet files with the table without rewriting them.
 
         Args:
-            files: The data files to add. Each entry may either be a path to a Parquet file or a
-                :class:`WriteDataFile` for full control over statistics and partition values. Paths
-                may be relative to the table's data path or absolute (including remote URLs such as
-                ``s3://``).
+            files: The data files to add. This may be a single file or a sequence of files. Each
+                entry may either be a path to a Parquet file or a :class:`WriteDataFile` for full
+                control over statistics and partition values. Paths may be relative to the table's
+                data path or absolute (including remote URLs such as ``s3://``).
 
         Note:
             For any file whose statistics are not provided, the statistics are computed by reading
-            the file's Parquet footer when committing. Ownership of the added files is transferred
-            to DuckLake, i.e. they may be deleted by subsequent maintenance operations and must not
-            be modified externally.
+            the file's Parquet footer while registering the file. Ownership of the added files is
+            transferred to DuckLake, i.e. they may be deleted by subsequent maintenance operations
+            and must not be modified externally.
         """
+        if isinstance(files, (str, WriteDataFile)):
+            files = [files]
         self._pytable.write_data_files(
             [WriteDataFile(f) if isinstance(f, str) else f for f in files]
         )
