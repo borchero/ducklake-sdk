@@ -3,9 +3,9 @@ members = ["crates/ducklake", "crates/ducklake-macros", "ducklake-python"]
 resolver = "2"
 
 [workspace.dependencies]
-arrow-arith = "59.0"
-arrow-array = "59.0"
-arrow-schema = "59.0"
+arrow-arith = "59.2"
+arrow-array = "59.2"
+arrow-schema = "59.2"
 async-recursion = "1.1"
 bytes = "1.12"
 chrono = "0.4"
@@ -15,7 +15,7 @@ hex = "0.4"
 indexmap = "2.14"
 itertools = "0.15"
 object_store = "0.13"
-parquet = "59.0"
+parquet = "59.2"
 percent-encoding = "2.3"
 proc-macro2 = "1.0"
 pyo3 = "0.28"
@@ -38,18 +38,6 @@ uuid = "1.23"
 
 ducklake = { path = "crates/ducklake", version = "0.0.0" }
 ducklake-macros = { path = "crates/ducklake-macros", version = "0.0.0" }
-
-# FIXME: Temporarily override arrow-rs with main until https://github.com/apache/arrow-rs/pull/10514 is released
-[patch.crates-io]
-arrow-arith = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
-arrow-array = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
-arrow-buffer = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
-arrow-cast = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
-arrow-data = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
-arrow-ord = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
-arrow-schema = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
-arrow-select = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
-parquet = { git = "https://github.com/apache/arrow-rs", rev = "ed92960c8a85eda657fce3525c905616ccc5a983" }
 
 [profile.release]
 codegen-units = 1
