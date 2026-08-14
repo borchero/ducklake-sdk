@@ -177,19 +177,23 @@ class ConnectionArgs:
         This is different to the Python string representation as Rust's sqlx uses one slash fewer
         for SQLite URLs.
         """
-        result = str(self)
+        result = self._render_url(hide_password=False)
         if self.dialect == "sqlite":
             result = result.replace("sqlite:///", "sqlite://", 1)
         return result
 
     def __str__(self) -> str:
+        return self._render_url()
+
+    def _render_url(self, *, hide_password: bool = True) -> str:
         match self.dialect:
             case "postgresql" | "mysql":
                 url = self.dialect + "://"
                 if self.username is not None:
                     url += quote(self.username, safe=" +")
                     if self.password is not None:
-                        url += ":" + quote(str(self.password), safe=" +")
+                        password = "***" if hide_password else quote(str(self.password), safe=" +")
+                        url += ":" + password
                     url += "@"
                 if self.host is not None:
                     if ":" in self.host:

@@ -44,12 +44,30 @@ def test_fail_connect_when_not_created(catalog_url: str) -> None:
         dl.connect(catalog_url)
 
 
-def test_ducklake_repr(ducklake: dl.Ducklake, catalog_url: str) -> None:
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("sqlite:///path/to/db.db", 'Ducklake(url="sqlite:///path/to/db.db")'),
+        (
+            "postgresql://user:secret@localhost:5432/db",
+            'Ducklake(url="postgresql://user:***@localhost:5432/db")',
+        ),
+        (
+            "mysql://user:p%40ss@localhost:3306/db",
+            'Ducklake(url="mysql://user:***@localhost:3306/db")',
+        ),
+    ],
+)
+def test_ducklake_repr(url: str, expected: str) -> None:
+    # Arrange
+    ducklake = dl.Ducklake.__new__(dl.Ducklake)
+    ducklake._connection_args = _sanitize_url(url)
+
     # Act
     actual = repr(ducklake)
 
     # Assert
-    assert actual == f'Ducklake(url="{catalog_url}")'
+    assert actual == expected
 
 
 def test_data_path(catalog: str, tmp_path: Path) -> None:
@@ -74,25 +92,31 @@ def test_data_path(catalog: str, tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "url",
+    ("url", "expected"),
     [
-        "sqlite:///path/to/db.db",
-        "sqlite:///path/to/db.db?mode=ro",
-        "postgresql://localhost",
-        "postgresql://user@localhost",
-        "postgresql://user:pass@localhost:5432/db",
-        "postgresql://user:pass@localhost:5432/db?sslmode=require",
-        "mysql://user:pass@localhost:3306/db",
-        "postgresql://[::1]:5432/db",
+        ("sqlite:///path/to/db.db", "sqlite:///path/to/db.db"),
+        ("sqlite:///path/to/db.db?mode=ro", "sqlite:///path/to/db.db?mode=ro"),
+        ("postgresql://localhost", "postgresql://localhost"),
+        ("postgresql://user@localhost", "postgresql://user@localhost"),
+        (
+            "postgresql://user:pass@localhost:5432/db",
+            "postgresql://user:***@localhost:5432/db",
+        ),
+        (
+            "postgresql://user:pass@localhost:5432/db?sslmode=require",
+            "postgresql://user:***@localhost:5432/db?sslmode=require",
+        ),
+        ("mysql://user:pass@localhost:3306/db", "mysql://user:***@localhost:3306/db"),
+        ("postgresql://[::1]:5432/db", "postgresql://[::1]:5432/db"),
     ],
 )
-def test_connection_args_url_roundtrip(url: str) -> None:
+def test_connection_args_str(url: str, expected: str) -> None:
     # Act
     args = _sanitize_url(url)
     actual = str(args)
 
     # Assert
-    assert actual == url
+    assert actual == expected
 
 
 def test_connection_args_supports_dialect_with_driver() -> None:
