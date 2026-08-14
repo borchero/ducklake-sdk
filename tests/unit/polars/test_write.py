@@ -48,14 +48,18 @@ def test_sink_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     )
 
     # -- Table stats
-    table_stats = read_table_stats(str(shared_ducklake._connection_args), random_table_name)
+    table_stats = read_table_stats(
+        shared_ducklake._connection_args.render_as_string(hide_password=False),
+        random_table_name,
+    )
     assert table_stats["record_count"] == 100
     assert table_stats["next_row_id"] == 100
     assert table_stats["file_size_bytes"] == data_file.statistics.file_size_bytes
 
     # -- Table column stats
     table_column_stats = read_table_column_stats(
-        str(shared_ducklake._connection_args), random_table_name
+        shared_ducklake._connection_args.render_as_string(hide_password=False),
+        random_table_name,
     )
     assert table_column_stats[1]["min_value"] == "0"
     assert table_column_stats[1]["max_value"] == "99"
@@ -99,14 +103,18 @@ def test_write_parquet_inline(shared_ducklake: dl.Ducklake, random_table_name: s
     assert_frame_equal(df, pl.DataFrame(scan_result.inline_data[0]))
 
     # -- Table stats
-    table_stats = read_table_stats(str(shared_ducklake._connection_args), random_table_name)
+    table_stats = read_table_stats(
+        shared_ducklake._connection_args.render_as_string(hide_password=False),
+        random_table_name,
+    )
     assert table_stats["record_count"] == num_rows
     assert table_stats["next_row_id"] == num_rows
     assert table_stats["file_size_bytes"] == 0
 
     # -- Table column stats
     table_column_stats = read_table_column_stats(
-        str(shared_ducklake._connection_args), random_table_name
+        shared_ducklake._connection_args.render_as_string(hide_password=False),
+        random_table_name,
     )
     assert table_column_stats[1]["min_value"] == "0"
     assert table_column_stats[1]["max_value"] == f"{num_rows - 1}"
