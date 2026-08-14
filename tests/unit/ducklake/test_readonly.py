@@ -90,6 +90,7 @@ def test_readonly_allows_reads(shared_ducklake: dl.Ducklake, random_table_name: 
     assert random_table_name in [table.name[1] for table in readonly.list_tables()]
 
 
+@pytest.mark.skip_config(catalog="mysql", reason="The DuckDB MySQL connector is unreliable.")
 def test_readonly_blocks_duckdb_write(
     shared_ducklake: dl.Ducklake, random_table_name: str
 ) -> None:
