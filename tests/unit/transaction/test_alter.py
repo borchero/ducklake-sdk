@@ -13,9 +13,12 @@ def test_rename_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
 
     # Act
     with shared_ducklake.transaction() as tx:
-        tx.table(random_table_name).rename(new_table_name)
+        transaction_table = tx.table(random_table_name)
+        transaction_table.rename(new_table_name)
+        transaction_table_name = transaction_table.name
 
     # Assert
+    assert transaction_table_name == ("main", new_table_name)
     table = shared_ducklake.get_table(new_table_name)
     assert table.name == ("main", new_table_name)
 

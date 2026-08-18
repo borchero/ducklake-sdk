@@ -67,6 +67,24 @@ impl PyTransaction {
         self.tx().delete_schema(&name).map_err(error::into_pyerr)
     }
 
+    fn list_schemas(&mut self) -> Vec<String> {
+        self.tx().list_schemas()
+    }
+
+    fn list_tables(&mut self, schema: Option<String>) -> PyResult<Vec<PyTransactionTable>> {
+        let tables = self
+            .tx()
+            .list_tables(schema.as_deref())
+            .map_err(error::into_pyerr)?;
+        Ok(tables
+            .into_iter()
+            .map(|table| PyTransactionTable {
+                transaction: self.0.clone(),
+                table,
+            })
+            .collect())
+    }
+
     fn table(&mut self, name: Wrap<ducklake::TableName>) -> PyResult<PyTransactionTable> {
         // NOTE: We don't use the return value here as we'll run into lifetime issues in the
         //  Python bindings. We still use it to check that the table exists.
@@ -115,6 +133,11 @@ impl PyTransaction {
 
 #[pymethods]
 impl PyTransactionTable {
+    #[getter]
+    pub fn name(&self) -> (String, String) {
+        (self.table.schema.clone(), self.table.name.clone())
+    }
+
     #[getter]
     pub fn columns(&mut self) -> PyResult<Vec<Wrap<ducklake::Column>>> {
         let table = self.table.clone();
@@ -166,7 +189,9 @@ impl PyTransactionTable {
         let table = self.table.clone();
         self.tx()
             .rename_table(&table, &new_name)
-            .map_err(error::into_pyerr)
+            .map_err(error::into_pyerr)?;
+        self.table.name = new_name;
+        Ok(())
     }
 
     fn update_partitioning(

@@ -117,3 +117,27 @@ def test_delete_table_in_transaction(shared_ducklake: dl.Ducklake, random_table_
     # Assert
     with pytest.raises(dlexc.NotFoundError):
         shared_ducklake.get_table(random_table_name)
+
+
+def test_list_tables_reflects_transaction_changes(
+    shared_ducklake: dl.Ducklake, random_schema_name: str, random_table_name: str
+) -> None:
+    # Arrange
+    existing_table_name = random_table_name + "_existing"
+    shared_ducklake.create_schema(random_schema_name)
+    shared_ducklake.create_table(existing_table_name, {"x": dl.Int64()})
+
+    # Act
+    with shared_ducklake.transaction() as tx:
+        tx.table(existing_table_name).delete()
+        tx.create_table((random_schema_name, random_table_name), {"x": dl.Int64()})
+        all_tables = tx.list_tables()
+        schema_tables = tx.list_tables(schema=random_schema_name)
+
+    # Assert
+    all_table_names = {table.name for table in all_tables}
+    assert dl.TableName("main", existing_table_name) not in all_table_names
+    assert dl.TableName(random_schema_name, random_table_name) in all_table_names
+    assert [table.name for table in schema_tables] == [
+        dl.TableName(random_schema_name, random_table_name)
+    ]
