@@ -63,8 +63,10 @@ impl PyTransaction {
             .map_err(error::into_pyerr)
     }
 
-    fn delete_schema(&mut self, name: String) -> PyResult<()> {
-        self.tx().delete_schema(&name).map_err(error::into_pyerr)
+    fn delete_schema(&mut self, name: String, cascade: bool) -> PyResult<()> {
+        self.tx()
+            .delete_schema(&name, cascade)
+            .map_err(error::into_pyerr)
     }
 
     fn list_schemas(&mut self) -> Vec<String> {

@@ -68,6 +68,52 @@ def test_delete_missing_schema_raises(
         shared_ducklake.delete_schema(random_schema_name)
 
 
+def test_delete_nonempty_schema_without_cascade_raises(
+    shared_ducklake: dl.Ducklake, random_schema_name: str, random_table_name: str
+) -> None:
+    # Arrange
+    shared_ducklake.create_schema(random_schema_name)
+    shared_ducklake.create_table((random_schema_name, random_table_name), {"x": dl.Int64()})
+
+    # Act
+    with pytest.raises(ValueError, match="not empty"):
+        shared_ducklake.delete_schema(random_schema_name)
+
+    # Assert
+    assert random_schema_name in shared_ducklake.list_schemas()
+    assert shared_ducklake.has_table((random_schema_name, random_table_name))
+
+
+@pytest.mark.parametrize("use_transaction", [False, True])
+def test_delete_schema_cascade(
+    shared_ducklake: dl.Ducklake,
+    random_schema_name: str,
+    random_table_name: str,
+    use_transaction: bool,
+) -> None:
+    # Arrange
+    table_names = [random_table_name, random_table_name + "_other"]
+    shared_ducklake.create_schema(random_schema_name)
+    for table_name in table_names:
+        shared_ducklake.create_table((random_schema_name, table_name), {"x": dl.Int64()})
+    snapshot = shared_ducklake.get_latest_snapshot()
+
+    # Act
+    if use_transaction:
+        with shared_ducklake.transaction() as tx:
+            tx.delete_schema(random_schema_name, cascade=True)
+    else:
+        shared_ducklake.delete_schema(random_schema_name, cascade=True)
+
+    # Assert
+    assert shared_ducklake.get_latest_snapshot().id == snapshot.id + 1
+    assert random_schema_name not in shared_ducklake.list_schemas()
+    assert all(
+        not shared_ducklake.has_table((random_schema_name, table_name))
+        for table_name in table_names
+    )
+
+
 def test_create_schema_with_data_path(
     ducklake: dl.Ducklake,
     random_schema_name: str,

@@ -199,8 +199,17 @@ class Ducklake:
         """
         return self._pyducklake.list_schemas()
 
-    def delete_schema(self, name: str) -> None:
-        self._pyducklake.delete_schema(name)
+    def delete_schema(self, name: str, *, cascade: bool = False) -> None:
+        """Delete an existing schema from the catalog.
+
+        Args:
+            name: The name of the schema to delete.
+            cascade: Whether to also delete all tables in the schema.
+
+        Raises:
+            ValueError: If the schema is not empty and `cascade` is `False`.
+        """
+        self._pyducklake.delete_schema(name, cascade)
 
     # ------------------------------------------ TABLES ----------------------------------------- #
 

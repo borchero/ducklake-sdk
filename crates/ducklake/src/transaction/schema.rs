@@ -27,8 +27,14 @@ impl<'a> Transaction<'a> {
         Ok(())
     }
 
-    /// Delete an existing schema from the catalog.
-    pub fn delete_schema(&mut self, name: &str) -> DucklakeResult<()> {
+    /// Delete an existing schema from the catalog, optionally deleting all of its tables.
+    pub fn delete_schema(&mut self, name: &str, cascade: bool) -> DucklakeResult<()> {
+        if cascade {
+            for table_name in self.list_tables(Some(name))? {
+                self.delete_table(&table_name)?;
+            }
+        }
+
         let mut schema = self.catalog_mut().schema_mut(name)?;
         schema.delete()?;
         let change = Change::DeleteSchema {
