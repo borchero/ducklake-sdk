@@ -189,7 +189,9 @@ impl PyTransactionTable {
         let table = self.table.clone();
         self.tx()
             .rename_table(&table, &new_name)
-            .map_err(error::into_pyerr)
+            .map_err(error::into_pyerr)?;
+        self.table.name = new_name;
+        Ok(())
     }
 
     fn update_partitioning(
