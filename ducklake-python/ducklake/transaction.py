@@ -48,8 +48,17 @@ class Transaction:
     ) -> None:
         self._pytx.create_schema(name, data_path, if_exists)
 
-    def delete_schema(self, name: str) -> None:
-        self._pytx.delete_schema(name)
+    def delete_schema(self, name: str, *, cascade: bool = False) -> None:
+        """Delete an existing schema from the catalog.
+
+        Args:
+            name: The name of the schema to delete.
+            cascade: Whether to also delete all tables in the schema.
+
+        Raises:
+            ValueError: If the schema is not empty and `cascade` is `False`.
+        """
+        self._pytx.delete_schema(name, cascade)
 
     def list_schemas(self) -> list[str]:
         """List all schemas in the transaction-local catalog."""

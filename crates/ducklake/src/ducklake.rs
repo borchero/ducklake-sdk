@@ -483,8 +483,8 @@ macro_rules! within_transaction {
 within_transaction! {
     /// Create a new schema in the catalog.
     fn create_schema(name: &str, path: Option<String>, if_exists: IfExistsStrategy) -> DucklakeResult<()>;
-    /// Delete an existing schema from the catalog.
-    fn delete_schema(name: &str) -> DucklakeResult<()>;
+    /// Delete an existing schema from the catalog, optionally deleting all of its tables.
+    fn delete_schema(name: &str, cascade: bool) -> DucklakeResult<()>;
 }
 
 impl Ducklake {

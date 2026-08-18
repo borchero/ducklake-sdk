@@ -104,8 +104,8 @@ impl PyDucklake {
             .map_err(error::into_pyerr)
     }
 
-    pub fn delete_schema(&self, py: Python, name: String) -> PyResult<()> {
-        block_on(py, self.0.delete_schema(&name)).map_err(error::into_pyerr)
+    pub fn delete_schema(&self, py: Python, name: String, cascade: bool) -> PyResult<()> {
+        block_on(py, self.0.delete_schema(&name, cascade)).map_err(error::into_pyerr)
     }
 
     #[allow(clippy::too_many_arguments)]
