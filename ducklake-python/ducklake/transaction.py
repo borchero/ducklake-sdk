@@ -9,6 +9,7 @@ from .typedefs import (
     Partitioning,
     Schema,
     TableMetadata,
+    TableName,
     Value,
     WriteDataFile,
 )
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
 
     from ._native import PyDataFilePathGenerator, PyTransaction, PyTransactionTable
     from ._storage import StorageOptionSet
-    from .table import TableName
     from .typedefs import ArrowStreamExportable
 
 
@@ -50,6 +50,25 @@ class Transaction:
 
     def delete_schema(self, name: str) -> None:
         self._pytx.delete_schema(name)
+
+    def list_schemas(self) -> list[str]:
+        """List all schemas in the transaction-local catalog."""
+        return self._pytx.list_schemas()
+
+    def list_tables(self, schema: str | None = None) -> list[TransactionTable]:
+        """List all tables in the transaction-local catalog.
+
+        Args:
+            schema: Optional schema name to filter tables by. If None, returns all tables
+                across all schemas.
+
+        Returns:
+            A list of transaction table objects, optionally filtered by schema.
+        """
+        return [
+            TransactionTable._from_pytransaction_table(table, self._storage_options)
+            for table in self._pytx.list_tables(schema)
+        ]
 
     def table(self, name: str | TableName) -> TransactionTable:
         pytransaction_table = self._pytx.table(name)
@@ -161,6 +180,15 @@ class TransactionTable:
                 for col in partitioning
             ]
         )
+
+    # ------------------------------------------------------------------------------------------- #
+    #                                         PROPERTIES                                          #
+    # ------------------------------------------------------------------------------------------- #
+
+    @property
+    def name(self) -> TableName:
+        """The fully qualified name of the table."""
+        return TableName(*self._pytxtable.name)
 
     # ------------------------------------------------------------------------------------------- #
     #                                            WRITES                                           #

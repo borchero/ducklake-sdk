@@ -19,7 +19,7 @@ use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};
 use crate::primitives::Borrowed;
 use crate::spec::*;
-use crate::{DucklakeError, DucklakeResult, db};
+use crate::{DucklakeError, DucklakeResult, TableName, db};
 
 /// Transaction to make changes to the DuckLake.
 pub struct Transaction<'a> {
@@ -96,6 +96,40 @@ impl<'a> Transaction<'a> {
 
     pub(super) fn catalog_mut(&mut self) -> &mut Catalog {
         Arc::make_mut(&mut self.catalog)
+    }
+
+    /// List all tables in the transaction-local catalog, optionally restricted to a specific
+    /// schema.
+    pub fn list_tables(&self, schema: Option<&str>) -> DucklakeResult<Vec<TableName>> {
+        if let Some(schema) = schema {
+            Ok(self
+                .catalog
+                .schema(schema)?
+                .list_tables()
+                .into_iter()
+                .map(|table| table.name().clone())
+                .collect())
+        } else {
+            let mut tables = Vec::new();
+            for schema in self.catalog.list_schemas() {
+                tables.extend(
+                    schema
+                        .list_tables()
+                        .into_iter()
+                        .map(|table| table.name().clone()),
+                );
+            }
+            Ok(tables)
+        }
+    }
+
+    /// List the names of all schemas in the transaction-local catalog.
+    pub fn list_schemas(&self) -> Vec<String> {
+        self.catalog
+            .list_schemas()
+            .into_iter()
+            .map(|schema| schema.name().to_string())
+            .collect()
     }
 }
 
