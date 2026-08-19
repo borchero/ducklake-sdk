@@ -1,5 +1,6 @@
 import datetime as dt
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import polars as pl
 import polars.exceptions as plexc
@@ -166,6 +167,75 @@ def test_write_matches_timestamp_schema(
         assert error is None
         expected = df.with_columns(pl.col("x").cast(expected_dtype))
         assert_frame_equal(expected, table.read_polars())
+
+
+@pytest.mark.parametrize(
+    "eager",
+    [
+        pytest.param(False, id="lazy"),
+        pytest.param(
+            True,
+            marks=pytest.mark.skip_config(
+                catalog="mysql", reason="Data inlining is not yet supported for MySQL."
+            ),
+            id="eager",
+        ),
+    ],
+)
+def test_write_matches_nested_timestamp_schema(
+    shared_ducklake: dl.Ducklake, random_table_name: str, eager: bool
+) -> None:
+    # Arrange
+    ducklake_dtype = dl.Struct(
+        {"events": dl.List(dl.Struct({"at": dl.TimestampTz(), "value": dl.Int64()}))}
+    )
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": ducklake_dtype},
+    )
+    source_dtype = pl.Struct(
+        {
+            "events": pl.List(
+                pl.Struct(
+                    {
+                        "at": pl.Datetime("ms", "Europe/Berlin"),
+                        "value": pl.Int64,
+                    }
+                )
+            )
+        }
+    )
+    df = pl.DataFrame(
+        {
+            "x": pl.Series(
+                [
+                    {
+                        "events": [
+                            {
+                                "at": dt.datetime(
+                                    2024, 3, 31, 1, tzinfo=ZoneInfo("Europe/Berlin")
+                                ),
+                                "value": 1,
+                            }
+                        ]
+                    },
+                    {"events": []},
+                ],
+                dtype=source_dtype,
+            )
+        }
+    )
+
+    # Act
+    if eager:
+        table.write_polars(df)
+    else:
+        table.sink_polars(df.lazy())
+
+    # Assert
+    expected_dtype = pl.Schema(table.schema)["x"]
+    expected = df.with_columns(pl.col("x").cast(expected_dtype))
+    assert_frame_equal(expected, table.read_polars())
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")

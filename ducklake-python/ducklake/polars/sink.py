@@ -2,6 +2,7 @@ from functools import partial
 from typing import Literal, overload
 
 import polars as pl
+import polars.datatypes as pld
 from polars._typing import EngineType
 from polars.io.partition import FileProviderArgs, SinkedPathsCallbackArgs
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
@@ -153,15 +154,37 @@ def _normalize_timestamps(
     lf: pl.LazyFrame, source_schema: pl.Schema, *, target_schema: pl.Schema
 ) -> pl.LazyFrame:
     return lf.with_columns(
-        pl.col(name).cast(target_dtype)
-        for name, source_dtype in source_schema.items()
-        if (
-            isinstance(source_dtype, pl.Datetime)
-            and (target_dtype := target_schema.get(name)) is not None
-            and isinstance(target_dtype, pl.Datetime)
-            and (source_dtype.time_zone is None) == (target_dtype.time_zone is None)
+        pl.col(name).cast(
+            _normalize_timestamp_dtype(source_dtype, target_schema.get(name, source_dtype))
         )
+        for name, source_dtype in source_schema.items()
     )
+
+
+def _normalize_timestamp_dtype(
+    source_dtype: pl.DataType | pld.DataTypeClass,
+    target_dtype: pl.DataType | pld.DataTypeClass,
+) -> pl.DataType | pld.DataTypeClass:
+    match source_dtype, target_dtype:
+        case (
+            pl.Datetime(time_zone=source_time_zone),
+            pl.Datetime(time_zone=target_time_zone),
+        ) if (source_time_zone is None) == (target_time_zone is None):
+            return target_dtype
+        case pl.Struct(fields=source_fields), pl.Struct(fields=target_fields):
+            target_fields_by_name = {field.name: field.dtype for field in target_fields}
+            return pl.Struct(
+                {
+                    field.name: _normalize_timestamp_dtype(
+                        field.dtype, target_fields_by_name.get(field.name, field.dtype)
+                    )
+                    for field in source_fields
+                }
+            )
+        case pl.List(inner=source_inner), pl.List(inner=target_inner):
+            return pl.List(_normalize_timestamp_dtype(source_inner, target_inner))
+        case _:
+            return source_dtype
 
 
 # ------------------------------------------- DEFAULTS ------------------------------------------ #
