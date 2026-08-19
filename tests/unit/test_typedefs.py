@@ -62,10 +62,12 @@ def test_schema_from_arrow() -> None:
     ]
 
 
-def test_schema_from_arrow_renames_list_element() -> None:
+@pytest.mark.parametrize("list_factory_name", ["list_", "large_list"])
+def test_schema_from_arrow_renames_list_element(list_factory_name: str) -> None:
     # Arrange
     pa = pytest.importorskip("pyarrow")
-    arrow_schema = pa.schema({"values": pa.list_(pa.field("item", pa.int64()))})
+    list_factory = getattr(pa, list_factory_name)
+    arrow_schema = pa.schema({"values": list_factory(pa.field("item", pa.int64()))})
 
     # Act
     schema = dl.Schema(arrow_schema)
