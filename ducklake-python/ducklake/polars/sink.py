@@ -152,18 +152,16 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
 def _normalize_timestamps(
     lf: pl.LazyFrame, source_schema: pl.Schema, *, target_schema: pl.Schema
 ) -> pl.LazyFrame:
-    casts: list[pl.Expr] = []
-    for name, source_dtype in source_schema.items():
-        if name not in target_schema:
-            continue
-        target_dtype = target_schema[name]
+    return lf.with_columns(
+        pl.col(name).cast(target_dtype)
+        for name, source_dtype in source_schema.items()
         if (
-            isinstance(source_dtype, pl.Datetime)
+            (target_dtype := target_schema[name]) is not None
+            and isinstance(source_dtype, pl.Datetime)
             and isinstance(target_dtype, pl.Datetime)
             and (source_dtype.time_zone is None) == (target_dtype.time_zone is None)
-        ):
-            casts.append(pl.col(name).cast(target_dtype))
-    return lf.with_columns(casts)
+        )
+    )
 
 
 # ------------------------------------------- DEFAULTS ------------------------------------------ #
