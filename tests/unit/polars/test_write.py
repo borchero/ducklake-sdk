@@ -1,7 +1,8 @@
 import datetime as dt
-from typing import Any, Literal
+from typing import Any
 
 import polars as pl
+import polars.exceptions as plexc
 import pytest
 import sqlalchemy as sa
 from polars.testing import assert_frame_equal
@@ -97,43 +98,74 @@ def test_write_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> 
     ],
 )
 @pytest.mark.parametrize(
-    ("time_unit", "time_zone"),
+    ("ducklake_dtype", "source_dtype", "expected_dtype"),
     [
-        pytest.param("us", "Europe/Berlin", id="timezone"),
-        pytest.param("ms", "UTC", id="precision"),
+        pytest.param(
+            dl.TimestampTz(),
+            pl.Datetime("us", "Europe/Berlin"),
+            pl.Datetime("us", "UTC"),
+            id="timezone",
+        ),
+        pytest.param(
+            dl.TimestampTz(),
+            pl.Datetime("ms", "UTC"),
+            pl.Datetime("us", "UTC"),
+            id="timezone-aware-precision",
+        ),
+        pytest.param(
+            dl.Timestamp("microseconds"),
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            id="timezone-naive-precision",
+        ),
+        pytest.param(
+            dl.TimestampTz(),
+            pl.Datetime("ms"),
+            None,
+            id="missing-timezone",
+        ),
     ],
 )
-def test_write_normalizes_timestamp(
+def test_write_matches_timestamp_schema(
     shared_ducklake: dl.Ducklake,
     random_table_name: str,
     eager: bool,
-    time_unit: Literal["ms", "us"],
-    time_zone: str,
+    ducklake_dtype: dl.DataType,
+    source_dtype: pl.Datetime,
+    expected_dtype: pl.Datetime | None,
 ) -> None:
     # Arrange
-    table = shared_ducklake.create_table(random_table_name, {"x": dl.TimestampTz()})
+    table = shared_ducklake.create_table(random_table_name, {"x": ducklake_dtype})
     df = pl.DataFrame(
         {
             "x": pl.datetime_range(
                 dt.datetime(2024, 3, 31, 1),
                 dt.datetime(2024, 3, 31, 4),
                 interval="1h",
-                time_unit=time_unit,
-                time_zone=time_zone,
+                time_unit=source_dtype.time_unit,
+                time_zone=source_dtype.time_zone,
                 eager=True,
             )
         }
     )
 
     # Act
-    if eager:
-        table.write_polars(df)
-    else:
-        table.sink_polars(df.lazy())
+    error: plexc.SchemaError | None = None
+    try:
+        if eager:
+            table.write_polars(df)
+        else:
+            table.sink_polars(df.lazy())
+    except plexc.SchemaError as exc:
+        error = exc
 
     # Assert
-    expected = df.with_columns(pl.col("x").cast(pl.Datetime("us", "UTC")))
-    assert_frame_equal(expected, table.read_polars())
+    if expected_dtype is None:
+        assert error is not None
+    else:
+        assert error is None
+        expected = df.with_columns(pl.col("x").cast(expected_dtype))
+        assert_frame_equal(expected, table.read_polars())
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
