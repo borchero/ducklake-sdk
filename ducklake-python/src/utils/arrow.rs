@@ -41,24 +41,7 @@ pub(crate) fn schema_to_arrow(columns: Vec<Wrap<ducklake::Column>>) -> PyResult<
 
 fn arrow_field_from_column(column: &ducklake::Column) -> Field {
     // First, we translate the column into its direct Arrow representation
-    let field = column.to_arrow_field();
-    let field = match &column.dtype {
-        ducklake::DataType::List(inner) => field.with_data_type(ArrowDataType::LargeList(
-            Arc::new(arrow_field_from_column(inner)),
-        )),
-        ducklake::DataType::Struct(fields) => field.with_data_type(ArrowDataType::Struct(
-            fields.iter().map(arrow_field_from_column).collect(),
-        )),
-        ducklake::DataType::Map(key, value) => {
-            let entries = Field::new_struct(
-                "entries",
-                vec![arrow_field_from_column(key), arrow_field_from_column(value)],
-                false,
-            );
-            field.with_data_type(ArrowDataType::Map(Arc::new(entries), false))
-        }
-        _ => field,
-    };
+    let field = column.to_arrow_field_with(&arrow_field_from_column);
 
     // Then, we check for the comment tag to see if we need to attach metadata and/or convert to
     // a dictionary type
@@ -105,41 +88,15 @@ fn column_from_arrow_field(field: &Field) -> DucklakeResult<ducklake::Column> {
         ArrowDataType::Dictionary(_, value_type) => {
             let original_dtype = (field.data_type().clone(), field.dict_is_ordered().unwrap());
             let field = field.clone().with_data_type((**value_type).clone());
-            (ducklake::Column::try_from(&field)?, Some(original_dtype))
-        }
-        ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => {
-            let mut inner = column_from_arrow_field(inner)?;
-            inner.name = "element".to_string();
             (
-                nested_column_from_arrow_field(field, ducklake::DataType::List(Box::new(inner))),
-                None,
+                ducklake::Column::try_from_arrow_field_with(&field, &column_from_arrow_field)?,
+                Some(original_dtype),
             )
         }
-        ArrowDataType::Struct(fields) => {
-            let fields = fields
-                .iter()
-                .map(|field| column_from_arrow_field(field))
-                .collect::<Result<Vec<_>, _>>()?;
-            (
-                nested_column_from_arrow_field(field, ducklake::DataType::Struct(fields)),
-                None,
-            )
-        }
-        ArrowDataType::Map(entries, _) => {
-            let ArrowDataType::Struct(fields) = entries.data_type() else {
-                panic!("map entries field must have a struct data type")
-            };
-            let key = column_from_arrow_field(&fields[0])?;
-            let value = column_from_arrow_field(&fields[1])?;
-            (
-                nested_column_from_arrow_field(
-                    field,
-                    ducklake::DataType::Map(Box::new(key), Box::new(value)),
-                ),
-                None,
-            )
-        }
-        _ => (ducklake::Column::try_from(field)?, None),
+        _ => (
+            ducklake::Column::try_from_arrow_field_with(field, &column_from_arrow_field)?,
+            None,
+        ),
     };
 
     // In any case, we persist field metadata if there is any
@@ -155,20 +112,6 @@ fn column_from_arrow_field(field: &Field) -> DucklakeResult<ducklake::Column> {
         });
     }
     Ok(column)
-}
-
-fn nested_column_from_arrow_field(
-    field: &Field,
-    data_type: ducklake::DataType,
-) -> ducklake::Column {
-    ducklake::Column::new(field.name().clone(), data_type)
-        .nullable(field.is_nullable())
-        .field_id(
-            field
-                .metadata()
-                .get(PARQUET_FIELD_ID_META_KEY)
-                .and_then(|id| id.parse().ok()),
-        )
 }
 
 /* ----------------------------------------- FIELD IDS ----------------------------------------- */

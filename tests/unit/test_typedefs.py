@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 import polars as pl
@@ -124,6 +125,30 @@ def test_schema_polars_metadata_round_trip(polars_schema: pl.Schema) -> None:
 
     # Assert
     assert round_trip == polars_schema
+
+
+@pytest.mark.parametrize(
+    "nested_type_factory",
+    [
+        lambda pa, dtype: pa.large_list(pa.field("element", dtype, metadata={"kind": "enum"})),
+        lambda pa, dtype: pa.struct([pa.field("value", dtype, metadata={"kind": "enum"})]),
+        lambda pa, dtype: pa.map_(pa.int64(), pa.field("value", dtype, metadata={"kind": "enum"})),
+    ],
+    ids=["list", "struct", "map"],
+)
+def test_schema_arrow_metadata_round_trip_for_nested_dictionary(
+    nested_type_factory: Callable[[Any, Any], Any],
+) -> None:
+    # Arrange
+    pa = pytest.importorskip("pyarrow")
+    dictionary_type = pa.dictionary(pa.uint8(), pa.string())
+    arrow_schema = pa.schema({"nested": nested_type_factory(pa, dictionary_type)})
+
+    # Act
+    round_trip = pa.schema(dl.Schema(arrow_schema))
+
+    # Assert
+    assert round_trip.equals(arrow_schema, check_metadata=True)
 
 
 # ------------------------------------------- COLUMN -------------------------------------------- #
