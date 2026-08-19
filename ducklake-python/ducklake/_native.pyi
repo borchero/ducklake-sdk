@@ -15,7 +15,12 @@ from .typedefs import (
 
 # ------------------------------------------- DUCKLAKE ------------------------------------------ #
 
-def create(url: str, data_path: str, storage_options: list[tuple[str, str]]) -> PyDucklake: ...
+def create(
+    url: str,
+    data_path: str,
+    storage_options: list[tuple[str, str]],
+    time_zone: str,
+) -> PyDucklake: ...
 def connect(
     url: str,
     snapshot_id: int | None,
@@ -23,9 +28,12 @@ def connect(
     migrate: bool,
     readonly: bool,
     storage_options: list[tuple[str, str]],
+    time_zone: str,
 ) -> PyDucklake: ...
 
 class PyDucklake:
+    @property
+    def time_zone(self) -> str: ...
     def at_snapshot_id(self, snapshot_id: int) -> PyDucklake: ...
     def at_snapshot_timestamp(self, timestamp: dt.datetime) -> PyDucklake: ...
     def readonly(self) -> PyDucklake: ...

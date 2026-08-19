@@ -29,6 +29,30 @@ def test_create_connect_sqlalchemy_url(catalog_url: str, storage_path: str) -> N
     dl.connect(sa_url)
 
 
+def test_connection_time_zone_is_not_persisted(catalog_url: str, storage_path: str) -> None:
+    # Arrange
+    with dl.create(catalog_url, data_path=storage_path, time_zone="Europe/Berlin") as created:
+        # Act
+        readonly = created.readonly()
+        with (
+            dl.connect(catalog_url) as connected,
+            dl.connect(catalog_url, time_zone="America/New_York") as configured,
+        ):
+            # Assert
+            assert created.time_zone == "Europe/Berlin"
+            assert readonly.time_zone == "Europe/Berlin"
+            assert connected.time_zone == "UTC"
+            assert configured.time_zone == "America/New_York"
+
+
+def test_invalid_connection_time_zone_fails_before_creation(
+    catalog_url: str, storage_path: str
+) -> None:
+    # Act & Assert
+    with pytest.raises(ValueError, match="invalid time zone 'invalid'"):
+        dl.create(catalog_url, data_path=storage_path, time_zone="invalid")
+
+
 def test_fail_recreate(catalog_url: str, storage_path: str) -> None:
     # Arrange
     dl.create(catalog_url, data_path=storage_path)

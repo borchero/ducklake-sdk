@@ -15,6 +15,7 @@ arrow-schema = { workspace = true, features = ["canonical_extension_types"] }
 async-recursion = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 ducklake-macros = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }

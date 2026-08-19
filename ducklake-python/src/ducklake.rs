@@ -24,13 +24,18 @@ pub(crate) fn create(
     url: &str,
     data_path: &str,
     storage_options: Vec<(String, String)>,
+    time_zone: &str,
 ) -> PyResult<PyDucklake> {
-    let options = CreateOptions::new(url, data_path).with_storage_options(storage_options);
+    let options = CreateOptions::new(url, data_path)
+        .with_storage_options(storage_options)
+        .with_time_zone(time_zone)
+        .map_err(error::into_pyerr)?;
     let ducklake = block_on(py, Ducklake::create(options)).map_err(error::into_pyerr)?;
     Ok(PyDucklake(ducklake))
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn connect(
     py: Python,
     url: &str,
@@ -39,11 +44,15 @@ pub(crate) fn connect(
     migrate: bool,
     readonly: bool,
     storage_options: Vec<(String, String)>,
+    time_zone: &str,
 ) -> PyResult<PyDucklake> {
-    let mut options = ConnectOptions::new(url)
+    let options = ConnectOptions::new(url)
         .with_migrate(migrate)
         .with_readonly(readonly)
         .with_storage_options(storage_options);
+    let mut options = options
+        .with_time_zone(time_zone)
+        .map_err(error::into_pyerr)?;
     if let Some(id) = snapshot_id {
         options = options.with_snapshot_id(id);
     } else if let Some(timestamp) = snapshot_timestamp {
@@ -57,6 +66,11 @@ pub(crate) fn connect(
 
 #[pymethods]
 impl PyDucklake {
+    #[getter]
+    pub fn time_zone(&self) -> &str {
+        self.0.time_zone()
+    }
+
     pub fn at_snapshot_id(&self, py: Python, snapshot_id: i64) -> PyResult<PyDucklake> {
         block_on(py, self.0.at_snapshot_id(snapshot_id))
             .map(PyDucklake)
