@@ -17,7 +17,9 @@ DROP_COLUMN_PREFIX = "__ducklake_drop__"
 _POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
 
 
-def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.LazyFrame:
+def scan_ducklake(
+    table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
+) -> pl.LazyFrame:
     cache_path = Path(tempfile.mkdtemp())
 
     # 1) First, we read all relevant data from the table. We first scan, then get the
@@ -174,16 +176,46 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
                 )
             result = pl.concat([result, inline_lf])
 
+    # 5) Represent timezone-aware timestamps in the requested connection or per-read time zone.
+    result_time_zone = table._time_zone if time_zone is None else time_zone
+    result = result.with_columns(
+        pl.col(name).cast(_convert_datetime_time_zone(dtype, result_time_zone))
+        for name, dtype in target_schema.items()
+    )
+
     return result
 
 
-def read_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.DataFrame:
-    return scan_ducklake(table, include_file_paths=include_file_paths).collect(
-        optimizations=pl.QueryOptFlags._eager()
-    )
+def read_ducklake(
+    table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
+) -> pl.DataFrame:
+    return scan_ducklake(
+        table, include_file_paths=include_file_paths, time_zone=time_zone
+    ).collect(optimizations=pl.QueryOptFlags._eager())
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #
+
+
+def _convert_datetime_time_zone(
+    dtype: pl.DataType | pld.DataTypeClass, time_zone: str
+) -> pl.DataType | pld.DataTypeClass:
+    match dtype:
+        case pl.Datetime(time_unit=time_unit, time_zone=current_time_zone) if (
+            current_time_zone is not None
+        ):
+            return pl.Datetime(time_unit, time_zone)
+        case pl.Struct(fields=fields):
+            return pl.Struct(
+                [
+                    pl.Field(field.name, _convert_datetime_time_zone(field.dtype, time_zone))
+                    for field in fields
+                ]
+            )
+        case pl.List(inner=inner):
+            return pl.List(_convert_datetime_time_zone(inner, time_zone))
+        case _:
+            return dtype
 
 
 def _align_schema(

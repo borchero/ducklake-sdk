@@ -65,7 +65,13 @@ class Ducklake:
             self._connection_args,
             storage_options=self._storage_options,
             readonly=self._pyducklake.is_readonly(),
+            time_zone=self.time_zone,
         )
+
+    @property
+    def time_zone(self) -> str:
+        """The time zone used to represent timezone-aware timestamps when reading data."""
+        return self._pyducklake.time_zone
 
     # ---------------------------------------- SNAPSHOTS ---------------------------------------- #
 
@@ -258,7 +264,12 @@ class Ducklake:
             tags=list(tags.items()) if tags else None,
             if_exists=if_exists,
         )
-        return Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
+        return Table._from_pytable(
+            pytable,
+            lambda: self._duckdb_connection,
+            self._storage_options,
+            self.time_zone,
+        )
 
     def get_table(self, name: str | tuple[str, str] | TableName) -> Table:
         """Read a table from the catalog.
@@ -277,7 +288,12 @@ class Ducklake:
             NotFoundError: If the table does not exist.
         """
         pytable = self._pyducklake.table(name)
-        return Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
+        return Table._from_pytable(
+            pytable,
+            lambda: self._duckdb_connection,
+            self._storage_options,
+            self.time_zone,
+        )
 
     def has_table(self, name: str | tuple[str, str] | TableName) -> bool:
         """Check whether a table exists in the catalog.
@@ -306,7 +322,12 @@ class Ducklake:
         """
         pytables = self._pyducklake.list_tables(schema)
         return [
-            Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
+            Table._from_pytable(
+                pytable,
+                lambda: self._duckdb_connection,
+                self._storage_options,
+                self.time_zone,
+            )
             for pytable in pytables
         ]
 
@@ -621,10 +642,11 @@ def _make_duckdb_connection(
     data_path: str | None = None,
     storage_options: StorageOptionSet | None = None,
     readonly: bool = False,
+    time_zone: str = "UTC",
 ) -> duckdb.DuckDBPyConnection:
     import duckdb
 
-    con = duckdb.connect()
+    con = duckdb.connect(config={"TimeZone": time_zone})
     con.execute("INSTALL ducklake;")
 
     # Build options based on parameters

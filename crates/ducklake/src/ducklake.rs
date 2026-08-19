@@ -31,6 +31,8 @@ struct DucklakeConnectionInner {
     snapshot_cache: Arc<SnapshotCache>,
     /// Storage options to use for connecting to cloud storage.
     storage_options: Vec<(String, String)>,
+    /// Time zone used to represent timezone-aware timestamps when reading data.
+    time_zone: chrono_tz::Tz,
     /// The access mode of the connection, i.e. whether it is writable, read-only, or pinned to a
     /// historical snapshot via time travel.
     mode: ConnectionMode,
@@ -88,7 +90,14 @@ impl Ducklake {
         spec::init_catalog(&pool, config).await?;
 
         // Create the ducklake instance
-        Self::new(pool, None, false, options.storage_options).await
+        Self::new(
+            pool,
+            None,
+            false,
+            options.storage_options,
+            options.time_zone,
+        )
+        .await
     }
 
     /// Connect to an existing DuckLake by attaching to an existing catalog database.
@@ -110,7 +119,14 @@ impl Ducklake {
                 Some(SnapshotInfo::load_for_timestamp(&pool, timestamp).await?)
             }
         };
-        Self::new(pool, snapshot, options.readonly, options.storage_options).await
+        Self::new(
+            pool,
+            snapshot,
+            options.readonly,
+            options.storage_options,
+            options.time_zone,
+        )
+        .await
     }
 
     /// Disconnect from the catalog database, gracefully closing the underlying connection pool.
@@ -160,6 +176,7 @@ impl Ducklake {
         travel_snapshot: Option<SnapshotInfo>,
         readonly: bool,
         storage_options: Vec<(String, String)>,
+        time_zone: chrono_tz::Tz,
     ) -> DucklakeResult<Self> {
         let has_travel_snapshot = travel_snapshot.is_some();
 
@@ -180,6 +197,7 @@ impl Ducklake {
             metadata_cache: Arc::new(metadata_cache),
             snapshot_cache: Arc::new(snapshot_cache),
             storage_options,
+            time_zone,
             mode,
         };
         let ducklake = Ducklake {
@@ -237,6 +255,7 @@ impl Ducklake {
             metadata_cache: self.conn.0.metadata_cache.clone(),
             snapshot_cache: self.conn.0.snapshot_cache.clone(),
             storage_options: self.conn.0.storage_options.clone(),
+            time_zone: self.conn.0.time_zone,
             mode,
         };
         Ducklake {
@@ -367,6 +386,10 @@ impl DucklakeConnection {
 
     pub(crate) fn storage_options(&self) -> &[(String, String)] {
         &self.0.storage_options
+    }
+
+    pub(crate) fn time_zone(&self) -> &str {
+        self.0.time_zone.name()
     }
 }
 
@@ -542,6 +565,11 @@ impl Ducklake {
     /// time-traveling connections.
     pub fn is_readonly(&self) -> bool {
         self.conn.is_readonly()
+    }
+
+    /// The time zone used to represent timezone-aware timestamps when reading data.
+    pub fn time_zone(&self) -> &str {
+        self.conn.time_zone()
     }
 }
 

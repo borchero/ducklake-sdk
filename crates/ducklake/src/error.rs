@@ -29,6 +29,8 @@ pub enum DucklakeError {
     InvalidDataType(String),
     #[error("invalid partitions: {0}")]
     InvalidPartitions(String),
+    #[error("invalid time zone '{0}'")]
+    InvalidTimeZone(String),
     #[error("invalid partition transform: {0}")]
     InvalidPartitionTransform(String),
     #[error("invalid schema name '{name}': {reason}")]

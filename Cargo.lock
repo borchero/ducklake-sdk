@@ -666,6 +666,7 @@ dependencies = [
  "async-recursion",
  "bytes",
  "chrono",
+ "chrono-tz",
  "ducklake-macros",
  "futures",
  "hex",

@@ -25,6 +25,18 @@ To connect to an existing DuckLake, use {func}`ducklake.connect`:
 ducklake = dl.connect("sqlite:///metadata.sqlite")
 ```
 
+Timezone-aware timestamps are represented in UTC by default. Set a connection time zone to read them in another IANA
+time zone without changing the stored instants:
+
+```python
+ducklake = dl.connect(
+    "sqlite:///metadata.sqlite",
+    time_zone="Europe/Berlin",
+)
+```
+
+The setting belongs to this connection and is not persisted in the DuckLake catalog.
+
 When connecting to remote object storage, you may pass storage credentials via the `storage_options` argument:
 
 ```python
@@ -99,6 +111,12 @@ Reading mirrors the writing API. To get a Polars `LazyFrame` over the table cont
 ```python
 lf = table.scan_polars()
 df = lf.collect()
+```
+
+An individual read can override the connection time zone:
+
+```python
+utc_df = table.read_polars(time_zone="UTC")
 ```
 
 `ducklake` automatically applies any pending deletion files and inline deletions, so you always see a consistent view
