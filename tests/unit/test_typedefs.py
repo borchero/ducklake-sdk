@@ -62,6 +62,18 @@ def test_schema_from_arrow() -> None:
     ]
 
 
+def test_schema_from_arrow_renames_list_element() -> None:
+    # Arrange
+    pa = pytest.importorskip("pyarrow")
+    arrow_schema = pa.schema({"values": pa.list_(pa.field("item", pa.int64()))})
+
+    # Act
+    schema = dl.Schema(arrow_schema)
+
+    # Assert
+    assert schema.columns == [dl.Column("values", dl.List(dl.Int64()))]
+
+
 def test_schema_from_polars_enum() -> None:
     # Arrange
     polars_schema = pl.Schema({"e": pl.Enum(["a", "b", "c"])})
