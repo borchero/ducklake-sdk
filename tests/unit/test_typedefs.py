@@ -111,6 +111,7 @@ def test_schema_from_polars_categorical() -> None:
     [
         pl.Schema({"e": pl.Enum(["a", "b", "c"])}),
         pl.Schema({"c": pl.Categorical()}),
+        pl.Schema({"e": pl.List(pl.Enum(["a", "b", "c"]))}),
         pl.Schema({"e": pl.Enum(["x", "y"]), "c": pl.Categorical(), "n": pl.Int64()}),
     ],
 )
