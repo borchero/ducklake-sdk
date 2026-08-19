@@ -156,8 +156,8 @@ def _normalize_timestamps(
         pl.col(name).cast(target_dtype)
         for name, source_dtype in source_schema.items()
         if (
-            (target_dtype := target_schema[name]) is not None
-            and isinstance(source_dtype, pl.Datetime)
+            isinstance(source_dtype, pl.Datetime)
+            and (target_dtype := target_schema.get(name)) is not None
             and isinstance(target_dtype, pl.Datetime)
             and (source_dtype.time_zone is None) == (target_dtype.time_zone is None)
         )
