@@ -62,6 +62,20 @@ def test_schema_from_arrow() -> None:
     ]
 
 
+@pytest.mark.parametrize("list_factory_name", ["list_", "large_list"])
+def test_schema_from_arrow_renames_list_element(list_factory_name: str) -> None:
+    # Arrange
+    pa = pytest.importorskip("pyarrow")
+    list_factory = getattr(pa, list_factory_name)
+    arrow_schema = pa.schema({"values": list_factory(pa.field("item", pa.int64()))})
+
+    # Act
+    schema = dl.Schema(arrow_schema)
+
+    # Assert
+    assert schema.columns == [dl.Column("values", dl.List(dl.Int64()))]
+
+
 def test_schema_from_polars_enum() -> None:
     # Arrange
     polars_schema = pl.Schema({"e": pl.Enum(["a", "b", "c"])})
