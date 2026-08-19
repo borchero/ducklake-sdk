@@ -1,7 +1,9 @@
 import datetime as dt
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import polars as pl
+import polars.exceptions as plexc
 import pytest
 import sqlalchemy as sa
 from polars.testing import assert_frame_equal
@@ -96,19 +98,130 @@ def test_write_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> 
         ),
     ],
 )
-def test_write_converts_timestamp_timezone(
-    shared_ducklake: dl.Ducklake, random_table_name: str, eager: bool
+@pytest.mark.parametrize(
+    ("ducklake_dtype", "source_dtype", "expected_dtype"),
+    [
+        pytest.param(
+            dl.TimestampTz(),
+            pl.Datetime("us", "Europe/Berlin"),
+            pl.Datetime("us", "UTC"),
+            id="timezone",
+        ),
+        pytest.param(
+            dl.TimestampTz(),
+            pl.Datetime("ms", "UTC"),
+            pl.Datetime("us", "UTC"),
+            id="timezone-aware-precision",
+        ),
+        pytest.param(
+            dl.Timestamp("microseconds"),
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            id="timezone-naive-precision",
+        ),
+        pytest.param(
+            dl.TimestampTz(),
+            pl.Datetime("ms"),
+            None,
+            id="missing-timezone",
+        ),
+    ],
+)
+def test_write_matches_timestamp_schema(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    eager: bool,
+    ducklake_dtype: dl.DataType,
+    source_dtype: pl.Datetime,
+    expected_dtype: pl.Datetime | None,
 ) -> None:
     # Arrange
-    table = shared_ducklake.create_table(random_table_name, {"x": dl.TimestampTz()})
+    table = shared_ducklake.create_table(random_table_name, {"x": ducklake_dtype})
     df = pl.DataFrame(
         {
             "x": pl.datetime_range(
                 dt.datetime(2024, 3, 31, 1),
                 dt.datetime(2024, 3, 31, 4),
                 interval="1h",
-                time_zone="Europe/Berlin",
+                time_unit=source_dtype.time_unit,
+                time_zone=source_dtype.time_zone,
                 eager=True,
+            )
+        }
+    )
+
+    # Act
+    error: plexc.SchemaError | None = None
+    try:
+        if eager:
+            table.write_polars(df)
+        else:
+            table.sink_polars(df.lazy())
+    except plexc.SchemaError as exc:
+        error = exc
+
+    # Assert
+    if expected_dtype is None:
+        assert error is not None
+    else:
+        assert error is None
+        expected = df.with_columns(pl.col("x").cast(expected_dtype))
+        assert_frame_equal(expected, table.read_polars())
+
+
+@pytest.mark.parametrize(
+    "eager",
+    [
+        pytest.param(False, id="lazy"),
+        pytest.param(
+            True,
+            marks=pytest.mark.skip_config(
+                catalog="mysql", reason="Data inlining is not yet supported for MySQL."
+            ),
+            id="eager",
+        ),
+    ],
+)
+def test_write_matches_nested_timestamp_schema(
+    shared_ducklake: dl.Ducklake, random_table_name: str, eager: bool
+) -> None:
+    # Arrange
+    ducklake_dtype = dl.Struct(
+        {"events": dl.List(dl.Struct({"at": dl.TimestampTz(), "value": dl.Int64()}))}
+    )
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": ducklake_dtype},
+    )
+    source_dtype = pl.Struct(
+        {
+            "events": pl.List(
+                pl.Struct(
+                    {
+                        "at": pl.Datetime("ms", "Europe/Berlin"),
+                        "value": pl.Int64,
+                    }
+                )
+            )
+        }
+    )
+    df = pl.DataFrame(
+        {
+            "x": pl.Series(
+                [
+                    {
+                        "events": [
+                            {
+                                "at": dt.datetime(
+                                    2024, 3, 31, 1, tzinfo=ZoneInfo("Europe/Berlin")
+                                ),
+                                "value": 1,
+                            }
+                        ]
+                    },
+                    {"events": []},
+                ],
+                dtype=source_dtype,
             )
         }
     )
@@ -120,7 +233,8 @@ def test_write_converts_timestamp_timezone(
         table.sink_polars(df.lazy())
 
     # Assert
-    expected = df.with_columns(pl.col("x").dt.convert_time_zone("UTC"))
+    expected_dtype = pl.Schema(table.schema)["x"]
+    expected = df.with_columns(pl.col("x").cast(expected_dtype))
     assert_frame_equal(expected, table.read_polars())
 
 

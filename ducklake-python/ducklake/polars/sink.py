@@ -2,6 +2,7 @@ from functools import partial
 from typing import Literal, overload
 
 import polars as pl
+import polars.datatypes as pld
 from polars._typing import EngineType
 from polars.io.partition import FileProviderArgs, SinkedPathsCallbackArgs
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
@@ -131,9 +132,9 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
 def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.LazyFrame:
     target_schema = pl.Schema(table.schema)
 
-    # DuckLake stores timezone-aware timestamps in UTC. Polars considers datetimes with different
-    # timezones to be distinct types, so normalize timezone-aware inputs before matching schemas.
-    lf = lf.pipe_with_schema(_normalize_timestamp_timezones)
+    # Polars considers datetimes with different time units or timezones to be distinct types, so
+    # normalize compatible timestamp inputs before matching schemas.
+    lf = lf.pipe_with_schema(partial(_normalize_timestamps, target_schema=target_schema))
 
     # Ensure that the provided lazy frame aligns with the current schema of the table
     lf = lf.match_to_schema(target_schema)
@@ -149,12 +150,41 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
     return lf
 
 
-def _normalize_timestamp_timezones(lf: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
+def _normalize_timestamps(
+    lf: pl.LazyFrame, source_schema: pl.Schema, *, target_schema: pl.Schema
+) -> pl.LazyFrame:
     return lf.with_columns(
-        pl.col(name).dt.convert_time_zone("UTC")
-        for name, dtype in schema.items()
-        if isinstance(dtype, pl.Datetime) and dtype.time_zone is not None
+        pl.col(name).cast(
+            _normalize_timestamp_dtype(source_dtype, target_schema.get(name, source_dtype))
+        )
+        for name, source_dtype in source_schema.items()
     )
+
+
+def _normalize_timestamp_dtype(
+    source_dtype: pl.DataType | pld.DataTypeClass,
+    target_dtype: pl.DataType | pld.DataTypeClass,
+) -> pl.DataType | pld.DataTypeClass:
+    match source_dtype, target_dtype:
+        case (
+            pl.Datetime(time_zone=source_time_zone),
+            pl.Datetime(time_zone=target_time_zone),
+        ) if (source_time_zone is None) == (target_time_zone is None):
+            return target_dtype
+        case pl.Struct(fields=source_fields), pl.Struct(fields=target_fields):
+            target_fields_by_name = {field.name: field.dtype for field in target_fields}
+            return pl.Struct(
+                {
+                    field.name: _normalize_timestamp_dtype(
+                        field.dtype, target_fields_by_name.get(field.name, field.dtype)
+                    )
+                    for field in source_fields
+                }
+            )
+        case pl.List(inner=source_inner), pl.List(inner=target_inner):
+            return pl.List(_normalize_timestamp_dtype(source_inner, target_inner))
+        case _:
+            return source_dtype
 
 
 # ------------------------------------------- DEFAULTS ------------------------------------------ #
