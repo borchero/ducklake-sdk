@@ -30,6 +30,14 @@ impl Schema {
 
 impl Column {
     pub fn to_arrow_field(&self) -> ArrowField {
+        self.to_arrow_field_with(&Column::to_arrow_field)
+    }
+
+    #[doc(hidden)]
+    pub fn to_arrow_field_with(
+        &self,
+        convert_child: &impl Fn(&Column) -> ArrowField,
+    ) -> ArrowField {
         const PARQUET_FIELD_ID_KEY: &str = "PARQUET:field_id";
 
         let data_type = match &self.dtype {
@@ -65,15 +73,15 @@ impl Column {
             DataType::Blob => ArrowDataType::LargeBinary,
             DataType::Json => ArrowDataType::Utf8View,
             DataType::Uuid => ArrowDataType::FixedSizeBinary(16),
-            DataType::List(inner) => ArrowDataType::LargeList(Arc::new(inner.to_arrow_field())),
+            DataType::List(inner) => ArrowDataType::LargeList(Arc::new(convert_child(inner))),
             DataType::Struct(fields) => {
-                let fields = fields.iter().map(|f| f.to_arrow_field()).collect();
+                let fields = fields.iter().map(convert_child).collect();
                 ArrowDataType::Struct(fields)
             }
             DataType::Map(key, value) => {
                 let entries = ArrowField::new_struct(
                     "entries",
-                    vec![key.to_arrow_field(), value.to_arrow_field()],
+                    vec![convert_child(key), convert_child(value)],
                     false,
                 );
                 ArrowDataType::Map(Arc::new(entries), false)
@@ -118,10 +126,12 @@ impl From<TimestampPrecision> for ArrowTimeUnit {
 
 /* -------------------------------------- ARROW -> COLUMN -------------------------------------- */
 
-impl TryFrom<&ArrowField> for Column {
-    type Error = DucklakeError;
-
-    fn try_from(field: &ArrowField) -> Result<Self, Self::Error> {
+impl Column {
+    #[doc(hidden)]
+    pub fn try_from_arrow_field_with(
+        field: &ArrowField,
+        convert_child: &impl Fn(&ArrowField) -> Result<Column, DucklakeError>,
+    ) -> Result<Self, DucklakeError> {
         let dtype = match field.data_type() {
             ArrowDataType::Boolean => Ok(DataType::boolean()),
             ArrowDataType::Int8 => Ok(DataType::int8()),
@@ -175,29 +185,22 @@ impl TryFrom<&ArrowField> for Column {
                 Ok(DataType::uuid())
             }
             ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => {
-                let mut inner_type = Column::try_from(&**inner)?;
+                let mut inner_type = convert_child(inner)?;
                 inner_type.name = "element".to_string();
                 Ok(DataType::List(Box::new(inner_type)))
             }
-            ArrowDataType::Struct(fields) => {
-                let mut columns = Vec::with_capacity(fields.len());
-                for field in fields {
-                    let column = Column::try_from(&**field)?;
-                    columns.push(column);
-                }
-                Ok(DataType::struct_(
-                    fields
-                        .iter()
-                        .map(|f| Column::try_from(&**f))
-                        .try_collect()?,
-                ))
-            }
+            ArrowDataType::Struct(fields) => Ok(DataType::struct_(
+                fields
+                    .iter()
+                    .map(|field| convert_child(field))
+                    .try_collect()?,
+            )),
             ArrowDataType::Map(entries, _) => {
                 let ArrowDataType::Struct(fields) = entries.data_type() else {
                     panic!("map entries field must have a struct data type")
                 };
-                let key_type = Column::try_from(&*fields[0])?;
-                let value_type = Column::try_from(&*fields[1])?;
+                let key_type = convert_child(&fields[0])?;
+                let value_type = convert_child(&fields[1])?;
                 Ok(DataType::Map(Box::new(key_type), Box::new(value_type)))
             }
             other => Err(DucklakeError::UnsupportedArrowDataType(format!(
@@ -216,5 +219,13 @@ impl TryFrom<&ArrowField> for Column {
                 .get(PARQUET_FIELD_ID_META_KEY)
                 .and_then(|id_str| id_str.parse().ok()),
         })
+    }
+}
+
+impl TryFrom<&ArrowField> for Column {
+    type Error = DucklakeError;
+
+    fn try_from(field: &ArrowField) -> Result<Self, Self::Error> {
+        Self::try_from_arrow_field_with(field, &|field| Column::try_from(field))
     }
 }
