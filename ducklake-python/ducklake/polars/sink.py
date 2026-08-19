@@ -133,7 +133,7 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
 
     # DuckLake stores timezone-aware timestamps in UTC. Polars considers datetimes with different
     # timezones to be distinct types, so normalize timezone-aware inputs before matching schemas.
-    lf = lf.pipe_with_schema(_convert_timestamp_timezones)
+    lf = lf.pipe_with_schema(_normalize_timestamp_timezones)
 
     # Ensure that the provided lazy frame aligns with the current schema of the table
     lf = lf.match_to_schema(target_schema)
@@ -149,7 +149,7 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
     return lf
 
 
-def _convert_timestamp_timezones(lf: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
+def _normalize_timestamp_timezones(lf: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
     return lf.with_columns(
         pl.col(name).dt.convert_time_zone("UTC")
         for name, dtype in schema.items()
