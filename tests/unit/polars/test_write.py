@@ -83,6 +83,47 @@ def test_write_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> 
     assert_frame_equal(df, roundtrip_df)
 
 
+@pytest.mark.parametrize(
+    "eager",
+    [
+        pytest.param(False, id="lazy"),
+        pytest.param(
+            True,
+            marks=pytest.mark.skip_config(
+                catalog="mysql", reason="Data inlining is not yet supported for MySQL."
+            ),
+            id="eager",
+        ),
+    ],
+)
+def test_write_converts_timestamp_timezone(
+    shared_ducklake: dl.Ducklake, random_table_name: str, eager: bool
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.TimestampTz()})
+    df = pl.DataFrame(
+        {
+            "x": pl.datetime_range(
+                dt.datetime(2024, 3, 31, 1),
+                dt.datetime(2024, 3, 31, 4),
+                interval="1h",
+                time_zone="Europe/Berlin",
+                eager=True,
+            )
+        }
+    )
+
+    # Act
+    if eager:
+        table.write_polars(df)
+    else:
+        table.sink_polars(df.lazy())
+
+    # Assert
+    expected = df.with_columns(pl.col("x").dt.convert_time_zone("UTC"))
+    assert_frame_equal(expected, table.read_polars())
+
+
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
 def test_write_parquet_inline(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
