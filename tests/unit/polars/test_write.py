@@ -1,5 +1,5 @@
 import datetime as dt
-from typing import Any
+from typing import Any, Literal
 
 import polars as pl
 import pytest
@@ -96,8 +96,19 @@ def test_write_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> 
         ),
     ],
 )
-def test_write_converts_timestamp_timezone(
-    shared_ducklake: dl.Ducklake, random_table_name: str, eager: bool
+@pytest.mark.parametrize(
+    ("time_unit", "time_zone"),
+    [
+        pytest.param("us", "Europe/Berlin", id="timezone"),
+        pytest.param("ms", "UTC", id="precision"),
+    ],
+)
+def test_write_normalizes_timestamp(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    eager: bool,
+    time_unit: Literal["ms", "us"],
+    time_zone: str,
 ) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.TimestampTz()})
@@ -107,7 +118,8 @@ def test_write_converts_timestamp_timezone(
                 dt.datetime(2024, 3, 31, 1),
                 dt.datetime(2024, 3, 31, 4),
                 interval="1h",
-                time_zone="Europe/Berlin",
+                time_unit=time_unit,
+                time_zone=time_zone,
                 eager=True,
             )
         }
@@ -120,7 +132,7 @@ def test_write_converts_timestamp_timezone(
         table.sink_polars(df.lazy())
 
     # Assert
-    expected = df.with_columns(pl.col("x").dt.convert_time_zone("UTC"))
+    expected = df.with_columns(pl.col("x").cast(pl.Datetime("us", "UTC")))
     assert_frame_equal(expected, table.read_polars())
 
 
