@@ -239,7 +239,7 @@ class TransactionTable:
         *,
         engine: EngineType = "auto",
         optimizations: pl.QueryOptFlags | None = None,
-        lazy: bool = False,
+        lazy: Literal[False] = False,
     ) -> None: ...
 
     @overload
