@@ -17,11 +17,12 @@ impl<'a> Transaction<'a> {
         }
 
         let path: io::DucklakePath = path.unwrap_or_else(|| name.to_string()).parse()?;
+        let path = path.ensure_directory();
         let schema_ref = self.catalog_mut().add_schema(name, path.clone())?;
         let change = Change::CreateSchema {
             schema_ref,
             name: name.to_string(),
-            path: path.ensure_directory(),
+            path,
         };
         self.changes.push(change);
         Ok(())
