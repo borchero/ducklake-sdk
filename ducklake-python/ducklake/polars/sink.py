@@ -1,3 +1,4 @@
+import re
 from functools import partial
 from typing import Literal, overload
 
@@ -14,6 +15,8 @@ from ducklake.transaction import TransactionTable
 from ducklake.typedefs import Column, Partitioning, WriteDataFile
 
 PARTITION_COLUMN_PREFIX = "__ducklake_partition__"
+
+_POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
 
 
 @overload
@@ -78,7 +81,15 @@ def sink_ducklake(
     # 6) Eventually, we can actually write the data. The callback will take care of actually
     #    committing the new data files to the Ducklake. This allows to perform the entire
     #    operation lazily if requested.
-    return lf.sink_parquet(
+    sinked_paths_callback = partial(
+        _sinked_paths_callback, table, file_generator.base_path, partition_value_cache
+    )
+    callback_kwargs = (
+        {"sinked_paths_callback": sinked_paths_callback}
+        if _POLARS_VERSION >= (1, 44)
+        else {"_sinked_paths_callback": sinked_paths_callback}
+    )
+    return lf.sink_parquet(  # ty: ignore[no-matching-overload]
         target,
         storage_options=table._storage_options.to_dict(),
         mkdir=True,
@@ -90,9 +101,7 @@ def sink_ducklake(
         optimizations=optimizations or DEFAULT_QUERY_OPT_FLAGS,
         lazy=lazy,
         arrow_schema=table.schema,
-        _sinked_paths_callback=partial(
-            _sinked_paths_callback, table, file_generator.base_path, partition_value_cache
-        ),
+        **callback_kwargs,
     )
 
 
@@ -281,11 +290,12 @@ def _sinked_paths_callback(
     args: SinkedPathsCallbackArgs,
 ) -> None:
     new_data_files: list[WriteDataFile] = []
-    for path in args.paths:
+    for sinked_path in args.paths:
         # TODO: Currently, polars does not directly provide statistics about the written files, so
         #  we derive the statistics by reading the file again. This is obviously not ideal but the
         #  best we can do for now. This should be changed once the appropriate change has been made
         #  in polars. See also: https://github.com/pola-rs/polars/issues/27226
+        path = sinked_path if isinstance(sinked_path, str) else sinked_path.path
         relative_path = path.removeprefix(base_path)
         partitions = partition_value_cache[relative_path]
         data_file = WriteDataFile(

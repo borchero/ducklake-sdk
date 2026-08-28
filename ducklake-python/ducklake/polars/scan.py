@@ -44,6 +44,11 @@ def scan_ducklake(
             iceberg_position_deletes[i].append(str(write_path))
             inline_delete_count += df.height
 
+    if _POLARS_VERSION >= (1, 44):
+        deletion_files = ("iceberg", (dict(iceberg_position_deletes), {}))
+    else:
+        deletion_files = ("iceberg-position-delete", dict(iceberg_position_deletes))
+
     # 2.2) Row counts
     physical_rows = sum(data_file.statistics.num_rows for data_file in scan_result.data_files)
     deleted_rows = (
@@ -151,7 +156,7 @@ def scan_ducklake(
         ),
         # --- Optimization ---
         _column_mapping=("iceberg-column-mapping", schema),
-        _deletion_files=("iceberg-position-delete", dict(iceberg_position_deletes)),
+        _deletion_files=deletion_files,  # ty: ignore[invalid-argument-type]
         _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
         _table_statistics=table_statistics,
         _row_count=(physical_rows, deleted_rows),
