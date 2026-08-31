@@ -271,7 +271,7 @@ class Ducklake:
             self.time_zone,
         )
 
-    def get_table(self, name: str | tuple[str, str] | TableName) -> Table:
+    def table(self, name: str | tuple[str, str] | TableName) -> Table:
         """Read a table from the catalog.
 
         Args:
@@ -286,6 +286,10 @@ class Ducklake:
 
         Raises:
             NotFoundError: If the table does not exist.
+
+        Note:
+            The table is resolved against the latest snapshot. For a time-traveled DuckLake, it is
+            resolved against the pinned historical snapshot instead.
         """
         pytable = self._pyducklake.table(name)
         return Table._from_pytable(

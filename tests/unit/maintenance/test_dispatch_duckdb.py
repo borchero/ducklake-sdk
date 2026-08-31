@@ -107,7 +107,7 @@ def test_scan_after_expire_with_orphan_schema_versions(
 
     # Act: re-connect on same catalog to go around the cache
     with dl.connect(catalog_url) as reader:
-        result = reader.get_table(random_table_name).scan()
+        result = reader.table(random_table_name).scan()
 
     # Assert
     assert len(result.inline_data) == 2
