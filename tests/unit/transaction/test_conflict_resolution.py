@@ -38,7 +38,7 @@ def test_automatic_resolution_concurrent_write(
 
     # Assert
     expected = pl.concat([df, df])
-    assert_frame_equal(expected, shared_ducklake.get_table(random_table_name).read_polars())
+    assert_frame_equal(expected, shared_ducklake.table(random_table_name).read_polars())
 
 
 def test_automatic_resolution_with_true_conflict_and_inline_data_table_conflict(

@@ -24,5 +24,5 @@ def test_create_write_in_transaction(
         table.sink_polars(lf)
 
     # Assert
-    table = shared_ducklake.get_table(table_name)
+    table = shared_ducklake.table(table_name)
     assert_frame_equal(lf, table.scan_polars())

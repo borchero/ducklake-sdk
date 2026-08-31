@@ -39,10 +39,10 @@ def test_list_tables_filtered_by_schema(
     assert all(t.name.schema == "main" for t in tables_in_main)
 
 
-def test_get_table_not_found(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+def test_table_not_found(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Act & Assert
     with pytest.raises(dlexc.NotFoundError):
-        shared_ducklake.get_table(random_table_name)
+        shared_ducklake.table(random_table_name)
 
 
 def test_has_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
@@ -56,23 +56,23 @@ def test_has_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> None
     assert not shared_ducklake.has_table(f"nonexistent_schema.{random_table_name}")
 
 
-def test_get_table_by_tuple(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+def test_table_by_tuple(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
 
     # Act
-    table = shared_ducklake.get_table(("main", random_table_name))
+    table = shared_ducklake.table(("main", random_table_name))
 
     # Assert
     assert table.name == ("main", random_table_name)
 
 
-def test_get_table_by_tablename(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+def test_table_by_tablename(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
 
     # Act
-    table = shared_ducklake.get_table(dl.TableName("main", random_table_name))
+    table = shared_ducklake.table(dl.TableName("main", random_table_name))
 
     # Assert
     assert table.name == ("main", random_table_name)

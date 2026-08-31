@@ -12,7 +12,7 @@ def test_create_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
         tx.create_table(random_table_name, {"x": dl.Int64()})
 
     # Assert
-    table = shared_ducklake.get_table(random_table_name)
+    table = shared_ducklake.table(random_table_name)
     assert table.name == ("main", random_table_name)
     assert table.schema.columns == [dl.Column("x", dl.Int64(), field_id=1)]
     assert table.partitioning is None
@@ -44,7 +44,7 @@ def test_delete_create_table(shared_ducklake: dl.Ducklake, random_table_name: st
         tx.create_table(random_table_name, {"y": dl.Int64()})
 
     # Assert
-    table = shared_ducklake.get_table(random_table_name)
+    table = shared_ducklake.table(random_table_name)
     assert table.schema.columns == [dl.Column("y", dl.Int64(), field_id=1)]
 
 
@@ -69,7 +69,7 @@ def test_explicit_commit(shared_ducklake: dl.Ducklake, random_table_name: str) -
     tx.commit()
 
     # Assert
-    table = shared_ducklake.get_table(random_table_name)
+    table = shared_ducklake.table(random_table_name)
     assert table.name == ("main", random_table_name)
 
 
@@ -84,7 +84,7 @@ def test_transaction_aborts_on_exception(
 
     # Assert: the table was never committed and is therefore not visible
     with pytest.raises(dlexc.NotFoundError):
-        shared_ducklake.get_table(random_table_name)
+        shared_ducklake.table(random_table_name)
 
 
 def test_create_table_with_partitioning_and_tags(
@@ -100,7 +100,7 @@ def test_create_table_with_partitioning_and_tags(
         )
 
     # Assert
-    table = shared_ducklake.get_table(random_table_name)
+    table = shared_ducklake.table(random_table_name)
     assert table.partitioning is not None
     assert [c.name for c in table.partitioning.columns] == ["x"]
     assert table.tags == {"env": "prod"}
@@ -116,7 +116,7 @@ def test_delete_table_in_transaction(shared_ducklake: dl.Ducklake, random_table_
 
     # Assert
     with pytest.raises(dlexc.NotFoundError):
-        shared_ducklake.get_table(random_table_name)
+        shared_ducklake.table(random_table_name)
 
 
 def test_list_tables_reflects_transaction_changes(
