@@ -338,8 +338,8 @@ pub(crate) struct DucklakeView {
     pub end_snapshot: Option<i64>,
     pub schema_id: i64,
     pub view_name: String,
-    pub dialect: Option<String>,
-    pub sql: Option<String>,
+    pub dialect: String,
+    pub sql: String,
     pub column_aliases: Option<String>,
 }
 

@@ -6,6 +6,13 @@ use super::ArenaIdx;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct SchemaRef(pub(super) ArenaIdx);
 
+#[cfg(test)]
+impl SchemaRef {
+    pub(crate) fn mock(i: usize) -> Self {
+        Self(ArenaIdx(i))
+    }
+}
+
 impl From<ArenaIdx> for SchemaRef {
     fn from(value: ArenaIdx) -> Self {
         Self(value)
@@ -26,6 +33,25 @@ impl TableRef {
 }
 
 impl From<ArenaIdx> for TableRef {
+    fn from(value: ArenaIdx) -> Self {
+        Self(value)
+    }
+}
+
+/// Opaque reference to a view in the catalog. This is static for the lifetime of a catalog.
+/// It is different to the view ID in the DuckLake and also exists for transaction-local
+/// (i.e. pending) views.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ViewRef(pub(super) ArenaIdx);
+
+#[cfg(test)]
+impl ViewRef {
+    pub(crate) fn mock(i: usize) -> Self {
+        Self(ArenaIdx(i))
+    }
+}
+
+impl From<ArenaIdx> for ViewRef {
     fn from(value: ArenaIdx) -> Self {
         Self(value)
     }

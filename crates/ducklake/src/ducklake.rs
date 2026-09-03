@@ -17,6 +17,14 @@ pub struct Ducklake {
 #[repr(transparent)]
 pub(crate) struct DucklakeConnection(Arc<DucklakeConnectionInner>);
 
+impl PartialEq for DucklakeConnection {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for DucklakeConnection {}
+
 struct DucklakeConnectionInner {
     /// Database connection pool which is used to execute queries against the catalog database.
     /// This pool is constant for the lifetime of the Ducklake connection.
@@ -363,6 +371,55 @@ impl Ducklake {
             .collect()
     }
 
+    /// Get a handle to the view with the provided name.
+    pub async fn view(
+        &self,
+        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+    ) -> DucklakeResult<View> {
+        let name = name.try_into().map_err(|e| e.into())?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
+        let catalog = snapshot.catalog().await?;
+        Ok(self.maybe_view_from_catalog(catalog, &name)?.unwrap())
+    }
+
+    fn maybe_view_from_catalog(
+        &self,
+        catalog: &Catalog,
+        name: &TableName,
+    ) -> DucklakeResult<Option<View>> {
+        if catalog.schema(&name.schema)?.id().is_none() {
+            return Ok(None);
+        }
+        let Some(view_id) = catalog.view(name)?.id() else {
+            return Ok(None);
+        };
+        Ok(Some(View::new(self.conn.clone(), view_id)))
+    }
+
+    /// List all views in the catalog, optionally restricted to a specific schema.
+    pub async fn list_views(&self, schema: Option<&str>) -> DucklakeResult<Vec<View>> {
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
+        let catalog = snapshot.catalog().await?;
+        let views = if let Some(schema) = schema {
+            self.list_views_in_schema(catalog.schema(schema)?)
+        } else {
+            catalog
+                .list_schemas()
+                .into_iter()
+                .flat_map(|s| self.list_views_in_schema(s))
+                .collect()
+        };
+        Ok(views)
+    }
+
+    fn list_views_in_schema(&self, schema: catalog::SchemaView<'_>) -> Vec<View> {
+        schema
+            .list_views()
+            .into_iter()
+            .map(|v| View::new(self.conn.clone(), v.id().unwrap()))
+            .collect()
+    }
+
     /// List the names of all schemas in the catalog.
     pub async fn list_schemas(&self) -> DucklakeResult<Vec<String>> {
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -540,6 +597,32 @@ impl Ducklake {
             Ok(table)
         } else {
             self.table(name).await
+        }
+    }
+
+    /// Create a new view in the catalog.
+    ///
+    /// The provided SQL must be a single `SELECT` query (not a `CREATE VIEW` statement).
+    pub async fn create_view(
+        &self,
+        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        sql: String,
+        column_aliases: Option<Vec<String>>,
+        tags: Option<Vec<Tag>>,
+        if_exists: IfExistsStrategy,
+    ) -> DucklakeResult<View> {
+        let name = name.try_into().map_err(|e| e.into())?;
+        let mut tx = self.transaction().await?;
+        tx.create_view(name.clone(), sql, column_aliases, tags, if_exists)?;
+        let view = self.maybe_view_from_catalog(tx.catalog(), &name)?;
+        tx.commit().await?;
+
+        // `view` is `Some` if the view already had an ID in the catalog. Otherwise, it is `None`
+        // and we will need to fetch the view again.
+        if let Some(view) = view {
+            Ok(view)
+        } else {
+            self.view(name).await
         }
     }
 }

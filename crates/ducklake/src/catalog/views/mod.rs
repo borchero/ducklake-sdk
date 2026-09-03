@@ -4,9 +4,11 @@ use crate::{DucklakeError, DucklakeResult};
 mod column;
 mod schema;
 mod table;
+mod view;
 
 pub(crate) use schema::SchemaView;
 pub(crate) use table::TableView;
+pub(crate) use view::ViewView;
 
 /* ---------------------------------------- TRY INTO REF --------------------------------------- */
 

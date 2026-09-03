@@ -4,6 +4,7 @@ mod executors;
 mod schema;
 mod table;
 mod typedefs;
+mod view;
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -14,6 +15,7 @@ use commit_state::CommitState;
 use sea_query::{Asterisk, ExprTrait, Query};
 pub use table::TransactionTable;
 use typedefs::*;
+pub use view::TransactionView;
 
 use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};
@@ -120,6 +122,31 @@ impl<'a> Transaction<'a> {
                 );
             }
             Ok(tables)
+        }
+    }
+
+    /// List all views in the transaction-local catalog, optionally restricted to a specific
+    /// schema.
+    pub fn list_views(&self, schema: Option<&str>) -> DucklakeResult<Vec<TableName>> {
+        if let Some(schema) = schema {
+            Ok(self
+                .catalog
+                .schema(schema)?
+                .list_views()
+                .into_iter()
+                .map(|view| view.name().clone())
+                .collect())
+        } else {
+            let mut views = Vec::new();
+            for schema in self.catalog.list_schemas() {
+                views.extend(
+                    schema
+                        .list_views()
+                        .into_iter()
+                        .map(|view| view.name().clone()),
+                );
+            }
+            Ok(views)
         }
     }
 

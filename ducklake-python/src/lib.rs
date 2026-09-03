@@ -8,10 +8,12 @@ mod error;
 mod table;
 mod transaction;
 mod utils;
+mod view;
 
 use ducklake::PyDucklake;
 use table::PyTable;
 use transaction::{PyTransaction, PyTransactionTable};
+use view::PyView;
 
 #[pymodule]
 #[pyo3(name = "_native")]
@@ -19,7 +21,7 @@ mod ducklake_module {
     #[pymodule_export]
     use super::ducklake::{connect, create};
     #[pymodule_export]
-    use super::{PyDucklake, PyTable, PyTransaction, PyTransactionTable};
+    use super::{PyDucklake, PyTable, PyTransaction, PyTransactionTable, PyView};
     #[pymodule_export]
     use crate::error::{
         AlreadyExistsError,

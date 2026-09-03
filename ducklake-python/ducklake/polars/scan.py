@@ -1,16 +1,22 @@
+from __future__ import annotations
+
 import re
 import tempfile
 from collections import defaultdict
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import polars as pl
 import polars.datatypes as pld
+import polars.selectors as cs
 
 from ducklake import typedefs
 from ducklake._native import arrow_schema_field_ids
 from ducklake.table import Table
-from ducklake.typedefs import Column, Schema
+from ducklake.view import View
+
+if TYPE_CHECKING:
+    from ducklake.typedefs import Column, Schema
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
@@ -197,6 +203,49 @@ def read_ducklake(
     return scan_ducklake(
         table, include_file_paths=include_file_paths, time_zone=time_zone
     ).collect(optimizations=pl.QueryOptFlags._eager())
+
+
+# -------------------------------------------- VIEWS -------------------------------------------- #
+
+
+def scan_view(view: View) -> pl.LazyFrame:
+    """Lazily evaluate a view's query against its referenced DuckLake relations."""
+    return _scan_view(view, frozenset())
+
+
+def _scan_view(view: View, ancestors: frozenset[typedefs.TableName]) -> pl.LazyFrame:
+    name = view.name
+    if name in ancestors:
+        raise ValueError(f"cyclic view reference involving {name}")
+
+    sql, pytables, pyviews = view._pyview.polars_query()
+    frames = {
+        alias: Table._from_pytable(
+            pytable, view._duckdb_connection_fn, view._storage_options, view._time_zone
+        ).scan_polars()
+        for alias, pytable in pytables
+    }
+    for alias, pyview in pyviews:
+        nested_view = View._from_pyview(
+            pyview,
+            view._ducklake,
+            view._duckdb_connection_fn,
+            view._storage_options,
+            view._time_zone,
+        )
+        frames[alias] = _scan_view(nested_view, ancestors | {name})
+
+    ctx = pl.SQLContext(frames=frames, eager=False)
+    result = ctx.execute(sql)
+    if aliases := view.column_aliases:
+        renamed = [pl.nth(index).alias(alias) for index, alias in enumerate(aliases)]
+        remaining = cs.all() - cs.by_index(*range(len(aliases)))
+        return result.select(*renamed, remaining)
+    return result
+
+
+def read_view(view: View) -> pl.DataFrame:
+    return scan_view(view).collect(optimizations=pl.QueryOptFlags._eager())
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #

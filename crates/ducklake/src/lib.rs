@@ -18,6 +18,7 @@ mod table;
 mod transaction;
 mod typedefs;
 mod utils;
+mod view;
 
 pub use caches::{GlobalMetadata, TableMetadata};
 pub use ducklake::{Ducklake, SnapshotMetadata};
@@ -26,6 +27,13 @@ pub use maintenance::*;
 pub use options::*;
 pub use primitives::{Interval, TimeWithTimezone};
 pub use table::*;
-pub use transaction::{AuthorInfo, IfExistsStrategy, Transaction, TransactionTable};
+pub use transaction::{
+    AuthorInfo,
+    IfExistsStrategy,
+    Transaction,
+    TransactionTable,
+    TransactionView,
+};
 pub use typedefs::*;
 pub use utils::DataFilePathGenerator;
+pub use view::*;

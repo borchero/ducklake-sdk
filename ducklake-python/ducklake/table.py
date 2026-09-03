@@ -521,3 +521,8 @@ class Table:
 
     def __repr__(self) -> str:
         return f"Table(schema='{self.name.schema}', name='{self.name.name}')"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Table):
+            return NotImplemented
+        return self._pytable == other._pytable
