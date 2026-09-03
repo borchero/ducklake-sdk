@@ -31,6 +31,7 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
         AlreadyExists { .. } => AlreadyExistsError::new_err(error.to_string()),
         NotFound { .. } => NotFoundError::new_err(error.to_string()),
         InvalidTableName { .. } => PyValueError::new_err(error.to_string()),
+        InvalidView { .. } => PyValueError::new_err(error.to_string()),
         InvalidPartitionTransform { .. } => PyValueError::new_err(error.to_string()),
         InvalidTimeZone(_) => PyValueError::new_err(error.to_string()),
         ReadOnlyMetadata { .. } => PyValueError::new_err(error.to_string()),

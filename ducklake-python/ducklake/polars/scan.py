@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import re
 import tempfile
 from collections import defaultdict
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import polars as pl
 import polars.datatypes as pld
@@ -10,7 +12,10 @@ import polars.datatypes as pld
 from ducklake import typedefs
 from ducklake._native import arrow_schema_field_ids
 from ducklake.table import Table
-from ducklake.typedefs import Column, Schema
+
+if TYPE_CHECKING:
+    from ducklake.typedefs import Column, Schema
+    from ducklake.view import View
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
@@ -197,6 +202,30 @@ def read_ducklake(
     return scan_ducklake(
         table, include_file_paths=include_file_paths, time_zone=time_zone
     ).collect(optimizations=pl.QueryOptFlags._eager())
+
+
+# -------------------------------------------- VIEWS -------------------------------------------- #
+
+
+def scan_view(view: View) -> pl.LazyFrame:
+    """Lazily evaluate a view's query against its referenced DuckLake tables."""
+    sql, pytables = view._pyview.polars_query()
+    frames = {
+        alias: Table._from_pytable(
+            pytable, view._duckdb_connection_fn, view._storage_options, view._time_zone
+        ).scan_polars()
+        for alias, pytable in pytables
+    }
+
+    ctx = pl.SQLContext(frames=frames, eager=False)
+    result = ctx.execute(sql)
+    if aliases := view.column_aliases:
+        return result.select(pl.nth(index).alias(alias) for index, alias in enumerate(aliases))
+    return result
+
+
+def read_view(view: View) -> pl.DataFrame:
+    return scan_view(view).collect(optimizations=pl.QueryOptFlags._eager())
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #

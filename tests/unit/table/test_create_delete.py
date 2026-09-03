@@ -15,6 +15,17 @@ def test_create_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     assert table.tags == {}
 
 
+def test_table_equality(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    created = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+
+    # Act
+    fetched = shared_ducklake.table(random_table_name)
+
+    # Assert
+    assert created == fetched
+
+
 def test_delete_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})

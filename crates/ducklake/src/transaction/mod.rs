@@ -4,6 +4,7 @@ mod executors;
 mod schema;
 mod table;
 mod typedefs;
+mod view;
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -14,6 +15,7 @@ use commit_state::CommitState;
 use sea_query::{Asterisk, ExprTrait, Query};
 pub use table::TransactionTable;
 use typedefs::*;
+pub use view::TransactionView;
 
 use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};

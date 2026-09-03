@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
 use crate::utils::runtime::block_on;
-use crate::{PyTable, PyTransaction, error};
+use crate::{PyTable, PyTransaction, PyView, error};
 
 #[pyclass]
 pub struct PyDucklake(Ducklake);
@@ -183,6 +183,41 @@ impl PyDucklake {
     pub fn list_tables(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyTable>> {
         block_on(py, self.0.list_tables(schema.as_deref()))
             .map(|tables| tables.into_iter().map(PyTable::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn create_view(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::TableName>,
+        sql: String,
+        column_aliases: Option<Vec<String>>,
+        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        if_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<PyView> {
+        block_on(
+            py,
+            self.0.create_view(
+                name.0,
+                sql,
+                column_aliases,
+                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                if_exists.0,
+            ),
+        )
+        .map(PyView::new)
+        .map_err(error::into_pyerr)
+    }
+
+    pub fn view(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<PyView> {
+        block_on(py, self.0.view(name.0))
+            .map(PyView::new)
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn list_views(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyView>> {
+        block_on(py, self.0.list_views(schema.as_deref()))
+            .map(|views| views.into_iter().map(PyView::new).collect())
             .map_err(error::into_pyerr)
     }
 

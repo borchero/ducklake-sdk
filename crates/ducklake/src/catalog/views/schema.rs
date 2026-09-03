@@ -116,6 +116,15 @@ impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
             .map(|arena_idx| super::TableView::new(catalog, (*arena_idx).into()))
             .collect()
     }
+
+    pub(crate) fn list_views(&self) -> Vec<super::ViewView<'_>> {
+        let catalog: &Catalog = &self.catalog;
+        self.inner()
+            .views
+            .values()
+            .map(|arena_idx| super::ViewView::new(catalog, (*arena_idx).into()))
+            .collect()
+    }
 }
 
 /* ------------------------------------------ MUTATION ----------------------------------------- */

@@ -9,7 +9,7 @@ mod typedefs;
 mod views;
 
 use arena::{Arena, ArenaIdx};
-pub(crate) use refs::{ColumnRef, SchemaRef, TableRef};
+pub(crate) use refs::{ColumnRef, SchemaRef, TableRef, ViewRef};
 use typedefs::*;
 pub(crate) use views::SchemaView;
 
@@ -26,6 +26,8 @@ pub(crate) struct Catalog {
     schema_arena: Arena<CatalogSchema>,
     // Storage of tables across schemas.
     table_arena: Arena<CatalogTable>,
+    // Storage of views across schemas.
+    view_arena: Arena<CatalogView>,
     // Mapping from schema name to arena index for quick lookup by schema name.
     schemas: HashMap<String, ArenaIdx>,
 }
@@ -52,6 +54,7 @@ impl Catalog {
             id: None,
             name: name.to_string(),
             tables: HashMap::new(),
+            views: HashMap::new(),
             path,
         };
         let idx = self.schema_arena.push(schema, None);
@@ -130,5 +133,45 @@ impl Catalog {
                 .collect()
         });
         Ok((schema.ref_(), table_idx.into(), column_refs, partition_refs))
+    }
+}
+
+/* -------------------------------------------- VIEW ------------------------------------------- */
+
+impl Catalog {
+    /// Add a new view with the given name as a pending view.
+    ///
+    /// This method returns references for the schema the view was created in as well as the newly
+    /// created view. Returns an error if the schema does not exist or the view already exists.
+    pub(crate) fn add_view(
+        &mut self,
+        view: crate::ViewInfo,
+    ) -> DucklakeResult<(SchemaRef, ViewRef)> {
+        // If the view exists already, we need to raise some kind of error
+        if let Ok(view) = self.view(&view.name) {
+            return Err(DucklakeError::view_already_exists(view.name()));
+        }
+
+        // If the view does not yet exist, create a new pending view.
+        // NOTE: We might still return an error at this point as we didn't check explicitly above
+        //  whether the schema exists. This is not an issue, however, as it's transparent to the
+        //  caller.
+        let catalog_view = CatalogView {
+            id: None,
+            name: view.name.clone(),
+            sql: view.sql,
+            dialect: view.dialect,
+            column_aliases: view.column_aliases,
+            tags: view.tags,
+        };
+        let view_idx = self.view_arena.push(catalog_view, None);
+
+        let mut schema = self.schema_mut(&view.name.schema)?;
+        schema
+            .inner_mut()
+            .views
+            .insert(view.name.name.clone(), view_idx);
+
+        Ok((schema.ref_(), view_idx.into()))
     }
 }

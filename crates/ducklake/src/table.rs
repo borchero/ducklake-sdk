@@ -11,6 +11,14 @@ pub struct Table {
     id: i64,
 }
 
+impl PartialEq for Table {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.conn == other.conn
+    }
+}
+
+impl Eq for Table {}
+
 #[derive(Clone)]
 pub(crate) struct TableInfo {
     pub name: TableName,

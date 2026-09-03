@@ -56,6 +56,7 @@ from .typedefs import (
     Varchar,
     WriteDataFile,
 )
+from .view import View
 
 __all__ = [
     "Blob",
@@ -105,5 +106,6 @@ __all__ = [
     "UInt8",
     "Uuid",
     "Varchar",
+    "View",
     "WriteDataFile",
 ]

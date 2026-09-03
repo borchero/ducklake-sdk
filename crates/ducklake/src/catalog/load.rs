@@ -30,6 +30,7 @@ impl Catalog {
         Self {
             schema_arena: Arena::new(),
             table_arena: Arena::new(),
+            view_arena: Arena::new(),
             schemas: HashMap::new(),
         }
     }
@@ -42,6 +43,7 @@ impl Catalog {
         // snapshot_id which ensures we get a consistent view of the data.
         let schemas_query = snapshot_query!(ducklake_schema, snapshot_id);
         let tables_query = snapshot_query!(ducklake_table, snapshot_id);
+        let views_query = snapshot_query!(ducklake_view, snapshot_id);
         let columns_query = snapshot_query!(ducklake_column, snapshot_id);
         let tags_query = snapshot_query!(ducklake_tag, snapshot_id);
         let column_tags_query = snapshot_query!(ducklake_column_tag, snapshot_id);
@@ -55,6 +57,7 @@ impl Catalog {
         let (
             fetched_schemas,
             fetched_tables,
+            fetched_views,
             fetched_columns,
             fetched_tags,
             fetched_column_tags,
@@ -63,6 +66,7 @@ impl Catalog {
         ): (
             Vec<DucklakeSchema>,
             Vec<DucklakeTable>,
+            Vec<DucklakeView>,
             Vec<DucklakeColumn>,
             Vec<DucklakeTag>,
             Vec<DucklakeColumnTag>,
@@ -71,6 +75,7 @@ impl Catalog {
         ) = tokio::try_join!(
             pool.fetch_all(&schemas_query),
             pool.fetch_all(&tables_query),
+            pool.fetch_all(&views_query),
             pool.fetch_all(&columns_query),
             pool.fetch_all(&tags_query),
             pool.fetch_all(&column_tags_query),
@@ -105,6 +110,7 @@ impl Catalog {
             &mut grouped_partition_columns,
             &mut grouped_tags,
         )?;
+        catalog.set_views(fetched_views, &mut grouped_tags)?;
 
         Ok(catalog)
     }
@@ -118,6 +124,7 @@ impl Catalog {
                 id: Some(schema.schema_id),
                 name: schema_name.clone(),
                 tables: HashMap::new(),
+                views: HashMap::new(),
                 path: io::DucklakePath::new(
                     &default_empty_string(&schema.path, || format!("{}/", schema_name)),
                     schema.path_is_relative,
@@ -212,6 +219,53 @@ impl Catalog {
                 .inner_mut()
                 .tables
                 .insert(table_name, arena_idx);
+        }
+        Ok(())
+    }
+
+    fn set_views(
+        &mut self,
+        views: Vec<DucklakeView>,
+        tags: &mut HashMap<i64, Vec<DucklakeTag>>,
+    ) -> DucklakeResult<()> {
+        for view in views {
+            let view_name = view.view_name;
+
+            // 1) Get the schema this view belongs to
+            let schema = self
+                .schema(view.schema_id)
+                .expect("view references the ID of non-existent schema");
+
+            // 2) Construct the full view catalog object
+            let catalog_view = CatalogView {
+                id: Some(view.view_id),
+                name: crate::TableName {
+                    schema: schema.name().to_string(),
+                    name: view_name.clone(),
+                },
+                sql: view.sql,
+                dialect: view.dialect,
+                column_aliases: view
+                    .column_aliases
+                    .as_deref()
+                    .filter(|aliases| !aliases.is_empty())
+                    .map(|aliases| {
+                        crate::utils::parse_identifier_list(aliases)
+                            .expect("column_aliases must be a list of quoted identifiers")
+                    }),
+                tags: tags
+                    .remove(&view.view_id)
+                    .map(|v| v.into_iter().map(|tag| tag.into()).collect())
+                    .unwrap_or_default(),
+            };
+
+            // 3) Add the view to the catalog
+            let arena_idx = self.view_arena.push(catalog_view, Some(view.view_id));
+            self.schema_mut(view.schema_id)
+                .unwrap() // SAFETY: we already verified existence above
+                .inner_mut()
+                .views
+                .insert(view_name, arena_idx);
         }
         Ok(())
     }
