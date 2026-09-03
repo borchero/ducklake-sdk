@@ -47,7 +47,7 @@ impl ChangeSet {
         let deleted_tables: HashSet<_> = changes
             .iter()
             .filter_map(|c| {
-                if let Change::DeleteTable { table_ref } = c {
+                if let Change::DeleteTable { table_ref, .. } = c {
                     Some(*table_ref)
                 } else {
                     None
@@ -55,7 +55,7 @@ impl ChangeSet {
             })
             .collect();
         changes.retain(|c| match c {
-            Change::DeleteTable { table_ref } => !created_tables.contains(table_ref),
+            Change::DeleteTable { table_ref, .. } => !created_tables.contains(table_ref),
             c => c
                 .affected_table_ref()
                 .map(|r| !deleted_tables.contains(&r))
@@ -248,6 +248,7 @@ pub(crate) enum Change {
     },
     DeleteTable {
         table_ref: TableRef,
+        detach_files: bool,
     },
     AddTableTag {
         table_ref: TableRef,
@@ -308,7 +309,7 @@ impl Change {
             | RemoveTableColumnTag { column_ref, .. } => AppliedChange::AlteredTable {
                 id: state.table_id(column_ref.table_ref),
             },
-            DeleteTable { table_ref } => AppliedChange::DroppedTable {
+            DeleteTable { table_ref, .. } => AppliedChange::DroppedTable {
                 id: state.table_id(*table_ref),
             },
             WriteTableDataFiles { table_ref, .. } => AppliedChange::InsertedIntoTable {
@@ -385,7 +386,10 @@ impl Change {
                 )
                 .await
             }
-            DeleteTable { table_ref } => executors::delete_table(tx, state, table_ref).await,
+            DeleteTable {
+                table_ref,
+                detach_files,
+            } => executors::delete_table(tx, state, table_ref, *detach_files).await,
             AddTableTag { table_ref, tag } => {
                 executors::add_table_tag(tx, state, table_ref, tag).await
             }
@@ -591,7 +595,7 @@ impl From<&Change> for HashableChange {
             Change::UpdateTablePartitioning { table_ref, .. } => UpdateTablePartitioning {
                 table_ref: *table_ref,
             },
-            Change::DeleteTable { table_ref } => DeleteTable {
+            Change::DeleteTable { table_ref, .. } => DeleteTable {
                 table_ref: *table_ref,
             },
             Change::AddTableTag { table_ref, tag } => AddTableTag {

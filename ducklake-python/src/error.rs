@@ -42,6 +42,9 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
         ReadonlyDucklake => ReadonlyDucklakeError::new_err(error.to_string()),
         SnapshotPinned => PyValueError::new_err(error.to_string()),
         InvalidChanges(_) => PyValueError::new_err(error.to_string()),
+        MixedTransferSources => PyValueError::new_err(error.to_string()),
+        DuplicateTransferTarget { .. } => PyValueError::new_err(error.to_string()),
+        TransferNameCountMismatch { .. } => PyValueError::new_err(error.to_string()),
         _ => pyo3::exceptions::PyRuntimeError::new_err(error.to_string()),
     }
 }

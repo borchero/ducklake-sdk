@@ -14,7 +14,7 @@ use crate::utils::runtime::block_on;
 use crate::{PyTable, PyTransaction, error};
 
 #[pyclass]
-pub struct PyDucklake(Ducklake);
+pub struct PyDucklake(pub(crate) Ducklake);
 
 /* ------------------------------------------ CONNECT ------------------------------------------ */
 
@@ -164,6 +164,38 @@ impl PyDucklake {
 
     pub fn has_table(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<bool> {
         block_on(py, self.0.table_exists(name.0)).map_err(error::into_pyerr)
+    }
+
+    pub fn copy_tables_from(
+        &self,
+        py: Python,
+        sources: Vec<PyRef<PyTable>>,
+        names: Option<Vec<Wrap<ducklake::TableName>>>,
+    ) -> PyResult<Vec<PyTable>> {
+        let sources = sources
+            .iter()
+            .map(|table| table.inner())
+            .collect::<Vec<_>>();
+        let names = names.map(|names| names.into_iter().map(|name| name.0).collect());
+        block_on(py, self.0.copy_tables_from(&sources, names))
+            .map(|tables| tables.into_iter().map(PyTable::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn move_tables_from(
+        &self,
+        py: Python,
+        sources: Vec<PyRef<PyTable>>,
+        names: Option<Vec<Wrap<ducklake::TableName>>>,
+    ) -> PyResult<Vec<PyTable>> {
+        let sources = sources
+            .iter()
+            .map(|table| table.inner())
+            .collect::<Vec<_>>();
+        let names = names.map(|names| names.into_iter().map(|name| name.0).collect());
+        block_on(py, self.0.move_tables_from(&sources, names))
+            .map(|tables| tables.into_iter().map(PyTable::new).collect())
+            .map_err(error::into_pyerr)
     }
 
     pub fn list_tables(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyTable>> {

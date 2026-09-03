@@ -11,6 +11,29 @@ pub(super) struct CommitDataFile {
     pub file_size_bytes: Option<usize>,
     pub footer_size_bytes: Option<usize>,
     pub column_stats: HashMap<ColumnRef, FileColumnStats>,
+    pub delete_files: Vec<CommitDeleteFile>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct CommitDeleteFile {
+    pub path: io::DucklakePath,
+    pub num_deletes: usize,
+    pub file_size_bytes: Option<usize>,
+    pub footer_size_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TransferDataFile {
+    pub data_file: crate::WriteDataFile,
+    pub delete_files: Vec<TransferDeleteFile>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TransferDeleteFile {
+    pub path: String,
+    pub num_deletes: usize,
+    pub file_size_bytes: Option<usize>,
+    pub footer_size_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone)]

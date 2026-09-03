@@ -144,6 +144,7 @@ pub(crate) async fn delete_table<'a>(
     tx: &mut db::Transaction,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
+    detach_files: bool,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
 
@@ -154,6 +155,40 @@ pub(crate) async fn delete_table<'a>(
     set_end_snapshot!(ducklake_column_tag, state, tx, conditions: { TableId => table_id });
     set_end_snapshot!(ducklake_data_file, state, tx, conditions: { TableId => table_id });
     set_end_snapshot!(ducklake_delete_file, state, tx, conditions: { TableId => table_id });
+
+    if detach_files {
+        // A table transfer hands the files to another catalog. Remove all source references in
+        // the same transaction as the drop so snapshot expiration can never schedule them for
+        // deletion in this catalog.
+        let delete_column_stats = Query::delete()
+            .from_table(ducklake_file_column_stats::Table)
+            .and_where(
+                ducklake_file_column_stats::Column::TableId
+                    .col()
+                    .eq(table_id),
+            )
+            .take();
+        tx.execute(&delete_column_stats).await?;
+        let delete_partition_values = Query::delete()
+            .from_table(ducklake_file_partition_value::Table)
+            .and_where(
+                ducklake_file_partition_value::Column::TableId
+                    .col()
+                    .eq(table_id),
+            )
+            .take();
+        tx.execute(&delete_partition_values).await?;
+        let delete_data_files = Query::delete()
+            .from_table(ducklake_data_file::Table)
+            .and_where(ducklake_data_file::Column::TableId.col().eq(table_id))
+            .take();
+        tx.execute(&delete_data_files).await?;
+        let delete_delete_files = Query::delete()
+            .from_table(ducklake_delete_file::Table)
+            .and_where(ducklake_delete_file::Column::TableId.col().eq(table_id))
+            .take();
+        tx.execute(&delete_delete_files).await?;
+    }
 
     Ok(())
 }

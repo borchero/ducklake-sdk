@@ -14,6 +14,7 @@ use commit_state::CommitState;
 use sea_query::{Asterisk, ExprTrait, Query};
 pub use table::TransactionTable;
 use typedefs::*;
+pub(crate) use typedefs::{TransferDataFile, TransferDeleteFile};
 
 use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};

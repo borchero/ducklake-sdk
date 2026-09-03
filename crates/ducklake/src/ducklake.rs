@@ -368,6 +368,11 @@ impl DucklakeConnection {
     pub(crate) fn storage_options(&self) -> &[(String, String)] {
         &self.0.storage_options
     }
+
+    /// Whether two connection handles refer to the same underlying connection.
+    pub(crate) fn is_same(&self, other: &DucklakeConnection) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 /* ---------------------------------------- TRANSACTIONS --------------------------------------- */

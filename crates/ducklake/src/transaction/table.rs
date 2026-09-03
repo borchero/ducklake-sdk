@@ -151,13 +151,25 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
 impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn delete_table(&mut self, name: &TableName) -> DucklakeResult<()> {
+        self.delete_table_inner(name, false)
+    }
+
+    fn delete_table_inner(&mut self, name: &TableName, detach_files: bool) -> DucklakeResult<()> {
         let mut table = self.catalog_mut().table_mut(name)?;
         table.delete();
         let change = Change::DeleteTable {
             table_ref: table.ref_(),
+            detach_files,
         };
         self.changes.push(change);
         Ok(())
+    }
+
+    pub(crate) fn delete_table_transferring_file_ownership(
+        &mut self,
+        name: &TableName,
+    ) -> DucklakeResult<()> {
+        self.delete_table_inner(name, true)
     }
 }
 
@@ -191,6 +203,15 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
         data_files: Vec<crate::WriteDataFile>,
     ) -> DucklakeResult<()> {
         self.tx.write_table_data_files(&self.name, data_files).await
+    }
+
+    pub(crate) async fn write_transfer_data_files(
+        &mut self,
+        data_files: Vec<super::TransferDataFile>,
+    ) -> DucklakeResult<()> {
+        self.tx
+            .write_table_transfer_data_files(&self.name, data_files)
+            .await
     }
 
     /// Write the provided record batches as inline data into the catalog.
@@ -240,6 +261,24 @@ impl<'a> Transaction<'a> {
         table_name: &TableName,
         data_files: Vec<crate::WriteDataFile>,
     ) -> DucklakeResult<()> {
+        self.write_table_transfer_data_files(
+            table_name,
+            data_files
+                .into_iter()
+                .map(|data_file| super::TransferDataFile {
+                    data_file,
+                    delete_files: Vec::new(),
+                })
+                .collect(),
+        )
+        .await
+    }
+
+    async fn write_table_transfer_data_files(
+        &mut self,
+        table_name: &TableName,
+        data_files: Vec<super::TransferDataFile>,
+    ) -> DucklakeResult<()> {
         let table = self.catalog().table(table_name)?;
         let base_path = table.data_path(&self.metadata.data_path());
         let table_info = table.info();
@@ -249,7 +288,7 @@ impl<'a> Transaction<'a> {
         let mut data_files = data_files;
         let paths = data_files
             .iter()
-            .map(|data_file| data_file.path.parse::<io::DucklakePath>())
+            .map(|data_file| data_file.data_file.path.parse::<io::DucklakePath>())
             .collect::<Result<Vec<_>, _>>()?;
         let statistics =
             futures::future::try_join_all(data_files.iter_mut().zip(paths.iter()).map(
@@ -257,7 +296,7 @@ impl<'a> Transaction<'a> {
                     let path = base_path.join(path);
                     let storage_options = self.storage_options.clone();
                     async move {
-                        if let Some(stats) = data_file.statistics.take() {
+                        if let Some(stats) = data_file.data_file.statistics.take() {
                             Ok(stats)
                         } else {
                             io::parquet::read_file_statistics(
@@ -284,7 +323,7 @@ impl<'a> Transaction<'a> {
                     footer_size_bytes: stats.footer_size_bytes,
                     partition_values: match (
                         table_info.partitioning.as_ref(),
-                        data_file.partition_values,
+                        data_file.data_file.partition_values,
                     ) {
                         // If partitioning is defined, and the user-provided data file contains
                         // partition values, we ensure that they match. Otherwise, we simply ignore
@@ -316,6 +355,18 @@ impl<'a> Transaction<'a> {
                             let Ok(table) = self.catalog().table(table.ref_());
                             let col_ref = table.column(column_id)?.ref_();
                             Ok((col_ref, stats))
+                        })
+                        .collect::<DucklakeResult<_>>()?,
+                    delete_files: data_file
+                        .delete_files
+                        .into_iter()
+                        .map(|delete_file| {
+                            Ok(super::CommitDeleteFile {
+                                path: delete_file.path.parse()?,
+                                num_deletes: delete_file.num_deletes,
+                                file_size_bytes: delete_file.file_size_bytes,
+                                footer_size_bytes: delete_file.footer_size_bytes,
+                            })
                         })
                         .collect::<DucklakeResult<_>>()?,
                 };
