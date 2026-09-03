@@ -143,7 +143,7 @@ impl<'a> SchemaViewMut<'a> {
 
     pub(crate) fn delete(&mut self) -> DucklakeResult<()> {
         let schema = self.inner_mut();
-        if !schema.tables.is_empty() {
+        if !schema.tables.is_empty() || !schema.views.is_empty() {
             return Err(DucklakeError::InvalidChanges(format!(
                 "cannot delete schema {} which is not empty",
                 schema.name

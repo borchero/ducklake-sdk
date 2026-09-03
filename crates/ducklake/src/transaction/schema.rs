@@ -28,11 +28,15 @@ impl<'a> Transaction<'a> {
         Ok(())
     }
 
-    /// Delete an existing schema from the catalog, optionally deleting all of its tables.
+    /// Delete an existing schema from the catalog, optionally deleting all of its tables and
+    /// views.
     pub fn delete_schema(&mut self, name: &str, cascade: bool) -> DucklakeResult<()> {
         if cascade {
             for table_name in self.list_tables(Some(name))? {
                 self.delete_table(&table_name)?;
+            }
+            for view_name in self.list_views(Some(name))? {
+                self.delete_view(&view_name)?;
             }
         }
 

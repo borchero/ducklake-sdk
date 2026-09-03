@@ -45,24 +45,29 @@ pub(crate) fn parse_select_query(sql: &str, dialect: &str) -> DucklakeResult<Sta
     Ok(statement)
 }
 
-/// Extract the names of all tables referenced by the provided SELECT query.
-pub(crate) fn find_referenced_tables(sql: &str, dialect: &str) -> DucklakeResult<Vec<TableName>> {
+/// Extract the names of all tables referenced by the provided SELECT query, resolving
+/// unqualified names against `default_schema`.
+pub(crate) fn find_referenced_tables_in_schema(
+    sql: &str,
+    dialect: &str,
+    default_schema: &str,
+) -> DucklakeResult<Vec<TableName>> {
     let statement = parse_select_query(sql, dialect)?;
 
     let mut visitor = RelationVisitor::default();
     let _ = statement.visit(&mut visitor);
 
-    // Subtract the CTE names from the referenced relations. CTE names are always unqualified, so
-    // we compare against the (unqualified) relation name.
+    // Subtract unqualified CTE names from the referenced relations. Qualified relations always
+    // refer to catalog objects, even if their final component matches a CTE name.
     let mut tables = HashSet::new();
     for relation in visitor.relations {
-        let Ok(name) = TableName::try_from(relation.to_string()) else {
+        let Some(name) = TableName::from_object_name(&relation, default_schema) else {
             continue;
         };
-        if visitor.cte_names.contains(&name.name) {
+        if relation.0.len() == 1 && visitor.cte_names.contains(&name.name) {
             continue;
         }
-        tables.insert(name.clone());
+        tables.insert(name);
     }
     Ok(tables.into_iter().collect())
 }
@@ -120,15 +125,17 @@ mod tests {
 
     #[test]
     fn test_referenced_tables_simple() {
-        let tables = find_referenced_tables("SELECT * FROM users", "duckdb").unwrap();
+        let tables =
+            find_referenced_tables_in_schema("SELECT * FROM users", "duckdb", "main").unwrap();
         assert_eq!(tables, vec!["main.users".try_into().unwrap()]);
     }
 
     #[test]
     fn test_referenced_tables_qualified() {
-        let tables = find_referenced_tables(
+        let tables = find_referenced_tables_in_schema(
             "SELECT * FROM my_schema.orders o JOIN main.users u ON o.uid = u.id",
             "duckdb",
+            "main",
         )
         .unwrap();
         assert!(tables.contains(&"my_schema.orders".try_into().unwrap()));
@@ -136,9 +143,17 @@ mod tests {
     }
 
     #[test]
+    fn test_referenced_tables_uses_default_schema() {
+        let tables =
+            find_referenced_tables_in_schema("SELECT * FROM users", "duckdb", "analytics")
+                .unwrap();
+        assert_eq!(tables, vec!["analytics.users".try_into().unwrap()]);
+    }
+
+    #[test]
     fn test_referenced_tables_excludes_ctes() {
         let sql = "WITH recent AS (SELECT * FROM events) SELECT * FROM recent JOIN users ON true";
-        let tables = find_referenced_tables(sql, "duckdb").unwrap();
+        let tables = find_referenced_tables_in_schema(sql, "duckdb", "main").unwrap();
         // `recent` is a CTE and must be excluded; `events` and `users` remain.
         assert!(tables.contains(&"main.events".try_into().unwrap()));
         assert!(tables.contains(&"main.users".try_into().unwrap()));

@@ -15,8 +15,7 @@ def _setup_view(
     ducklake: dl.Ducklake, table_name: str, view_name: str
 ) -> tuple[dl.View, pl.DataFrame]:
     table = ducklake.create_table(table_name, {"x": dl.Int64()})
-    df = pl.DataFrame({"x": [1, 2, 3, 4]}, schema={"x": pl.Int64})
-    table.write_arrow(df.to_arrow())
+    table.sink_polars(pl.LazyFrame({"x": [1, 2, 3, 4]}, schema={"x": pl.Int64}))
     view = ducklake.create_view(view_name, f"SELECT x FROM {table_name} WHERE x > 2")
     return view, pl.DataFrame({"x": [3, 4]}, schema={"x": pl.Int64})
 
@@ -65,7 +64,7 @@ def test_read_polars_with_column_aliases(
 ) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    table.write_arrow(pl.DataFrame({"x": [1, 2, 3]}, schema={"x": pl.Int64}).to_arrow())
+    table.sink_polars(pl.LazyFrame({"x": [1, 2, 3]}, schema={"x": pl.Int64}))
     view = shared_ducklake.create_view(
         random_view_name,
         f"SELECT x FROM {random_table_name}",
@@ -77,6 +76,28 @@ def test_read_polars_with_column_aliases(
 
     # Assert
     assert actual.columns == ["renamed x"]
+
+
+def test_read_polars_with_partial_column_aliases(
+    shared_ducklake: dl.Ducklake, random_table_name: str, random_view_name: str
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64(), "y": dl.Int64()})
+    table.sink_polars(pl.LazyFrame({"x": [1], "y": [2]}, schema={"x": pl.Int64, "y": pl.Int64}))
+    view = shared_ducklake.create_view(
+        random_view_name,
+        f"SELECT x, y FROM {random_table_name}",
+        column_aliases=["renamed x"],
+    )
+    expected = pl.DataFrame(
+        {"renamed x": [1], "y": [2]}, schema={"renamed x": pl.Int64, "y": pl.Int64}
+    )
+
+    # Act
+    actual = view.read_polars()
+
+    # Assert
+    assert_frame_equal(actual, expected)
 
 
 def test_read_polars_matches_duckdb(
@@ -103,9 +124,53 @@ def test_read_polars_with_qualified_table_reference(
     shared_ducklake.create_schema(random_schema_name)
     table_name = dl.TableName(random_schema_name, random_table_name)
     table = shared_ducklake.create_table(table_name, {"x": dl.Int64()})
-    table.write_arrow(pl.DataFrame({"x": [1, 2, 3]}, schema={"x": pl.Int64}).to_arrow())
+    table.sink_polars(pl.LazyFrame({"x": [1, 2, 3]}, schema={"x": pl.Int64}))
     view = shared_ducklake.create_view(random_view_name, f"SELECT x FROM {table_name} WHERE x > 1")
     expected = pl.DataFrame({"x": [2, 3]}, schema={"x": pl.Int64})
+
+    # Act
+    actual = view.read_polars()
+
+    # Assert
+    assert_frame_equal(actual, expected)
+
+
+def test_read_polars_with_unqualified_table_in_view_schema(
+    shared_ducklake: dl.Ducklake,
+    random_schema_name: str,
+    random_table_name: str,
+    random_view_name: str,
+) -> None:
+    # Arrange
+    shared_ducklake.create_schema(random_schema_name)
+    table = shared_ducklake.create_table(
+        (random_schema_name, random_table_name), {"x": dl.Int64()}
+    )
+    table.sink_polars(pl.LazyFrame({"x": [1]}, schema={"x": pl.Int64}))
+    view = shared_ducklake.create_view(
+        (random_schema_name, random_view_name), f"SELECT x FROM {random_table_name}"
+    )
+    expected = pl.DataFrame({"x": [1]}, schema={"x": pl.Int64})
+
+    # Act
+    actual = view.read_polars()
+
+    # Assert
+    assert_frame_equal(actual, expected)
+
+
+def test_read_polars_with_nested_view(
+    shared_ducklake: dl.Ducklake, random_table_name: str, random_view_name: str
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    table.sink_polars(pl.LazyFrame({"x": [1, 2]}, schema={"x": pl.Int64}))
+    inner_view_name = random_view_name + "_inner"
+    shared_ducklake.create_view(inner_view_name, f"SELECT x FROM {random_table_name}")
+    view = shared_ducklake.create_view(
+        random_view_name, f"SELECT x FROM {inner_view_name} WHERE x > 1"
+    )
+    expected = pl.DataFrame({"x": [2]}, schema={"x": pl.Int64})
 
     # Act
     actual = view.read_polars()
@@ -119,7 +184,7 @@ def test_read_polars_with_cte(
 ) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    table.write_arrow(pl.DataFrame({"x": [1, 2, 3]}, schema={"x": pl.Int64}).to_arrow())
+    table.sink_polars(pl.LazyFrame({"x": [1, 2, 3]}, schema={"x": pl.Int64}))
     view = shared_ducklake.create_view(
         random_view_name,
         f"WITH recent AS (SELECT x FROM {random_table_name}) SELECT x FROM recent WHERE x > 1",

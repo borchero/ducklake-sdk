@@ -1,6 +1,8 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
+use sqlparser::ast::ObjectName;
+
 use crate::utils::{format_identifier, parse_identifier};
 use crate::{DucklakeError, DucklakeResult};
 
@@ -11,6 +13,24 @@ pub struct TableName {
     pub schema: String,
     /// The name of the table within its schema.
     pub name: String,
+}
+
+impl TableName {
+    /// Create a table name from a SQL object name, resolving an unqualified name against the
+    /// provided default schema.
+    pub fn from_object_name(name: &ObjectName, default_schema: &str) -> Option<Self> {
+        match name.0.as_slice() {
+            [name] => Some(Self {
+                schema: default_schema.to_string(),
+                name: name.as_ident()?.value.clone(),
+            }),
+            [schema, name] => Some(Self {
+                schema: schema.as_ident()?.value.clone(),
+                name: name.as_ident()?.value.clone(),
+            }),
+            _ => None,
+        }
+    }
 }
 
 impl TryFrom<&str> for TableName {

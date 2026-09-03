@@ -53,7 +53,7 @@ class Transaction:
 
         Args:
             name: The name of the schema to delete.
-            cascade: Whether to also delete all tables in the schema.
+            cascade: Whether to also delete all tables and views in the schema.
 
         Raises:
             ValueError: If the schema is not empty and `cascade` is `False`.

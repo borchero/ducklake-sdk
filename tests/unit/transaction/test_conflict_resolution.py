@@ -121,6 +121,24 @@ def test_conflict_concurrent_create_same_table(
                 tx2.create_table(random_table_name, {"y": dl.Varchar()})
 
 
+def test_conflict_concurrent_create_table_and_view(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    snapshot = shared_ducklake.get_latest_snapshot()
+
+    # Act
+    with pytest.raises(dlexc.TransactionConflictError):
+        with shared_ducklake.transaction() as tx:
+            tx.create_table(random_table_name, {"x": dl.Int64()})
+            shared_ducklake.create_view(random_table_name, "SELECT 1 AS x")
+
+    # Assert
+    assert shared_ducklake.get_latest_snapshot().id == snapshot.id + 1
+    assert shared_ducklake.get_view(random_table_name).name == ("main", random_table_name)
+    assert not shared_ducklake.has_table(random_table_name)
+
+
 def test_conflict_concurrent_drop_same_table(
     shared_ducklake: dl.Ducklake, random_table_name: str
 ) -> None:

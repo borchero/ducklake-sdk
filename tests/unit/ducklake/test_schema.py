@@ -84,6 +84,25 @@ def test_delete_nonempty_schema_without_cascade_raises(
     assert shared_ducklake.has_table((random_schema_name, random_table_name))
 
 
+def test_delete_schema_with_view_without_cascade_raises(
+    shared_ducklake: dl.Ducklake, random_schema_name: str, random_view_name: str
+) -> None:
+    # Arrange
+    shared_ducklake.create_schema(random_schema_name)
+    shared_ducklake.create_view((random_schema_name, random_view_name), "SELECT 1 AS x")
+
+    # Act
+    with pytest.raises(ValueError, match="not empty"):
+        shared_ducklake.delete_schema(random_schema_name)
+
+    # Assert
+    assert random_schema_name in shared_ducklake.list_schemas()
+    assert shared_ducklake.get_view((random_schema_name, random_view_name)).name == (
+        random_schema_name,
+        random_view_name,
+    )
+
+
 @pytest.mark.parametrize("use_transaction", [False, True])
 def test_delete_schema_cascade(
     shared_ducklake: dl.Ducklake,
@@ -111,6 +130,24 @@ def test_delete_schema_cascade(
     assert all(
         not shared_ducklake.has_table((random_schema_name, table_name))
         for table_name in table_names
+    )
+
+
+def test_delete_schema_cascade_deletes_views(
+    shared_ducklake: dl.Ducklake, random_schema_name: str, random_view_name: str
+) -> None:
+    # Arrange
+    shared_ducklake.create_schema(random_schema_name)
+    shared_ducklake.create_view((random_schema_name, random_view_name), "SELECT 1 AS x")
+
+    # Act
+    shared_ducklake.delete_schema(random_schema_name, cascade=True)
+
+    # Assert
+    assert random_schema_name not in shared_ducklake.list_schemas()
+    assert all(
+        view.name != (random_schema_name, random_view_name)
+        for view in shared_ducklake.list_views()
     )
 
 

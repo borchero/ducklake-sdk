@@ -86,9 +86,12 @@ impl Catalog {
         Vec<Vec<ColumnRef>>,
         Option<Vec<ColumnRef>>,
     )> {
-        // If the table exists already, we need to raise some kind of error
+        // If the table name exists already, we need to raise some kind of error
         if let Ok(table) = self.table(&table.name) {
             return Err(DucklakeError::table_already_exists(table.name()));
+        }
+        if let Ok(view) = self.view(&table.name) {
+            return Err(DucklakeError::view_already_exists(view.name()));
         }
 
         // If the table does not yet exist, create a new pending table
@@ -147,9 +150,12 @@ impl Catalog {
         &mut self,
         view: crate::ViewInfo,
     ) -> DucklakeResult<(SchemaRef, ViewRef)> {
-        // If the view exists already, we need to raise some kind of error
+        // If the view name exists already, we need to raise some kind of error
         if let Ok(view) = self.view(&view.name) {
             return Err(DucklakeError::view_already_exists(view.name()));
+        }
+        if let Ok(table) = self.table(&view.name) {
+            return Err(DucklakeError::table_already_exists(table.name()));
         }
 
         // If the view does not yet exist, create a new pending view.

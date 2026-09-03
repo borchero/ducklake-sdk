@@ -125,6 +125,31 @@ impl<'a> Transaction<'a> {
         }
     }
 
+    /// List all views in the transaction-local catalog, optionally restricted to a specific
+    /// schema.
+    pub fn list_views(&self, schema: Option<&str>) -> DucklakeResult<Vec<TableName>> {
+        if let Some(schema) = schema {
+            Ok(self
+                .catalog
+                .schema(schema)?
+                .list_views()
+                .into_iter()
+                .map(|view| view.name().clone())
+                .collect())
+        } else {
+            let mut views = Vec::new();
+            for schema in self.catalog.list_schemas() {
+                views.extend(
+                    schema
+                        .list_views()
+                        .into_iter()
+                        .map(|view| view.name().clone()),
+                );
+            }
+            Ok(views)
+        }
+    }
+
     /// List the names of all schemas in the transaction-local catalog.
     pub fn list_schemas(&self) -> Vec<String> {
         self.catalog
