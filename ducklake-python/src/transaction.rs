@@ -63,8 +63,28 @@ impl PyTransaction {
             .map_err(error::into_pyerr)
     }
 
-    fn delete_schema(&mut self, name: String) -> PyResult<()> {
-        self.tx().delete_schema(&name).map_err(error::into_pyerr)
+    fn delete_schema(&mut self, name: String, cascade: bool) -> PyResult<()> {
+        self.tx()
+            .delete_schema(&name, cascade)
+            .map_err(error::into_pyerr)
+    }
+
+    fn list_schemas(&mut self) -> Vec<String> {
+        self.tx().list_schemas()
+    }
+
+    fn list_tables(&mut self, schema: Option<String>) -> PyResult<Vec<PyTransactionTable>> {
+        let tables = self
+            .tx()
+            .list_tables(schema.as_deref())
+            .map_err(error::into_pyerr)?;
+        Ok(tables
+            .into_iter()
+            .map(|table| PyTransactionTable {
+                transaction: self.0.clone(),
+                table,
+            })
+            .collect())
     }
 
     fn table(&mut self, name: Wrap<ducklake::TableName>) -> PyResult<PyTransactionTable> {
@@ -116,6 +136,11 @@ impl PyTransaction {
 #[pymethods]
 impl PyTransactionTable {
     #[getter]
+    pub fn name(&self) -> (String, String) {
+        (self.table.schema.clone(), self.table.name.clone())
+    }
+
+    #[getter]
     pub fn columns(&mut self) -> PyResult<Vec<Wrap<ducklake::Column>>> {
         let table = self.table.clone();
         let mut tx_guard = self.tx();
@@ -166,7 +191,9 @@ impl PyTransactionTable {
         let table = self.table.clone();
         self.tx()
             .rename_table(&table, &new_name)
-            .map_err(error::into_pyerr)
+            .map_err(error::into_pyerr)?;
+        self.table.name = new_name;
+        Ok(())
     }
 
     fn update_partitioning(

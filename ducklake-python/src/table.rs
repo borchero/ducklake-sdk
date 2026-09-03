@@ -7,7 +7,8 @@ use crate::utils::filepath_generator::PyDataFilePathGenerator;
 use crate::utils::runtime::block_on;
 use crate::{PyDucklake, error};
 
-#[pyclass]
+#[derive(PartialEq, Eq)]
+#[pyclass(eq)]
 pub struct PyTable(ducklake::Table);
 
 impl PyTable {

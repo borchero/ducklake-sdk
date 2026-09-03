@@ -1,3 +1,5 @@
+import datetime as dt
+
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
@@ -43,6 +45,67 @@ def test_read_polars_with_file_paths(shared_ducklake: dl.Ducklake, random_table_
     assert "path" in df.columns
     assert df.height == 3
     assert df["path"].n_unique() == 1
+
+
+def test_read_polars_uses_connection_time_zone(
+    catalog_url: str, storage_path: str, random_table_name: str
+) -> None:
+    # Arrange
+    ducklake = dl.create(catalog_url, data_path=storage_path, time_zone="Europe/Berlin")
+    table = ducklake.create_table(random_table_name, {"x": dl.TimestampTz()})
+    df = pl.DataFrame(
+        {
+            "x": pl.Series(
+                [
+                    dt.datetime(2024, 1, 1, 12, tzinfo=dt.timezone.utc),
+                    dt.datetime(2024, 7, 1, 12, tzinfo=dt.timezone.utc),
+                ],
+                dtype=pl.Datetime("us", "UTC"),
+            )
+        }
+    )
+    table.sink_polars(df.lazy())
+
+    # Act
+    actual = table.read_polars()
+    overridden = table.scan_polars(time_zone="UTC").collect()
+
+    # Assert
+    expected = df.with_columns(pl.col("x").dt.convert_time_zone("Europe/Berlin"))
+    assert_frame_equal(actual, expected)
+    assert_frame_equal(overridden, df)
+
+
+def test_read_polars_applies_time_zone_to_nested_timestamps(
+    catalog_url: str, storage_path: str, random_table_name: str
+) -> None:
+    # Arrange
+    ducklake = dl.create(catalog_url, data_path=storage_path, time_zone="Europe/Berlin")
+    table = ducklake.create_table(
+        random_table_name,
+        {"events": dl.List(dl.Struct({"at": dl.TimestampTz()}))},
+    )
+    source_dtype = pl.List(pl.Struct({"at": pl.Datetime("us", "UTC")}))
+    df = pl.DataFrame(
+        {
+            "events": pl.Series(
+                [
+                    [{"at": dt.datetime(2024, 7, 1, 12, tzinfo=dt.timezone.utc)}],
+                    [],
+                ],
+                dtype=source_dtype,
+            )
+        }
+    )
+    table.sink_polars(df.lazy())
+
+    # Act
+    actual = table.read_polars()
+
+    # Assert
+    expected_dtype = pl.List(pl.Struct({"at": pl.Datetime("us", time_zone="Europe/Berlin")}))
+    expected = df.with_columns(pl.col("events").cast(expected_dtype))
+    assert_frame_equal(actual, expected)
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")

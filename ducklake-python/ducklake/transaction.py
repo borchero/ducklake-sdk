@@ -9,6 +9,7 @@ from .typedefs import (
     Partitioning,
     Schema,
     TableMetadata,
+    TableName,
     Value,
     WriteDataFile,
 )
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
 
     from ._native import PyDataFilePathGenerator, PyTransaction, PyTransactionTable
     from ._storage import StorageOptionSet
-    from .table import TableName
     from .typedefs import ArrowStreamExportable
 
 
@@ -48,8 +48,36 @@ class Transaction:
     ) -> None:
         self._pytx.create_schema(name, data_path, if_exists)
 
-    def delete_schema(self, name: str) -> None:
-        self._pytx.delete_schema(name)
+    def delete_schema(self, name: str, *, cascade: bool = False) -> None:
+        """Delete an existing schema from the catalog.
+
+        Args:
+            name: The name of the schema to delete.
+            cascade: Whether to also delete all tables and views in the schema.
+
+        Raises:
+            ValueError: If the schema is not empty and `cascade` is `False`.
+        """
+        self._pytx.delete_schema(name, cascade)
+
+    def list_schemas(self) -> list[str]:
+        """List all schemas in the transaction-local catalog."""
+        return self._pytx.list_schemas()
+
+    def list_tables(self, schema: str | None = None) -> list[TransactionTable]:
+        """List all tables in the transaction-local catalog.
+
+        Args:
+            schema: Optional schema name to filter tables by. If None, returns all tables
+                across all schemas.
+
+        Returns:
+            A list of transaction table objects, optionally filtered by schema.
+        """
+        return [
+            TransactionTable._from_pytransaction_table(table, self._storage_options)
+            for table in self._pytx.list_tables(schema)
+        ]
 
     def table(self, name: str | TableName) -> TransactionTable:
         pytransaction_table = self._pytx.table(name)
@@ -163,6 +191,15 @@ class TransactionTable:
         )
 
     # ------------------------------------------------------------------------------------------- #
+    #                                         PROPERTIES                                          #
+    # ------------------------------------------------------------------------------------------- #
+
+    @property
+    def name(self) -> TableName:
+        """The fully qualified name of the table."""
+        return TableName(*self._pytxtable.name)
+
+    # ------------------------------------------------------------------------------------------- #
     #                                            WRITES                                           #
     # ------------------------------------------------------------------------------------------- #
 
@@ -202,7 +239,7 @@ class TransactionTable:
         *,
         engine: EngineType = "auto",
         optimizations: pl.QueryOptFlags | None = None,
-        lazy: bool = False,
+        lazy: Literal[False] = False,
     ) -> None: ...
 
     @overload

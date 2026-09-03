@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 import polars as pl
@@ -62,6 +63,20 @@ def test_schema_from_arrow() -> None:
     ]
 
 
+@pytest.mark.parametrize("list_factory_name", ["list_", "large_list"])
+def test_schema_from_arrow_renames_list_element(list_factory_name: str) -> None:
+    # Arrange
+    pa = pytest.importorskip("pyarrow")
+    list_factory = getattr(pa, list_factory_name)
+    arrow_schema = pa.schema({"values": list_factory(pa.field("item", pa.int64()))})
+
+    # Act
+    schema = dl.Schema(arrow_schema)
+
+    # Assert
+    assert schema.columns == [dl.Column("values", dl.List(dl.Int64()))]
+
+
 def test_schema_from_polars_enum() -> None:
     # Arrange
     polars_schema = pl.Schema({"e": pl.Enum(["a", "b", "c"])})
@@ -97,6 +112,7 @@ def test_schema_from_polars_categorical() -> None:
     [
         pl.Schema({"e": pl.Enum(["a", "b", "c"])}),
         pl.Schema({"c": pl.Categorical()}),
+        pl.Schema({"e": pl.List(pl.Enum(["a", "b", "c"]))}),
         pl.Schema({"e": pl.Enum(["x", "y"]), "c": pl.Categorical(), "n": pl.Int64()}),
     ],
 )
@@ -109,6 +125,30 @@ def test_schema_polars_metadata_round_trip(polars_schema: pl.Schema) -> None:
 
     # Assert
     assert round_trip == polars_schema
+
+
+@pytest.mark.parametrize(
+    "nested_type_factory",
+    [
+        lambda pa, dtype: pa.large_list(pa.field("element", dtype, metadata={"kind": "enum"})),
+        lambda pa, dtype: pa.struct([pa.field("value", dtype, metadata={"kind": "enum"})]),
+        lambda pa, dtype: pa.map_(pa.int64(), pa.field("value", dtype, metadata={"kind": "enum"})),
+    ],
+    ids=["list", "struct", "map"],
+)
+def test_schema_arrow_metadata_round_trip_for_nested_dictionary(
+    nested_type_factory: Callable[[Any, Any], Any],
+) -> None:
+    # Arrange
+    pa = pytest.importorskip("pyarrow")
+    dictionary_type = pa.dictionary(pa.uint8(), pa.string())
+    arrow_schema = pa.schema({"nested": nested_type_factory(pa, dictionary_type)})
+
+    # Act
+    round_trip = pa.schema(dl.Schema(arrow_schema))
+
+    # Assert
+    assert round_trip.equals(arrow_schema, check_metadata=True)
 
 
 # ------------------------------------------- COLUMN -------------------------------------------- #

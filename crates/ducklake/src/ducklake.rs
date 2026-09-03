@@ -17,6 +17,14 @@ pub struct Ducklake {
 #[repr(transparent)]
 pub(crate) struct DucklakeConnection(Arc<DucklakeConnectionInner>);
 
+impl PartialEq for DucklakeConnection {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for DucklakeConnection {}
+
 struct DucklakeConnectionInner {
     /// Database connection pool which is used to execute queries against the catalog database.
     /// This pool is constant for the lifetime of the Ducklake connection.
@@ -31,6 +39,8 @@ struct DucklakeConnectionInner {
     snapshot_cache: Arc<SnapshotCache>,
     /// Storage options to use for connecting to cloud storage.
     storage_options: Vec<(String, String)>,
+    /// Time zone used to represent timezone-aware timestamps when reading data.
+    time_zone: chrono_tz::Tz,
     /// The access mode of the connection, i.e. whether it is writable, read-only, or pinned to a
     /// historical snapshot via time travel.
     mode: ConnectionMode,
@@ -88,7 +98,14 @@ impl Ducklake {
         spec::init_catalog(&pool, config).await?;
 
         // Create the ducklake instance
-        Self::new(pool, None, false, options.storage_options).await
+        Self::new(
+            pool,
+            None,
+            false,
+            options.storage_options,
+            options.time_zone,
+        )
+        .await
     }
 
     /// Connect to an existing DuckLake by attaching to an existing catalog database.
@@ -110,7 +127,14 @@ impl Ducklake {
                 Some(SnapshotInfo::load_for_timestamp(&pool, timestamp).await?)
             }
         };
-        Self::new(pool, snapshot, options.readonly, options.storage_options).await
+        Self::new(
+            pool,
+            snapshot,
+            options.readonly,
+            options.storage_options,
+            options.time_zone,
+        )
+        .await
     }
 
     /// Disconnect from the catalog database, gracefully closing the underlying connection pool.
@@ -160,6 +184,7 @@ impl Ducklake {
         travel_snapshot: Option<SnapshotInfo>,
         readonly: bool,
         storage_options: Vec<(String, String)>,
+        time_zone: chrono_tz::Tz,
     ) -> DucklakeResult<Self> {
         let has_travel_snapshot = travel_snapshot.is_some();
 
@@ -180,6 +205,7 @@ impl Ducklake {
             metadata_cache: Arc::new(metadata_cache),
             snapshot_cache: Arc::new(snapshot_cache),
             storage_options,
+            time_zone,
             mode,
         };
         let ducklake = Ducklake {
@@ -237,6 +263,7 @@ impl Ducklake {
             metadata_cache: self.conn.0.metadata_cache.clone(),
             snapshot_cache: self.conn.0.snapshot_cache.clone(),
             storage_options: self.conn.0.storage_options.clone(),
+            time_zone: self.conn.0.time_zone,
             mode,
         };
         Ducklake {
@@ -344,6 +371,55 @@ impl Ducklake {
             .collect()
     }
 
+    /// Get a handle to the view with the provided name.
+    pub async fn view(
+        &self,
+        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+    ) -> DucklakeResult<View> {
+        let name = name.try_into().map_err(|e| e.into())?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
+        let catalog = snapshot.catalog().await?;
+        Ok(self.maybe_view_from_catalog(catalog, &name)?.unwrap())
+    }
+
+    fn maybe_view_from_catalog(
+        &self,
+        catalog: &Catalog,
+        name: &TableName,
+    ) -> DucklakeResult<Option<View>> {
+        if catalog.schema(&name.schema)?.id().is_none() {
+            return Ok(None);
+        }
+        let Some(view_id) = catalog.view(name)?.id() else {
+            return Ok(None);
+        };
+        Ok(Some(View::new(self.conn.clone(), view_id)))
+    }
+
+    /// List all views in the catalog, optionally restricted to a specific schema.
+    pub async fn list_views(&self, schema: Option<&str>) -> DucklakeResult<Vec<View>> {
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
+        let catalog = snapshot.catalog().await?;
+        let views = if let Some(schema) = schema {
+            self.list_views_in_schema(catalog.schema(schema)?)
+        } else {
+            catalog
+                .list_schemas()
+                .into_iter()
+                .flat_map(|s| self.list_views_in_schema(s))
+                .collect()
+        };
+        Ok(views)
+    }
+
+    fn list_views_in_schema(&self, schema: catalog::SchemaView<'_>) -> Vec<View> {
+        schema
+            .list_views()
+            .into_iter()
+            .map(|v| View::new(self.conn.clone(), v.id().unwrap()))
+            .collect()
+    }
+
     /// List the names of all schemas in the catalog.
     pub async fn list_schemas(&self) -> DucklakeResult<Vec<String>> {
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -367,6 +443,10 @@ impl DucklakeConnection {
 
     pub(crate) fn storage_options(&self) -> &[(String, String)] {
         &self.0.storage_options
+    }
+
+    pub(crate) fn time_zone(&self) -> &str {
+        self.0.time_zone.name()
     }
 
     /// Whether two connection handles refer to the same underlying connection.
@@ -488,8 +568,8 @@ macro_rules! within_transaction {
 within_transaction! {
     /// Create a new schema in the catalog.
     fn create_schema(name: &str, path: Option<String>, if_exists: IfExistsStrategy) -> DucklakeResult<()>;
-    /// Delete an existing schema from the catalog.
-    fn delete_schema(name: &str) -> DucklakeResult<()>;
+    /// Delete an existing schema from the catalog, optionally deleting all of its tables.
+    fn delete_schema(name: &str, cascade: bool) -> DucklakeResult<()>;
 }
 
 impl Ducklake {
@@ -524,6 +604,32 @@ impl Ducklake {
             self.table(name).await
         }
     }
+
+    /// Create a new view in the catalog.
+    ///
+    /// The provided SQL must be a single `SELECT` query (not a `CREATE VIEW` statement).
+    pub async fn create_view(
+        &self,
+        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        sql: String,
+        column_aliases: Option<Vec<String>>,
+        tags: Option<Vec<Tag>>,
+        if_exists: IfExistsStrategy,
+    ) -> DucklakeResult<View> {
+        let name = name.try_into().map_err(|e| e.into())?;
+        let mut tx = self.transaction().await?;
+        tx.create_view(name.clone(), sql, column_aliases, tags, if_exists)?;
+        let view = self.maybe_view_from_catalog(tx.catalog(), &name)?;
+        tx.commit().await?;
+
+        // `view` is `Some` if the view already had an ID in the catalog. Otherwise, it is `None`
+        // and we will need to fetch the view again.
+        if let Some(view) = view {
+            Ok(view)
+        } else {
+            self.view(name).await
+        }
+    }
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -547,6 +653,11 @@ impl Ducklake {
     /// time-traveling connections.
     pub fn is_readonly(&self) -> bool {
         self.conn.is_readonly()
+    }
+
+    /// The time zone used to represent timezone-aware timestamps when reading data.
+    pub fn time_zone(&self) -> &str {
+        self.conn.time_zone()
     }
 }
 

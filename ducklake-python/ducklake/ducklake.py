@@ -21,6 +21,7 @@ from .typedefs import (
     TableName,
     _serialize_metadata_value,
 )
+from .view import View
 
 if sys.version_info >= (3, 11):
     from typing import Unpack
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
     import duckdb
     import sqlalchemy as sa
 
-    from ._native import PyDucklake
+    from ._native import PyDucklake, PyTable, PyView
     from ._storage import StorageOptionSet
     from .connect import ConnectionArgs
 
@@ -65,7 +66,13 @@ class Ducklake:
             self._connection_args,
             storage_options=self._storage_options,
             readonly=self._pyducklake.is_readonly(),
+            time_zone=self.time_zone,
         )
+
+    @property
+    def time_zone(self) -> str:
+        """The time zone used to represent timezone-aware timestamps when reading data."""
+        return self._pyducklake.time_zone
 
     # ---------------------------------------- SNAPSHOTS ---------------------------------------- #
 
@@ -199,8 +206,17 @@ class Ducklake:
         """
         return self._pyducklake.list_schemas()
 
-    def delete_schema(self, name: str) -> None:
-        self._pyducklake.delete_schema(name)
+    def delete_schema(self, name: str, *, cascade: bool = False) -> None:
+        """Delete an existing schema from the catalog.
+
+        Args:
+            name: The name of the schema to delete.
+            cascade: Whether to also delete all tables and views in the schema.
+
+        Raises:
+            ValueError: If the schema is not empty and `cascade` is `False`.
+        """
+        self._pyducklake.delete_schema(name, cascade)
 
     # ------------------------------------------ TABLES ----------------------------------------- #
 
@@ -249,9 +265,9 @@ class Ducklake:
             tags=list(tags.items()) if tags else None,
             if_exists=if_exists,
         )
-        return Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
+        return self._wrap_table(pytable)
 
-    def get_table(self, name: str | tuple[str, str] | TableName) -> Table:
+    def table(self, name: str | tuple[str, str] | TableName) -> Table:
         """Read a table from the catalog.
 
         Args:
@@ -266,9 +282,13 @@ class Ducklake:
 
         Raises:
             NotFoundError: If the table does not exist.
+
+        Note:
+            The table is resolved against the latest snapshot. For a time-traveled DuckLake, it is
+            resolved against the pinned historical snapshot instead.
         """
         pytable = self._pyducklake.table(name)
-        return Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
+        return self._wrap_table(pytable)
 
     def has_table(self, name: str | tuple[str, str] | TableName) -> bool:
         """Check whether a table exists in the catalog.
@@ -296,10 +316,88 @@ class Ducklake:
             A list of all Table objects in the catalog, optionally filtered by schema.
         """
         pytables = self._pyducklake.list_tables(schema)
-        return [
-            Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
-            for pytable in pytables
-        ]
+        return [self._wrap_table(pytable) for pytable in pytables]
+
+    def _wrap_table(self, pytable: PyTable) -> Table:
+        return Table._from_pytable(
+            pytable, lambda: self._duckdb_connection, self._storage_options, self.time_zone
+        )
+
+    # ------------------------------------------ VIEWS ------------------------------------------ #
+
+    def create_view(
+        self,
+        name: str | tuple[str, str] | TableName,
+        sql: str,
+        *,
+        column_aliases: Sequence[str] | None = None,
+        tags: Mapping[str, str] | None = None,
+        if_exists: Literal["fail", "skip"] = "fail",
+    ) -> View:
+        """Create a new view in the catalog.
+
+        Args:
+            name: The fully qualified name of the new view.
+            sql: The SQL ``SELECT`` query defining the view. This must be a single ``SELECT``
+                query; do not provide a ``CREATE VIEW`` statement.
+            column_aliases: Optional explicit names for the view's output columns.
+            tags: Optional tags to attach to the view.
+            if_exists: The strategy to apply if a view with the same name already exists.
+                "fail" raises an :class:`~ducklake.exceptions.AlreadyExistsError`, while "skip"
+                returns the existing view unchanged.
+
+        Returns:
+            The newly created :class:`View`.
+
+        Raises:
+            ValueError: If the provided SQL is not a single `SELECT` query.
+        """
+        pyview = self._pyducklake.create_view(
+            name,
+            sql,
+            list(column_aliases) if column_aliases is not None else None,
+            list(tags.items()) if tags else None,
+            if_exists,
+        )
+        return self._wrap_view(pyview)
+
+    def get_view(self, name: str | tuple[str, str] | TableName) -> View:
+        """Read a view from the catalog.
+
+        Args:
+            name: The name of the view. This can either be a string or a TableName tuple. If
+                a string is provided, it is parsed just like DuckDB parses table names: it must
+                be of the format `<schema>.<view>` where the schema is optional and defaults to
+                "main".
+
+        Returns:
+            The View object.
+
+        Raises:
+            NotFoundError: If the view does not exist.
+        """
+        return self._wrap_view(self._pyducklake.view(name))
+
+    def list_views(self, schema: str | None = None) -> list[View]:
+        """List all views in the catalog.
+
+        Args:
+            schema: Optional schema name to filter views by. If None, returns all views
+                across all schemas.
+
+        Returns:
+            A list of all View objects in the catalog, optionally filtered by schema.
+        """
+        return [self._wrap_view(pyview) for pyview in self._pyducklake.list_views(schema)]
+
+    def _wrap_view(self, pyview: PyView) -> View:
+        return View._from_pyview(
+            pyview,
+            self,
+            lambda: self._duckdb_connection,
+            self._storage_options,
+            self.time_zone,
+        )
 
     def copy_tables_from(
         self,
@@ -325,7 +423,9 @@ class Ducklake:
             list(names) if names is not None else None,
         )
         return [
-            Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
+            Table._from_pytable(
+                pytable, lambda: self._duckdb_connection, self._storage_options, self.time_zone
+            )
             for pytable in pytables
         ]
 
@@ -353,7 +453,9 @@ class Ducklake:
             list(names) if names is not None else None,
         )
         return [
-            Table._from_pytable(pytable, lambda: self._duckdb_connection, self._storage_options)
+            Table._from_pytable(
+                pytable, lambda: self._duckdb_connection, self._storage_options, self.time_zone
+            )
             for pytable in pytables
         ]
 
@@ -668,10 +770,11 @@ def _make_duckdb_connection(
     data_path: str | None = None,
     storage_options: StorageOptionSet | None = None,
     readonly: bool = False,
+    time_zone: str = "UTC",
 ) -> duckdb.DuckDBPyConnection:
     import duckdb
 
-    con = duckdb.connect()
+    con = duckdb.connect(config={"TimeZone": time_zone})
     con.execute("INSTALL ducklake;")
 
     # Build options based on parameters

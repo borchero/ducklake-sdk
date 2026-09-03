@@ -9,5 +9,6 @@ pub(in crate::catalog) struct CatalogSchema {
     pub id: Option<i64>,
     pub name: String,
     pub tables: HashMap<String, ArenaIdx>,
+    pub views: HashMap<String, ArenaIdx>,
     pub path: io::DucklakePath,
 }

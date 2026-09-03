@@ -9,7 +9,7 @@ import ducklake.exceptions as dlexc
 @pytest.fixture()
 def readonly_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> dl.Table:
     shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    return shared_ducklake.readonly().get_table(random_table_name)
+    return shared_ducklake.readonly().table(random_table_name)
 
 
 def test_readonly_reads_follow_head(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
@@ -24,7 +24,7 @@ def test_readonly_reads_follow_head(shared_ducklake: dl.Ducklake, random_table_n
     table.sink_polars(lf)
 
     # Assert: unlike time travel, the read-only view sees the new commit (it follows head).
-    assert_frame_equal(pl.concat([lf, lf]), readonly.get_table(random_table_name).scan_polars())
+    assert_frame_equal(pl.concat([lf, lf]), readonly.table(random_table_name).scan_polars())
 
 
 def test_readonly_get_latest_snapshot_works(
@@ -90,6 +90,7 @@ def test_readonly_allows_reads(shared_ducklake: dl.Ducklake, random_table_name: 
     assert random_table_name in [table.name[1] for table in readonly.list_tables()]
 
 
+@pytest.mark.skip_config(catalog="mysql", reason="The DuckDB MySQL connector is unreliable.")
 def test_readonly_blocks_duckdb_write(
     shared_ducklake: dl.Ducklake, random_table_name: str
 ) -> None:
@@ -113,7 +114,7 @@ def test_connect_readonly(catalog_url: str, storage_path: str, random_table_name
     # Act & Assert
     with dl.connect(catalog_url, readonly=True) as ducklake:
         # Reads work.
-        assert ducklake.get_table(random_table_name).read_polars().height == 3
+        assert ducklake.table(random_table_name).read_polars().height == 3
         # Writes are rejected.
         with pytest.raises(dlexc.ReadonlyDucklakeError):
             ducklake.create_table("other", {"x": dl.Int64()})

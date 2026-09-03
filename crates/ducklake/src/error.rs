@@ -29,12 +29,16 @@ pub enum DucklakeError {
     InvalidDataType(String),
     #[error("invalid partitions: {0}")]
     InvalidPartitions(String),
+    #[error("invalid time zone '{0}'")]
+    InvalidTimeZone(String),
     #[error("invalid partition transform: {0}")]
     InvalidPartitionTransform(String),
     #[error("invalid schema name '{name}': {reason}")]
     InvalidSchemaName { name: String, reason: &'static str },
     #[error("invalid table name '{name}': {reason}")]
     InvalidTableName { name: String, reason: &'static str },
+    #[error("invalid view definition: {reason}")]
+    InvalidView { reason: String },
     #[error("invalid column name '{name}': {reason}")]
     InvalidColumnName { name: String, reason: &'static str },
     #[error("cannot cast column from type '{old}' to type '{new}'")]
@@ -188,6 +192,20 @@ impl DucklakeError {
     pub(crate) fn table_not_found(name: &crate::TableName) -> Self {
         DucklakeError::NotFound {
             entity: "table",
+            name: name.to_string(),
+        }
+    }
+
+    pub(crate) fn view_already_exists(name: &crate::TableName) -> Self {
+        DucklakeError::AlreadyExists {
+            entity: "view",
+            name: name.to_string(),
+        }
+    }
+
+    pub(crate) fn view_not_found(name: &crate::TableName) -> Self {
+        DucklakeError::NotFound {
+            entity: "view",
             name: name.to_string(),
         }
     }

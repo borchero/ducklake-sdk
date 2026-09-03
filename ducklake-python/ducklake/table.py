@@ -44,6 +44,7 @@ class Table:
     _pytable: PyTable
     _duckdb_connection_fn: Callable[[], duckdb.DuckDBPyConnection]
     _storage_options: StorageOptionSet
+    _time_zone: str
 
     @classmethod
     def _from_pytable(
@@ -51,11 +52,13 @@ class Table:
         pytable: PyTable,
         duckdb_connection_fn: Callable[[], duckdb.DuckDBPyConnection],
         storage_options: StorageOptionSet,
+        time_zone: str,
     ) -> Table:
         table = cls.__new__(cls)
         table._pytable = pytable
         table._duckdb_connection_fn = duckdb_connection_fn
         table._storage_options = storage_options
+        table._time_zone = time_zone
         return table
 
     # ---------------------------------------- PROPERTIES --------------------------------------- #
@@ -148,7 +151,7 @@ class Table:
         """
         pytable = self._pytable.copy_to(target._pyducklake, name)
         return Table._from_pytable(
-            pytable, lambda: target._duckdb_connection, target._storage_options
+            pytable, lambda: target._duckdb_connection, target._storage_options, self._time_zone
         )
 
     def move_to(
@@ -163,7 +166,7 @@ class Table:
         """
         pytable = self._pytable.move_to(target._pyducklake, name)
         return Table._from_pytable(
-            pytable, lambda: target._duckdb_connection, target._storage_options
+            pytable, lambda: target._duckdb_connection, target._storage_options, self._time_zone
         )
 
     # ------------------------------------------ DUCKDB ----------------------------------------- #
@@ -185,7 +188,7 @@ class Table:
         *,
         engine: EngineType = "auto",
         optimizations: pl.QueryOptFlags | None = None,
-        lazy: bool = False,
+        lazy: Literal[False] = False,
     ) -> None: ...
 
     @overload
@@ -224,15 +227,31 @@ class Table:
 
         write_ducklake(df, self)
 
-    def scan_polars(self, *, include_file_paths: str | None = None) -> pl.LazyFrame:
+    def scan_polars(
+        self, *, include_file_paths: str | None = None, time_zone: str | None = None
+    ) -> pl.LazyFrame:
+        """Read the table lazily as a Polars LazyFrame.
+
+        Args:
+            include_file_paths: Add the source file path under this column name.
+            time_zone: Override the connection time zone for timezone-aware timestamps.
+        """
         from .polars.scan import scan_ducklake
 
-        return scan_ducklake(self, include_file_paths=include_file_paths)
+        return scan_ducklake(self, include_file_paths=include_file_paths, time_zone=time_zone)
 
-    def read_polars(self, *, include_file_paths: str | None = None) -> pl.DataFrame:
+    def read_polars(
+        self, *, include_file_paths: str | None = None, time_zone: str | None = None
+    ) -> pl.DataFrame:
+        """Read the table eagerly as a Polars DataFrame.
+
+        Args:
+            include_file_paths: Add the source file path under this column name.
+            time_zone: Override the connection time zone for timezone-aware timestamps.
+        """
         from .polars.scan import read_ducklake
 
-        return read_ducklake(self, include_file_paths=include_file_paths)
+        return read_ducklake(self, include_file_paths=include_file_paths, time_zone=time_zone)
 
     # ------------------------------------------ ARROW ------------------------------------------ #
 
@@ -533,3 +552,8 @@ class Table:
 
     def __repr__(self) -> str:
         return f"Table(schema='{self.name.schema}', name='{self.name.name}')"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Table):
+            return NotImplemented
+        return self._pytable == other._pytable

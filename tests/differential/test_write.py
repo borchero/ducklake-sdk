@@ -15,7 +15,7 @@ def test_match_reference_write_parquet(
 ) -> None:
     # Act
     ducklake.create_table("test", {"x": dl.Int64()})
-    table = ducklake.get_table("test")
+    table = ducklake.table("test")
     table.write_polars(pl.DataFrame({"x": range(100)}))
 
     reference_duckdb_connection.execute("CREATE TABLE test (x BIGINT)")
@@ -41,7 +41,7 @@ def test_match_reference_write_inline(
 ) -> None:
     # Act
     ducklake.create_table("test", {"x": dl.Int64()})
-    table = ducklake.get_table("test")
+    table = ducklake.table("test")
     table.write_polars(pl.DataFrame({"x": [1, 2, 3]}))
 
     reference_duckdb_connection.execute("CREATE TABLE test (x BIGINT)")

@@ -1,23 +1,31 @@
+from __future__ import annotations
+
 import re
 import tempfile
 from collections import defaultdict
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import polars as pl
 import polars.datatypes as pld
+import polars.selectors as cs
 
 from ducklake import typedefs
 from ducklake._native import arrow_schema_field_ids
 from ducklake.table import Table
-from ducklake.typedefs import Column, Schema
+from ducklake.view import View
+
+if TYPE_CHECKING:
+    from ducklake.typedefs import Column, Schema
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
 _POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
 
 
-def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.LazyFrame:
+def scan_ducklake(
+    table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
+) -> pl.LazyFrame:
     cache_path = Path(tempfile.mkdtemp())
 
     # 1) First, we read all relevant data from the table. We first scan, then get the
@@ -41,6 +49,11 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
             df.write_parquet(write_path)
             iceberg_position_deletes[i].append(str(write_path))
             inline_delete_count += df.height
+
+    if _POLARS_VERSION >= (1, 44):
+        deletion_files = ("iceberg", (dict(iceberg_position_deletes), {}))
+    else:
+        deletion_files = ("iceberg-position-delete", dict(iceberg_position_deletes))
 
     # 2.2) Row counts
     physical_rows = sum(data_file.statistics.num_rows for data_file in scan_result.data_files)
@@ -149,7 +162,7 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
         ),
         # --- Optimization ---
         _column_mapping=("iceberg-column-mapping", schema),
-        _deletion_files=("iceberg-position-delete", dict(iceberg_position_deletes)),
+        _deletion_files=deletion_files,  # ty: ignore[invalid-argument-type]
         _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
         _table_statistics=table_statistics,
         _row_count=(physical_rows, deleted_rows),
@@ -174,16 +187,89 @@ def scan_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.
                 )
             result = pl.concat([result, inline_lf])
 
+    # 5) Represent timezone-aware timestamps in the requested connection or per-read time zone.
+    result_time_zone = table._time_zone if time_zone is None else time_zone
+    result = result.with_columns(
+        pl.col(name).cast(_convert_datetime_time_zone(dtype, result_time_zone))
+        for name, dtype in target_schema.items()
+    )
+
     return result
 
 
-def read_ducklake(table: Table, *, include_file_paths: str | None = None) -> pl.DataFrame:
-    return scan_ducklake(table, include_file_paths=include_file_paths).collect(
-        optimizations=pl.QueryOptFlags._eager()
-    )
+def read_ducklake(
+    table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
+) -> pl.DataFrame:
+    return scan_ducklake(
+        table, include_file_paths=include_file_paths, time_zone=time_zone
+    ).collect(optimizations=pl.QueryOptFlags._eager())
+
+
+# -------------------------------------------- VIEWS -------------------------------------------- #
+
+
+def scan_view(view: View) -> pl.LazyFrame:
+    """Lazily evaluate a view's query against its referenced DuckLake relations."""
+    return _scan_view(view, frozenset())
+
+
+def _scan_view(view: View, ancestors: frozenset[typedefs.TableName]) -> pl.LazyFrame:
+    name = view.name
+    if name in ancestors:
+        raise ValueError(f"cyclic view reference involving {name}")
+
+    sql, pytables, pyviews = view._pyview.polars_query()
+    frames = {
+        alias: Table._from_pytable(
+            pytable, view._duckdb_connection_fn, view._storage_options, view._time_zone
+        ).scan_polars()
+        for alias, pytable in pytables
+    }
+    for alias, pyview in pyviews:
+        nested_view = View._from_pyview(
+            pyview,
+            view._ducklake,
+            view._duckdb_connection_fn,
+            view._storage_options,
+            view._time_zone,
+        )
+        frames[alias] = _scan_view(nested_view, ancestors | {name})
+
+    ctx = pl.SQLContext(frames=frames, eager=False)
+    result = ctx.execute(sql)
+    if aliases := view.column_aliases:
+        renamed = [pl.nth(index).alias(alias) for index, alias in enumerate(aliases)]
+        remaining = cs.all() - cs.by_index(*range(len(aliases)))
+        return result.select(*renamed, remaining)
+    return result
+
+
+def read_view(view: View) -> pl.DataFrame:
+    return scan_view(view).collect(optimizations=pl.QueryOptFlags._eager())
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #
+
+
+def _convert_datetime_time_zone(
+    dtype: pl.DataType | pld.DataTypeClass, time_zone: str
+) -> pl.DataType | pld.DataTypeClass:
+    match dtype:
+        case pl.Datetime(time_unit=time_unit, time_zone=current_time_zone) if (
+            current_time_zone is not None
+        ):
+            return pl.Datetime(time_unit, time_zone)
+        case pl.Struct(fields=fields):
+            return pl.Struct(
+                [
+                    pl.Field(field.name, _convert_datetime_time_zone(field.dtype, time_zone))
+                    for field in fields
+                ]
+            )
+        case pl.List(inner=inner):
+            return pl.List(_convert_datetime_time_zone(inner, time_zone))
+        case _:
+            return dtype
 
 
 def _align_schema(

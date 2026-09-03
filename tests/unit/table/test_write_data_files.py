@@ -91,6 +91,6 @@ def test_write_data_files_in_transaction(ducklake: dl.Ducklake, random_table_nam
 
     # Assert
     assert_frame_equal(
-        ducklake.get_table(random_table_name).scan_polars().sort("x"),
+        ducklake.table(random_table_name).scan_polars().sort("x"),
         pl.LazyFrame({"x": [1, 2, 3]}, schema={"x": pl.Int64}),
     )

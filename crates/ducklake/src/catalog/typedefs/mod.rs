@@ -21,10 +21,12 @@ mod columns;
 mod partition;
 mod schema;
 mod table;
+mod view;
 
 pub(super) use columns::{CatalogColumn, CatalogColumns, CatalogDataType};
 pub(super) use partition::CatalogTablePartition;
 pub(super) use schema::CatalogSchema;
 pub(super) use table::CatalogTable;
+pub(super) use view::CatalogView;
 
 use super::ArenaIdx;

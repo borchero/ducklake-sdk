@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::caches::{SnapshotInfo, TableStats};
-use crate::catalog::{Catalog, ColumnRef, SchemaRef, TableRef};
+use crate::catalog::{Catalog, ColumnRef, SchemaRef, TableRef, ViewRef};
 use crate::spec::DucklakeSnapshot;
 use crate::{DucklakeResult, db};
 
@@ -58,6 +58,18 @@ impl<'a> CommitState<'a> {
         let id = self.catalog_id();
         let Ok(mut table) = self.catalog.to_mut().table_mut(table_ref);
         table.resolve_id(id);
+        id
+    }
+
+    /// Obtain the ID for the view with the provided identifier. If the view does not yet
+    /// exist, a new ID is generated from the catalog ID sequence.
+    pub(crate) fn view_id(&mut self, view_ref: ViewRef) -> i64 {
+        if let Some(id) = self.catalog.view(view_ref).into_ok().id() {
+            return id;
+        }
+        let id = self.catalog_id();
+        let Ok(mut view) = self.catalog.to_mut().view_mut(view_ref);
+        view.resolve_id(id);
         id
     }
 

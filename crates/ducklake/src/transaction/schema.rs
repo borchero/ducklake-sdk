@@ -17,18 +17,29 @@ impl<'a> Transaction<'a> {
         }
 
         let path: io::DucklakePath = path.unwrap_or_else(|| name.to_string()).parse()?;
+        let path = path.ensure_directory();
         let schema_ref = self.catalog_mut().add_schema(name, path.clone())?;
         let change = Change::CreateSchema {
             schema_ref,
             name: name.to_string(),
-            path: path.ensure_directory(),
+            path,
         };
         self.changes.push(change);
         Ok(())
     }
 
-    /// Delete an existing schema from the catalog.
-    pub fn delete_schema(&mut self, name: &str) -> DucklakeResult<()> {
+    /// Delete an existing schema from the catalog, optionally deleting all of its tables and
+    /// views.
+    pub fn delete_schema(&mut self, name: &str, cascade: bool) -> DucklakeResult<()> {
+        if cascade {
+            for table_name in self.list_tables(Some(name))? {
+                self.delete_table(&table_name)?;
+            }
+            for view_name in self.list_views(Some(name))? {
+                self.delete_view(&view_name)?;
+            }
+        }
+
         let mut schema = self.catalog_mut().schema_mut(name)?;
         schema.delete()?;
         let change = Change::DeleteSchema {

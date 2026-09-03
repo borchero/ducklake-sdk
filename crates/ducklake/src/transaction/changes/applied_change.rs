@@ -179,6 +179,16 @@ impl AppliedChange {
                     other.action()
                 )
             }
+            // --- Tables / Views ---
+            (CreatedTable { name: lhs_name }, CreatedView { name: rhs_name })
+            | (CreatedView { name: lhs_name }, CreatedTable { name: rhs_name })
+                if lhs_name == rhs_name =>
+            {
+                format!(
+                    "attempting to create relation {lhs_name} but it was already {}",
+                    other.action()
+                )
+            }
             // --- Data ---
             (
                 InsertedIntoTable { id: lhs_id } | InlinedInsert { id: lhs_id },

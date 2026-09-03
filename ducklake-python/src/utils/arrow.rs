@@ -41,7 +41,7 @@ pub(crate) fn schema_to_arrow(columns: Vec<Wrap<ducklake::Column>>) -> PyResult<
 
 fn arrow_field_from_column(column: &ducklake::Column) -> Field {
     // First, we translate the column into its direct Arrow representation
-    let field = column.to_arrow_field();
+    let field = column.to_arrow_field_with(&arrow_field_from_column);
 
     // Then, we check for the comment tag to see if we need to attach metadata and/or convert to
     // a dictionary type
@@ -88,9 +88,15 @@ fn column_from_arrow_field(field: &Field) -> DucklakeResult<ducklake::Column> {
         ArrowDataType::Dictionary(_, value_type) => {
             let original_dtype = (field.data_type().clone(), field.dict_is_ordered().unwrap());
             let field = field.clone().with_data_type((**value_type).clone());
-            (ducklake::Column::try_from(&field)?, Some(original_dtype))
+            (
+                ducklake::Column::try_from_arrow_field_with(&field, &column_from_arrow_field)?,
+                Some(original_dtype),
+            )
         }
-        _ => (ducklake::Column::try_from(field)?, None),
+        _ => (
+            ducklake::Column::try_from_arrow_field_with(field, &column_from_arrow_field)?,
+            None,
+        ),
     };
 
     // In any case, we persist field metadata if there is any

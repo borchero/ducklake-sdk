@@ -17,7 +17,7 @@ def test_time_travel_by_snapshot_id(shared_ducklake: dl.Ducklake, random_table_n
     table.sink_polars(lf)
 
     # Act
-    time_traveled_table = shared_ducklake.at(snapshot_id).get_table(random_table_name)
+    time_traveled_table = shared_ducklake.at(snapshot_id).table(random_table_name)
 
     # Assert
     assert_frame_equal(pl.concat([lf, lf]), table.scan_polars())
@@ -41,7 +41,7 @@ def test_time_travel_by_fixed_timestamp(
     table.sink_polars(lf)
 
     # Act
-    time_traveled_table = shared_ducklake.at(snapshot_ts).get_table(random_table_name)
+    time_traveled_table = shared_ducklake.at(snapshot_ts).table(random_table_name)
 
     # Assert
     assert_frame_equal(pl.concat([lf, lf]), table.scan_polars())
@@ -62,7 +62,7 @@ def test_time_travel_by_fuzzy_timestamp(
     table.sink_polars(lf)
 
     # Act
-    time_traveled_table = shared_ducklake.at(snapshot_ts).get_table(random_table_name)
+    time_traveled_table = shared_ducklake.at(snapshot_ts).table(random_table_name)
 
     # Assert
     assert_frame_equal(pl.concat([lf, lf]), table.scan_polars())
@@ -73,7 +73,7 @@ def test_time_travel_no_transaction(shared_ducklake: dl.Ducklake, random_table_n
     # Arrange
     shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
     snapshot_id = shared_ducklake.get_latest_snapshot().id
-    time_traveled_table = shared_ducklake.at(snapshot_id).get_table(random_table_name)
+    time_traveled_table = shared_ducklake.at(snapshot_id).table(random_table_name)
 
     # Act
     with pytest.raises(dlexc.ReadonlyDucklakeError):
@@ -121,7 +121,7 @@ def test_time_travel_connect_at(
 
     # Act
     with dl.connect(catalog_url, at=snapshot_id) as ducklake:
-        traveled_table = ducklake.get_table(random_table_name)
+        traveled_table = ducklake.table(random_table_name)
 
         # Assert
         assert traveled_table.read_polars().height == 3

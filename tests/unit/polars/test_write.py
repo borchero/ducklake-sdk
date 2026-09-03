@@ -1,7 +1,9 @@
 import datetime as dt
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import polars as pl
+import polars.exceptions as plexc
 import pytest
 import sqlalchemy as sa
 from polars.testing import assert_frame_equal
@@ -48,14 +50,18 @@ def test_sink_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     )
 
     # -- Table stats
-    table_stats = read_table_stats(str(shared_ducklake._connection_args), random_table_name)
+    table_stats = read_table_stats(
+        shared_ducklake._connection_args.render_as_string(hide_password=False),
+        random_table_name,
+    )
     assert table_stats["record_count"] == 100
     assert table_stats["next_row_id"] == 100
     assert table_stats["file_size_bytes"] == data_file.statistics.file_size_bytes
 
     # -- Table column stats
     table_column_stats = read_table_column_stats(
-        str(shared_ducklake._connection_args), random_table_name
+        shared_ducklake._connection_args.render_as_string(hide_password=False),
+        random_table_name,
     )
     assert table_column_stats[1]["min_value"] == "0"
     assert table_column_stats[1]["max_value"] == "99"
@@ -79,6 +85,159 @@ def test_write_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> 
     assert_frame_equal(df, roundtrip_df)
 
 
+@pytest.mark.parametrize(
+    "eager",
+    [
+        pytest.param(False, id="lazy"),
+        pytest.param(
+            True,
+            marks=pytest.mark.skip_config(
+                catalog="mysql", reason="Data inlining is not yet supported for MySQL."
+            ),
+            id="eager",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("ducklake_dtype", "source_dtype", "expected_dtype"),
+    [
+        pytest.param(
+            dl.TimestampTz(),
+            pl.Datetime("us", "Europe/Berlin"),
+            pl.Datetime("us", "UTC"),
+            id="timezone",
+        ),
+        pytest.param(
+            dl.TimestampTz(),
+            pl.Datetime("ms", "UTC"),
+            pl.Datetime("us", "UTC"),
+            id="timezone-aware-precision",
+        ),
+        pytest.param(
+            dl.Timestamp("microseconds"),
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            id="timezone-naive-precision",
+        ),
+        pytest.param(
+            dl.TimestampTz(),
+            pl.Datetime("ms"),
+            None,
+            id="missing-timezone",
+        ),
+    ],
+)
+def test_write_matches_timestamp_schema(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    eager: bool,
+    ducklake_dtype: dl.DataType,
+    source_dtype: pl.Datetime,
+    expected_dtype: pl.Datetime | None,
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"x": ducklake_dtype})
+    df = pl.DataFrame(
+        {
+            "x": pl.datetime_range(
+                dt.datetime(2024, 3, 31, 1),
+                dt.datetime(2024, 3, 31, 4),
+                interval="1h",
+                time_unit=source_dtype.time_unit,
+                time_zone=source_dtype.time_zone,
+                eager=True,
+            )
+        }
+    )
+
+    # Act
+    error: plexc.SchemaError | None = None
+    try:
+        if eager:
+            table.write_polars(df)
+        else:
+            table.sink_polars(df.lazy())
+    except plexc.SchemaError as exc:
+        error = exc
+
+    # Assert
+    if expected_dtype is None:
+        assert error is not None
+    else:
+        assert error is None
+        expected = df.with_columns(pl.col("x").cast(expected_dtype))
+        assert_frame_equal(expected, table.read_polars())
+
+
+@pytest.mark.parametrize(
+    "eager",
+    [
+        pytest.param(False, id="lazy"),
+        pytest.param(
+            True,
+            marks=pytest.mark.skip_config(
+                catalog="mysql", reason="Data inlining is not yet supported for MySQL."
+            ),
+            id="eager",
+        ),
+    ],
+)
+def test_write_matches_nested_timestamp_schema(
+    shared_ducklake: dl.Ducklake, random_table_name: str, eager: bool
+) -> None:
+    # Arrange
+    ducklake_dtype = dl.Struct(
+        {"events": dl.List(dl.Struct({"at": dl.TimestampTz(), "value": dl.Int64()}))}
+    )
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": ducklake_dtype},
+    )
+    source_dtype = pl.Struct(
+        {
+            "events": pl.List(
+                pl.Struct(
+                    {
+                        "at": pl.Datetime("ms", "Europe/Berlin"),
+                        "value": pl.Int64,
+                    }
+                )
+            )
+        }
+    )
+    df = pl.DataFrame(
+        {
+            "x": pl.Series(
+                [
+                    {
+                        "events": [
+                            {
+                                "at": dt.datetime(
+                                    2024, 3, 31, 1, tzinfo=ZoneInfo("Europe/Berlin")
+                                ),
+                                "value": 1,
+                            }
+                        ]
+                    },
+                    {"events": []},
+                ],
+                dtype=source_dtype,
+            )
+        }
+    )
+
+    # Act
+    if eager:
+        table.write_polars(df)
+    else:
+        table.sink_polars(df.lazy())
+
+    # Assert
+    expected_dtype = pl.Schema(table.schema)["x"]
+    expected = df.with_columns(pl.col("x").cast(expected_dtype))
+    assert_frame_equal(expected, table.read_polars())
+
+
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
 def test_write_parquet_inline(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
@@ -99,14 +258,18 @@ def test_write_parquet_inline(shared_ducklake: dl.Ducklake, random_table_name: s
     assert_frame_equal(df, pl.DataFrame(scan_result.inline_data[0]))
 
     # -- Table stats
-    table_stats = read_table_stats(str(shared_ducklake._connection_args), random_table_name)
+    table_stats = read_table_stats(
+        shared_ducklake._connection_args.render_as_string(hide_password=False),
+        random_table_name,
+    )
     assert table_stats["record_count"] == num_rows
     assert table_stats["next_row_id"] == num_rows
     assert table_stats["file_size_bytes"] == 0
 
     # -- Table column stats
     table_column_stats = read_table_column_stats(
-        str(shared_ducklake._connection_args), random_table_name
+        shared_ducklake._connection_args.render_as_string(hide_password=False),
+        random_table_name,
     )
     assert table_column_stats[1]["min_value"] == "0"
     assert table_column_stats[1]["max_value"] == f"{num_rows - 1}"

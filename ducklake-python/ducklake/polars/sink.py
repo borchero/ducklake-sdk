@@ -1,7 +1,9 @@
+import re
 from functools import partial
 from typing import Literal, overload
 
 import polars as pl
+import polars.datatypes as pld
 from polars._typing import EngineType
 from polars.io.partition import FileProviderArgs, SinkedPathsCallbackArgs
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
@@ -13,6 +15,8 @@ from ducklake.transaction import TransactionTable
 from ducklake.typedefs import Column, Partitioning, WriteDataFile
 
 PARTITION_COLUMN_PREFIX = "__ducklake_partition__"
+
+_POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
 
 
 @overload
@@ -77,7 +81,15 @@ def sink_ducklake(
     # 6) Eventually, we can actually write the data. The callback will take care of actually
     #    committing the new data files to the Ducklake. This allows to perform the entire
     #    operation lazily if requested.
-    return lf.sink_parquet(
+    sinked_paths_callback = partial(
+        _sinked_paths_callback, table, file_generator.base_path, partition_value_cache
+    )
+    callback_kwargs = (
+        {"sinked_paths_callback": sinked_paths_callback}
+        if _POLARS_VERSION >= (1, 44)
+        else {"_sinked_paths_callback": sinked_paths_callback}
+    )
+    return lf.sink_parquet(  # ty: ignore[no-matching-overload]
         target,
         storage_options=table._storage_options.to_dict(),
         mkdir=True,
@@ -89,9 +101,7 @@ def sink_ducklake(
         optimizations=optimizations or DEFAULT_QUERY_OPT_FLAGS,
         lazy=lazy,
         arrow_schema=table.schema,
-        _sinked_paths_callback=partial(
-            _sinked_paths_callback, table, file_generator.base_path, partition_value_cache
-        ),
+        **callback_kwargs,
     )
 
 
@@ -129,8 +139,14 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
 
 
 def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.LazyFrame:
+    target_schema = pl.Schema(table.schema)
+
+    # Polars considers datetimes with different time units or timezones to be distinct types, so
+    # normalize compatible timestamp inputs before matching schemas.
+    lf = lf.pipe_with_schema(partial(_normalize_timestamps, target_schema=target_schema))
+
     # Ensure that the provided lazy frame aligns with the current schema of the table
-    lf = lf.match_to_schema(pl.Schema(table.schema))
+    lf = lf.match_to_schema(target_schema)
 
     # Make sure that we apply the current defaults if there are any
     default_exprs = [
@@ -141,6 +157,43 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
     if default_exprs:
         return lf.with_columns(default_exprs)
     return lf
+
+
+def _normalize_timestamps(
+    lf: pl.LazyFrame, source_schema: pl.Schema, *, target_schema: pl.Schema
+) -> pl.LazyFrame:
+    return lf.with_columns(
+        pl.col(name).cast(
+            _normalize_timestamp_dtype(source_dtype, target_schema.get(name, source_dtype))
+        )
+        for name, source_dtype in source_schema.items()
+    )
+
+
+def _normalize_timestamp_dtype(
+    source_dtype: pl.DataType | pld.DataTypeClass,
+    target_dtype: pl.DataType | pld.DataTypeClass,
+) -> pl.DataType | pld.DataTypeClass:
+    match source_dtype, target_dtype:
+        case (
+            pl.Datetime(time_zone=source_time_zone),
+            pl.Datetime(time_zone=target_time_zone),
+        ) if (source_time_zone is None) == (target_time_zone is None):
+            return target_dtype
+        case pl.Struct(fields=source_fields), pl.Struct(fields=target_fields):
+            target_fields_by_name = {field.name: field.dtype for field in target_fields}
+            return pl.Struct(
+                {
+                    field.name: _normalize_timestamp_dtype(
+                        field.dtype, target_fields_by_name.get(field.name, field.dtype)
+                    )
+                    for field in source_fields
+                }
+            )
+        case pl.List(inner=source_inner), pl.List(inner=target_inner):
+            return pl.List(_normalize_timestamp_dtype(source_inner, target_inner))
+        case _:
+            return source_dtype
 
 
 # ------------------------------------------- DEFAULTS ------------------------------------------ #
@@ -237,11 +290,12 @@ def _sinked_paths_callback(
     args: SinkedPathsCallbackArgs,
 ) -> None:
     new_data_files: list[WriteDataFile] = []
-    for path in args.paths:
+    for sinked_path in args.paths:
         # TODO: Currently, polars does not directly provide statistics about the written files, so
         #  we derive the statistics by reading the file again. This is obviously not ideal but the
         #  best we can do for now. This should be changed once the appropriate change has been made
         #  in polars. See also: https://github.com/pola-rs/polars/issues/27226
+        path = sinked_path if isinstance(sinked_path, str) else sinked_path.path
         relative_path = path.removeprefix(base_path)
         partitions = partition_value_cache[relative_path]
         data_file = WriteDataFile(

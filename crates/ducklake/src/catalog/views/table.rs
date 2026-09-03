@@ -220,6 +220,12 @@ impl<'a> TableViewMut<'a> {
                 name: new_name.to_string(),
             }));
         }
+        if catalog_schema.views.contains_key(new_name) {
+            return Err(DucklakeError::view_already_exists(&crate::TableName {
+                schema: name.schema.clone(),
+                name: new_name.to_string(),
+            }));
+        }
 
         // Rename the table in the schema's table mapping
         let arena_idx = catalog_schema.tables.remove(&name.name).unwrap();

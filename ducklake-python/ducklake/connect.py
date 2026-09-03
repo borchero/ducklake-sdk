@@ -15,7 +15,11 @@ if TYPE_CHECKING:
 
 
 def create(
-    catalog_url: str | sa.URL, *, data_path: str, storage_options: dict[str, str] | None = None
+    catalog_url: str | sa.URL,
+    *,
+    data_path: str,
+    storage_options: dict[str, str] | None = None,
+    time_zone: str = "UTC",
 ) -> Ducklake:
     """Create a new DuckLake by initializing a new catalog database.
 
@@ -31,6 +35,8 @@ def create(
         storage_options: Optional dictionary of storage options. These may be provided to connect
             to cloud storage services. If not provided, storage options will be inferred from
             environment variables.
+        time_zone: IANA time zone used to represent timezone-aware timestamps when reading data.
+            This setting is local to this connection.
 
     Returns:
         A `Ducklake` instance that can be used to interact with the DuckLake.
@@ -45,6 +51,7 @@ def create(
         connection_args._native(),
         data_path,
         list(storage_option_set.to_dict().items()),
+        time_zone,
     )
     return Ducklake._from_pyducklake(pyducklake, connection_args, storage_option_set)
 
@@ -56,6 +63,7 @@ def connect(
     readonly: bool = False,
     migrate: bool = False,
     storage_options: dict[str, str] | None = None,
+    time_zone: str = "UTC",
 ) -> Ducklake:
     """Connect to an existing DuckLake by connecting to its catalog database.
 
@@ -77,6 +85,8 @@ def connect(
         storage_options: Optional dictionary of storage options. These may be provided to connect
             to cloud storage services. If not provided, storage options will be inferred from
             environment variables.
+        time_zone: IANA time zone used to represent timezone-aware timestamps when reading data.
+            This setting is local to this connection.
 
     Returns:
         A `Ducklake` instance that can be used to interact with the DuckLake.
@@ -94,6 +104,7 @@ def connect(
         migrate=migrate,
         readonly=readonly,
         storage_options=list(storage_option_set.to_dict().items()),
+        time_zone=time_zone,
     )
     return Ducklake._from_pyducklake(pyducklake, connection_args, storage_option_set)
 
@@ -177,19 +188,23 @@ class ConnectionArgs:
         This is different to the Python string representation as Rust's sqlx uses one slash fewer
         for SQLite URLs.
         """
-        result = str(self)
+        result = self.render_as_string(hide_password=False)
         if self.dialect == "sqlite":
             result = result.replace("sqlite:///", "sqlite://", 1)
         return result
 
     def __str__(self) -> str:
+        return self.render_as_string()
+
+    def render_as_string(self, *, hide_password: bool = True) -> str:
         match self.dialect:
             case "postgresql" | "mysql":
                 url = self.dialect + "://"
                 if self.username is not None:
                     url += quote(self.username, safe=" +")
                     if self.password is not None:
-                        url += ":" + quote(str(self.password), safe=" +")
+                        password = "***" if hide_password else quote(str(self.password), safe=" +")
+                        url += ":" + password
                     url += "@"
                 if self.host is not None:
                     if ":" in self.host:

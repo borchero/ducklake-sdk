@@ -5,6 +5,7 @@ pub struct CreateOptions {
     pub(crate) url: String,
     pub(crate) data_path: String,
     pub(crate) storage_options: Vec<(String, String)>,
+    pub(crate) time_zone: chrono_tz::Tz,
 }
 
 impl CreateOptions {
@@ -14,7 +15,24 @@ impl CreateOptions {
             url: url.to_string(),
             data_path: data_path.to_string(),
             storage_options: Vec::new(),
+            time_zone: chrono_tz::UTC,
         }
+    }
+
+    /// Set the time zone used to represent timezone-aware timestamps when reading data.
+    ///
+    /// The default is `UTC`. This setting is local to the connection and is not persisted in the
+    /// DuckLake catalog.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::DucklakeError::InvalidTimeZone`] if `time_zone` is not a valid IANA time
+    /// zone name.
+    pub fn with_time_zone(mut self, time_zone: &str) -> crate::DucklakeResult<Self> {
+        self.time_zone = time_zone
+            .parse()
+            .map_err(|_| crate::DucklakeError::InvalidTimeZone(time_zone.to_string()))?;
+        Ok(self)
     }
 
     /// Add a storage option to the `CreateOptions`.
@@ -46,6 +64,7 @@ pub struct ConnectOptions {
     pub(crate) readonly: bool,
     pub(crate) storage_options: Vec<(String, String)>,
     pub(crate) connection_type: ConnectionType,
+    pub(crate) time_zone: chrono_tz::Tz,
 }
 
 impl ConnectOptions {
@@ -57,7 +76,24 @@ impl ConnectOptions {
             readonly: false,
             storage_options: Vec::new(),
             connection_type: ConnectionType::Latest,
+            time_zone: chrono_tz::UTC,
         }
+    }
+
+    /// Set the time zone used to represent timezone-aware timestamps when reading data.
+    ///
+    /// The default is `UTC`. This setting is local to the connection and is not read from or
+    /// persisted in the DuckLake catalog.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::DucklakeError::InvalidTimeZone`] if `time_zone` is not a valid IANA time
+    /// zone name.
+    pub fn with_time_zone(mut self, time_zone: &str) -> crate::DucklakeResult<Self> {
+        self.time_zone = time_zone
+            .parse()
+            .map_err(|_| crate::DucklakeError::InvalidTimeZone(time_zone.to_string()))?;
+        Ok(self)
     }
 
     /// Set whether to automatically run migrations if the catalog version is outdated.

@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
 use crate::utils::runtime::block_on;
-use crate::{PyTable, PyTransaction, error};
+use crate::{PyTable, PyTransaction, PyView, error};
 
 #[pyclass]
 pub struct PyDucklake(pub(crate) Ducklake);
@@ -24,13 +24,18 @@ pub(crate) fn create(
     url: &str,
     data_path: &str,
     storage_options: Vec<(String, String)>,
+    time_zone: &str,
 ) -> PyResult<PyDucklake> {
-    let options = CreateOptions::new(url, data_path).with_storage_options(storage_options);
+    let options = CreateOptions::new(url, data_path)
+        .with_storage_options(storage_options)
+        .with_time_zone(time_zone)
+        .map_err(error::into_pyerr)?;
     let ducklake = block_on(py, Ducklake::create(options)).map_err(error::into_pyerr)?;
     Ok(PyDucklake(ducklake))
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn connect(
     py: Python,
     url: &str,
@@ -39,11 +44,15 @@ pub(crate) fn connect(
     migrate: bool,
     readonly: bool,
     storage_options: Vec<(String, String)>,
+    time_zone: &str,
 ) -> PyResult<PyDucklake> {
-    let mut options = ConnectOptions::new(url)
+    let options = ConnectOptions::new(url)
         .with_migrate(migrate)
         .with_readonly(readonly)
         .with_storage_options(storage_options);
+    let mut options = options
+        .with_time_zone(time_zone)
+        .map_err(error::into_pyerr)?;
     if let Some(id) = snapshot_id {
         options = options.with_snapshot_id(id);
     } else if let Some(timestamp) = snapshot_timestamp {
@@ -57,6 +66,11 @@ pub(crate) fn connect(
 
 #[pymethods]
 impl PyDucklake {
+    #[getter]
+    pub fn time_zone(&self) -> &str {
+        self.0.time_zone()
+    }
+
     pub fn at_snapshot_id(&self, py: Python, snapshot_id: i64) -> PyResult<PyDucklake> {
         block_on(py, self.0.at_snapshot_id(snapshot_id))
             .map(PyDucklake)
@@ -104,8 +118,8 @@ impl PyDucklake {
             .map_err(error::into_pyerr)
     }
 
-    pub fn delete_schema(&self, py: Python, name: String) -> PyResult<()> {
-        block_on(py, self.0.delete_schema(&name)).map_err(error::into_pyerr)
+    pub fn delete_schema(&self, py: Python, name: String, cascade: bool) -> PyResult<()> {
+        block_on(py, self.0.delete_schema(&name, cascade)).map_err(error::into_pyerr)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -201,6 +215,41 @@ impl PyDucklake {
     pub fn list_tables(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyTable>> {
         block_on(py, self.0.list_tables(schema.as_deref()))
             .map(|tables| tables.into_iter().map(PyTable::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn create_view(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::TableName>,
+        sql: String,
+        column_aliases: Option<Vec<String>>,
+        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        if_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<PyView> {
+        block_on(
+            py,
+            self.0.create_view(
+                name.0,
+                sql,
+                column_aliases,
+                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                if_exists.0,
+            ),
+        )
+        .map(PyView::new)
+        .map_err(error::into_pyerr)
+    }
+
+    pub fn view(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<PyView> {
+        block_on(py, self.0.view(name.0))
+            .map(PyView::new)
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn list_views(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyView>> {
+        block_on(py, self.0.list_views(schema.as_deref()))
+            .map(|views| views.into_iter().map(PyView::new).collect())
             .map_err(error::into_pyerr)
     }
 

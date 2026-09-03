@@ -75,13 +75,16 @@ impl Pool {
     }
 
     pub(crate) async fn new(url: &str) -> DucklakeResult<Self> {
+        // NOTE: Choose 8 because this allows the highest concurrency query in this
+        //  repo to send all queries simultaneously.
+        #[cfg(any(feature = "postgres", feature = "mysql"))]
+        const POOL_SIZE: u32 = 8;
+
         let pool = if url.starts_with("postgresql://") || url.starts_with("postgres://") {
             #[cfg(feature = "postgres")]
             {
                 let pool = sqlx::postgres::PgPoolOptions::new()
-                    // NOTE: Choose 7 because this allows the highest concurrency query in this
-                    //  repo to send all queries simultaneously.
-                    .max_connections(7)
+                    .max_connections(POOL_SIZE)
                     .connect(url)
                     .await?;
                 AnyPool::Postgres(pool)
@@ -92,9 +95,7 @@ impl Pool {
             #[cfg(feature = "mysql")]
             {
                 let pool = sqlx::mysql::MySqlPoolOptions::new()
-                    // NOTE: Choose 7 because this allows the highest concurrency query in this
-                    //  repo to send all queries simultaneously.
-                    .max_connections(7)
+                    .max_connections(POOL_SIZE)
                     .connect(url)
                     .await?;
                 AnyPool::MySql(pool)

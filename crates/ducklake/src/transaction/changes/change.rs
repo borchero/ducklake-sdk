@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use itertools::Itertools;
 
 use super::{AppliedChange, AppliedChangeSet};
-use crate::catalog::{ColumnRef, SchemaRef, TableRef};
+use crate::catalog::{ColumnRef, SchemaRef, TableRef, ViewRef};
 use crate::transaction::{CommitDataFile, CommitInlineData, CommitState, executors};
 use crate::{DucklakeResult, db, io};
 
@@ -60,6 +60,34 @@ impl ChangeSet {
                 .affected_table_ref()
                 .map(|r| !deleted_tables.contains(&r))
                 .unwrap_or(true),
+        });
+
+        // The same logic applies to views: if a view is created and deleted in the same
+        // transaction, both changes become irrelevant.
+        let created_views: HashSet<_> = changes
+            .iter()
+            .filter_map(|c| {
+                if let Change::CreateView { view_ref, .. } = c {
+                    Some(*view_ref)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let deleted_views: HashSet<_> = changes
+            .iter()
+            .filter_map(|c| {
+                if let Change::DeleteView { view_ref } = c {
+                    Some(*view_ref)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        changes.retain(|c| match c {
+            Change::DeleteView { view_ref } => !created_views.contains(view_ref),
+            Change::CreateView { view_ref, .. } => !deleted_views.contains(view_ref),
+            _ => true,
         });
 
         // The same applies to schemas. However, there are no modifications other than schema
@@ -258,6 +286,19 @@ pub(crate) enum Change {
         table_ref: TableRef,
         key: String,
     },
+    // --- VIEW CHANGES ---
+    CreateView {
+        schema_ref: SchemaRef,
+        view_ref: ViewRef,
+        name: crate::TableName,
+        sql: String,
+        dialect: String,
+        column_aliases: Option<Vec<String>>,
+        tags: Option<Vec<crate::Tag>>,
+    },
+    DeleteView {
+        view_ref: ViewRef,
+    },
     // --- COLUMN CHANGES ---
     AddTableColumn {
         parent_column_ref: Option<ColumnRef>,
@@ -311,6 +352,12 @@ impl Change {
             },
             DeleteTable { table_ref, .. } => AppliedChange::DroppedTable {
                 id: state.table_id(*table_ref),
+            },
+            CreateView { name, .. } => AppliedChange::CreatedView {
+                name: name.to_owned(),
+            },
+            DeleteView { view_ref } => AppliedChange::DroppedView {
+                id: state.view_id(*view_ref),
             },
             WriteTableDataFiles { table_ref, .. } => AppliedChange::InsertedIntoTable {
                 id: state.table_id(*table_ref),
@@ -396,6 +443,30 @@ impl Change {
             RemoveTableTag { table_ref, key } => {
                 executors::remove_table_tag(tx, state, table_ref, key).await
             }
+            // --- VIEW CHANGES ---
+            CreateView {
+                schema_ref,
+                view_ref,
+                name,
+                sql,
+                dialect,
+                column_aliases,
+                tags,
+            } => {
+                executors::create_view(
+                    tx,
+                    state,
+                    schema_ref,
+                    view_ref,
+                    name,
+                    sql,
+                    dialect,
+                    column_aliases,
+                    tags,
+                )
+                .await
+            }
+            DeleteView { view_ref } => executors::delete_view(tx, state, view_ref).await,
             // --- COLUMN CHANGES ---
             AddTableColumn {
                 parent_column_ref,
@@ -437,6 +508,8 @@ impl Change {
             | DeleteTable { .. }
             | AddTableTag { .. }
             | RemoveTableTag { .. }
+            | CreateView { .. }
+            | DeleteView { .. }
             | AddTableColumn { .. }
             | UpdateTableColumn { .. }
             | RemoveTableColumn { .. }
@@ -463,7 +536,9 @@ impl Change {
             | AddTableColumnTag { column_ref, .. }
             | RemoveTableColumnTag { column_ref, .. } => Some(column_ref.table_ref),
             AddTableColumn { column_refs, .. } => column_refs.first().map(|r| r.table_ref),
-            CreateSchema { .. } | DeleteSchema { .. } => None,
+            CreateSchema { .. } | DeleteSchema { .. } | CreateView { .. } | DeleteView { .. } => {
+                None
+            }
         }
     }
 
@@ -489,7 +564,9 @@ impl Change {
             | AddTableColumnTag { .. }
             | RemoveTableColumnTag { .. }
             | AddTableTag { .. }
-            | RemoveTableTag { .. } => None,
+            | RemoveTableTag { .. }
+            | CreateView { .. }
+            | DeleteView { .. } => None,
         }
     }
 
@@ -505,6 +582,8 @@ impl Change {
             | DeleteTable { .. }
             | AddTableTag { .. }
             | RemoveTableTag { .. }
+            | CreateView { .. }
+            | DeleteView { .. }
             | AddTableColumn { .. }
             | UpdateTableColumn { .. }
             | RemoveTableColumn { .. }
@@ -545,6 +624,13 @@ enum HashableChange {
     RemoveTableTag {
         table_ref: TableRef,
         key: String,
+    },
+    // --- VIEW CHANGES ---
+    CreateView {
+        view_ref: ViewRef,
+    },
+    DeleteView {
+        view_ref: ViewRef,
     },
     // --- COLUMN CHANGES ---
     AddTableColumn {
@@ -606,6 +692,12 @@ impl From<&Change> for HashableChange {
                 table_ref: *table_ref,
                 key: key.clone(),
             },
+            Change::CreateView { view_ref, .. } => CreateView {
+                view_ref: *view_ref,
+            },
+            Change::DeleteView { view_ref } => DeleteView {
+                view_ref: *view_ref,
+            },
             Change::AddTableColumn { column_refs, .. } => AddTableColumn {
                 column_refs: column_refs.clone(),
             },
@@ -664,8 +756,40 @@ mod tests {
         }
     }
 
+    fn make_create_view(view: usize, name: &str) -> Change {
+        Change::CreateView {
+            schema_ref: SchemaRef::mock(0),
+            view_ref: ViewRef::mock(view),
+            name: name.parse().unwrap(),
+            sql: "SELECT 1".to_string(),
+            dialect: "duckdb".to_string(),
+            column_aliases: None,
+            tags: None,
+        }
+    }
+
+    fn make_delete_view(view: usize) -> Change {
+        Change::DeleteView {
+            view_ref: ViewRef::mock(view),
+        }
+    }
+
     fn changes_of(set: &ChangeSet) -> &[Change] {
         &set.changes
+    }
+
+    #[test]
+    fn test_change_set_cancels_create_and_delete_view() {
+        // Creating and deleting the same view within a transaction cancels both changes.
+        let changes = vec![make_create_view(1, "main.v"), make_delete_view(1)];
+        let set = ChangeSet::new(changes);
+        assert!(changes_of(&set).is_empty());
+    }
+
+    #[test]
+    fn test_change_set_retains_create_view() {
+        let set = ChangeSet::new(vec![make_create_view(1, "main.v")]);
+        assert_eq!(changes_of(&set).len(), 1);
     }
 
     #[test]
