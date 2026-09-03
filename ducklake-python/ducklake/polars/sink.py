@@ -15,6 +15,8 @@ from ducklake.transaction import TransactionTable
 from ducklake.typedefs import Column, Partitioning, WriteDataFile
 
 PARTITION_COLUMN_PREFIX = "__ducklake_partition__"
+# NOTE: This is taken from the polars Iceberg implementation
+ESTIMATED_COMPRESSION_RATIO = 4
 
 _POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
 
@@ -75,7 +77,13 @@ def sink_ducklake(
         ),
         key=partition_columns,
         include_key=False if partition_columns else None,
-        approximate_bytes_per_file=table_metadata["target_file_size"],
+        # NOTE: polars currently uses the in-memory size of the data to determine file splits
+        #  instead of the compressed file size. We therefore apply a default compression factor.
+        approximate_bytes_per_file=(
+            table_metadata["target_file_size"] * ESTIMATED_COMPRESSION_RATIO
+            if table_metadata["parquet_compression"] != "uncompressed"
+            else table_metadata["target_file_size"]
+        ),
     )
 
     # 6) Eventually, we can actually write the data. The callback will take care of actually
