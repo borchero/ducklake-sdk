@@ -140,15 +140,6 @@ impl AppliedChange {
                     other.action()
                 )
             }
-            (CreatedTable { name: lhs_name }, CreatedView { name: rhs_name })
-            | (CreatedView { name: lhs_name }, CreatedTable { name: rhs_name })
-                if lhs_name == rhs_name =>
-            {
-                format!(
-                    "attempting to create relation {lhs_name} but it was already {}",
-                    other.action()
-                )
-            }
             (DroppedTable { id: lhs_id }, DroppedTable { id: rhs_id }) if lhs_id == rhs_id => {
                 format!(
                     "attempting to drop table with ID {lhs_id} but it was already {}",
@@ -185,6 +176,16 @@ impl AppliedChange {
             {
                 format!(
                     "attempting to alter view with ID {lhs_id} but it was {}",
+                    other.action()
+                )
+            }
+            // --- Tables / Views ---
+            (CreatedTable { name: lhs_name }, CreatedView { name: rhs_name })
+            | (CreatedView { name: lhs_name }, CreatedTable { name: rhs_name })
+                if lhs_name == rhs_name =>
+            {
+                format!(
+                    "attempting to create relation {lhs_name} but it was already {}",
                     other.action()
                 )
             }

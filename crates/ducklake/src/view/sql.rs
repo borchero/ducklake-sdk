@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::ops::ControlFlow;
 
 use sqlparser::ast::{ObjectName, SetExpr, Statement, Visit, Visitor};
@@ -57,41 +57,72 @@ pub(crate) fn find_referenced_tables_in_schema(
     let mut visitor = RelationVisitor::default();
     let _ = statement.visit(&mut visitor);
 
-    // Subtract unqualified CTE names from the referenced relations. Qualified relations always
-    // refer to catalog objects, even if their final component matches a CTE name.
     let mut tables = HashSet::new();
     for relation in visitor.relations {
         let Some(name) = TableName::from_object_name(&relation, default_schema) else {
             continue;
         };
-        if relation.0.len() == 1 && visitor.cte_names.contains(&name.name) {
-            continue;
-        }
         tables.insert(name);
     }
     Ok(tables.into_iter().collect())
 }
 
-/// Visitor collecting both referenced relations and CTE names.
+/// Visitor collecting catalog relations while tracking the CTEs visible in each query scope.
 #[derive(Default)]
 struct RelationVisitor {
     relations: Vec<ObjectName>,
-    cte_names: HashSet<String>,
+    scopes: Vec<QueryScope>,
+}
+
+struct QueryScope {
+    visible_ctes: HashSet<String>,
+    pending_ctes: VecDeque<String>,
 }
 
 impl Visitor for RelationVisitor {
     type Break = ();
 
     fn pre_visit_query(&mut self, query: &sqlparser::ast::Query) -> ControlFlow<Self::Break> {
-        if let Some(with) = &query.with {
-            for cte in &with.cte_tables {
-                self.cte_names.insert(cte.alias.name.value.clone());
-            }
+        let mut visible_ctes = self
+            .scopes
+            .last()
+            .map(|scope| scope.visible_ctes.clone())
+            .unwrap_or_default();
+        let pending_ctes = query
+            .with
+            .iter()
+            .flat_map(|with| &with.cte_tables)
+            .map(|cte| cte.alias.name.value.clone())
+            .collect::<VecDeque<_>>();
+        if query.with.as_ref().is_some_and(|with| with.recursive) {
+            visible_ctes.extend(pending_ctes.iter().cloned());
+        }
+        self.scopes.push(QueryScope {
+            visible_ctes,
+            pending_ctes,
+        });
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &sqlparser::ast::Query) -> ControlFlow<Self::Break> {
+        self.scopes.pop().expect("query scope must exist");
+        if let Some(parent) = self.scopes.last_mut()
+            && let Some(cte) = parent.pending_ctes.pop_front()
+        {
+            parent.visible_ctes.insert(cte);
         }
         ControlFlow::Continue(())
     }
 
     fn pre_visit_relation(&mut self, relation: &ObjectName) -> ControlFlow<Self::Break> {
+        if let [name] = relation.0.as_slice()
+            && self.scopes.last().is_some_and(|scope| {
+                name.as_ident()
+                    .is_some_and(|name| scope.visible_ctes.contains(&name.value))
+            })
+        {
+            return ControlFlow::Continue(());
+        }
         self.relations.push(relation.clone());
         ControlFlow::Continue(())
     }
@@ -158,5 +189,19 @@ mod tests {
         assert!(tables.contains(&"main.events".try_into().unwrap()));
         assert!(tables.contains(&"main.users".try_into().unwrap()));
         assert!(!tables.iter().any(|t| t.name == "recent"));
+    }
+
+    #[rstest]
+    #[case("events")]
+    #[case("main.events")]
+    fn test_referenced_tables_resolves_base_table_inside_same_named_cte(#[case] relation: &str) {
+        // Arrange
+        let sql = format!("WITH events AS (SELECT * FROM {relation}) SELECT * FROM events");
+
+        // Act
+        let tables = find_referenced_tables_in_schema(&sql, "duckdb", "main").unwrap();
+
+        // Assert
+        assert_eq!(tables, vec!["main.events".try_into().unwrap()]);
     }
 }
