@@ -80,7 +80,7 @@ def sink_ducklake(
         # NOTE: polars currently uses the in-memory size of the data to determine file splits
         #  instead of the compressed file size. We therefore apply a default compression factor.
         approximate_bytes_per_file=(
-            table_metadata["target_file_size"] * ESTIMATED_COMPRESSION_RATIO
+            min(table_metadata["target_file_size"] * ESTIMATED_COMPRESSION_RATIO, (1 << 64) - 1)
             if table_metadata["parquet_compression"] != "uncompressed"
             else table_metadata["target_file_size"]
         ),
