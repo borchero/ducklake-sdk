@@ -23,20 +23,11 @@ pub(super) struct CommitDeleteFile {
     pub footer_size_bytes: Option<usize>,
 }
 
-#[derive(Debug, Clone)]
 pub(crate) struct TransferDataFile {
     pub data_file: crate::WriteDataFile,
     pub partition_values: Option<Vec<Option<String>>>,
-    pub delete_files: Vec<TransferDeleteFile>,
+    pub delete_files: Vec<crate::ScanDeleteFile>,
     pub inline_deletes: Vec<i64>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct TransferDeleteFile {
-    pub path: String,
-    pub num_deletes: usize,
-    pub file_size_bytes: Option<usize>,
-    pub footer_size_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone)]

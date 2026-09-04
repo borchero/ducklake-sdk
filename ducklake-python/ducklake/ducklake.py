@@ -399,65 +399,61 @@ class Ducklake:
             self.time_zone,
         )
 
-    def copy_tables_from(
+    def copy_tables(
         self,
-        sources: Sequence[Table],
+        tables: Sequence[Table],
+        target: Ducklake,
         names: Sequence[str | tuple[str, str] | TableName] | None = None,
     ) -> list[Table]:
-        """Copy the given tables into this DuckLake in a single transaction.
+        """Copy tables from this DuckLake into a target DuckLake.
 
         Each copied table receives newly copied data files and becomes their owner. The whole batch
         is committed as a single snapshot, so it either fully succeeds or leaves the catalog
         unchanged.
 
         Args:
-            sources: The tables to copy. All must originate from the same source DuckLake.
-            names: Optional target names, one per source table. If omitted, each source table's
+            tables: The tables to copy. All must belong to this DuckLake.
+            target: The DuckLake to copy the tables into.
+            names: Optional target names, one per table. If omitted, each table's
                 fully qualified name is retained. No target table may already exist.
 
         Returns:
-            The newly created tables, in the same order as ``sources``.
+            The newly created tables, in the same order as ``tables``.
         """
-        pytables = self._pyducklake.copy_tables_from(
-            [source._pytable for source in sources],
+        pytables = self._pyducklake.copy_tables(
+            [table._pytable for table in tables],
+            target._pyducklake,
             list(names) if names is not None else None,
         )
-        return [
-            Table._from_pytable(
-                pytable, lambda: self._duckdb_connection, self._storage_options, self.time_zone
-            )
-            for pytable in pytables
-        ]
+        return [target._wrap_table(pytable) for pytable in pytables]
 
-    def move_tables_from(
+    def move_tables(
         self,
-        sources: Sequence[Table],
+        tables: Sequence[Table],
+        target: Ducklake,
         names: Sequence[str | tuple[str, str] | TableName] | None = None,
     ) -> list[Table]:
-        """Move the given tables into this DuckLake without copying their data files.
+        """Move tables from this DuckLake into a target DuckLake.
 
-        This DuckLake stores absolute file paths and takes ownership of the files. The source
+        The target stores absolute file paths and takes ownership of the files. The source
         tables are dropped without scheduling those files for maintenance deletion. The target
         creation is atomic; the source drop is committed separately once the target commit succeeds.
 
         Args:
-            sources: The tables to move. All must originate from the same source DuckLake.
-            names: Optional target names, one per source table. If omitted, each source table's
+            tables: The tables to move. All must belong to this DuckLake.
+            target: The DuckLake to move the tables into.
+            names: Optional target names, one per table. If omitted, each table's
                 fully qualified name is retained. No target table may already exist.
 
         Returns:
-            The newly created tables, in the same order as ``sources``.
+            The newly created tables, in the same order as ``tables``.
         """
-        pytables = self._pyducklake.move_tables_from(
-            [source._pytable for source in sources],
+        pytables = self._pyducklake.move_tables(
+            [table._pytable for table in tables],
+            target._pyducklake,
             list(names) if names is not None else None,
         )
-        return [
-            Table._from_pytable(
-                pytable, lambda: self._duckdb_connection, self._storage_options, self.time_zone
-            )
-            for pytable in pytables
-        ]
+        return [target._wrap_table(pytable) for pytable in pytables]
 
     # ----------------------------------------- METADATA ---------------------------------------- #
 

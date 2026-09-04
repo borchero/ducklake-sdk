@@ -14,7 +14,7 @@ use crate::utils::runtime::block_on;
 use crate::{PyTable, PyTransaction, PyView, error};
 
 #[pyclass]
-pub struct PyDucklake(pub(crate) Ducklake);
+pub struct PyDucklake(Ducklake);
 
 /* ------------------------------------------ CONNECT ------------------------------------------ */
 
@@ -180,34 +180,30 @@ impl PyDucklake {
         block_on(py, self.0.table_exists(name.0)).map_err(error::into_pyerr)
     }
 
-    pub fn copy_tables_from(
+    pub fn copy_tables(
         &self,
         py: Python,
-        sources: Vec<PyRef<PyTable>>,
+        tables: Vec<PyRef<PyTable>>,
+        target: &PyDucklake,
         names: Option<Vec<Wrap<ducklake::TableName>>>,
     ) -> PyResult<Vec<PyTable>> {
-        let sources = sources
-            .iter()
-            .map(|table| table.inner())
-            .collect::<Vec<_>>();
+        let tables = tables.iter().map(|table| table.inner()).collect::<Vec<_>>();
         let names = names.map(|names| names.into_iter().map(|name| name.0).collect());
-        block_on(py, self.0.copy_tables_from(&sources, names))
+        block_on(py, self.0.copy_tables(&tables, &target.0, names))
             .map(|tables| tables.into_iter().map(PyTable::new).collect())
             .map_err(error::into_pyerr)
     }
 
-    pub fn move_tables_from(
+    pub fn move_tables(
         &self,
         py: Python,
-        sources: Vec<PyRef<PyTable>>,
+        tables: Vec<PyRef<PyTable>>,
+        target: &PyDucklake,
         names: Option<Vec<Wrap<ducklake::TableName>>>,
     ) -> PyResult<Vec<PyTable>> {
-        let sources = sources
-            .iter()
-            .map(|table| table.inner())
-            .collect::<Vec<_>>();
+        let tables = tables.iter().map(|table| table.inner()).collect::<Vec<_>>();
         let names = names.map(|names| names.into_iter().map(|name| name.0).collect());
-        block_on(py, self.0.move_tables_from(&sources, names))
+        block_on(py, self.0.move_tables(&tables, &target.0, names))
             .map(|tables| tables.into_iter().map(PyTable::new).collect())
             .map_err(error::into_pyerr)
     }

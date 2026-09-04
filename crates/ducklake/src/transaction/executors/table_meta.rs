@@ -157,37 +157,19 @@ pub(crate) async fn delete_table<'a>(
     set_end_snapshot!(ducklake_delete_file, state, tx, conditions: { TableId => table_id });
 
     if detach_files {
-        // A table transfer hands the files to another catalog. Remove all source references in
-        // the same transaction as the drop so snapshot expiration can never schedule them for
-        // deletion in this catalog.
-        let delete_column_stats = Query::delete()
-            .from_table(ducklake_file_column_stats::Table)
-            .and_where(
-                ducklake_file_column_stats::Column::TableId
-                    .col()
-                    .eq(table_id),
-            )
-            .take();
-        tx.execute(&delete_column_stats).await?;
-        let delete_partition_values = Query::delete()
-            .from_table(ducklake_file_partition_value::Table)
-            .and_where(
-                ducklake_file_partition_value::Column::TableId
-                    .col()
-                    .eq(table_id),
-            )
-            .take();
-        tx.execute(&delete_partition_values).await?;
-        let delete_data_files = Query::delete()
-            .from_table(ducklake_data_file::Table)
-            .and_where(ducklake_data_file::Column::TableId.col().eq(table_id))
-            .take();
-        tx.execute(&delete_data_files).await?;
-        let delete_delete_files = Query::delete()
-            .from_table(ducklake_delete_file::Table)
-            .and_where(ducklake_delete_file::Column::TableId.col().eq(table_id))
-            .take();
-        tx.execute(&delete_delete_files).await?;
+        macro_rules! delete_metadata {
+            ($entity:ident) => {{
+                let query = Query::delete()
+                    .from_table($entity::Table)
+                    .and_where($entity::Column::TableId.col().eq(table_id))
+                    .take();
+                tx.execute(&query).await?;
+            }};
+        }
+        delete_metadata!(ducklake_file_column_stats);
+        delete_metadata!(ducklake_file_partition_value);
+        delete_metadata!(ducklake_data_file);
+        delete_metadata!(ducklake_delete_file);
     }
 
     Ok(())

@@ -3,9 +3,9 @@ use pyo3::prelude::*;
 use pyo3_arrow::PyTable as ArrowPyTable;
 
 use crate::conversion::Wrap;
+use crate::error;
 use crate::utils::filepath_generator::PyDataFilePathGenerator;
 use crate::utils::runtime::block_on;
-use crate::{PyDucklake, error};
 
 #[derive(PartialEq, Eq)]
 #[pyclass(eq)]
@@ -127,28 +127,6 @@ impl PyTable {
 
     pub fn delete(&mut self, py: Python) -> PyResult<()> {
         block_on(py, self.0.delete()).map_err(error::into_pyerr)
-    }
-
-    pub fn copy_to(
-        &self,
-        py: Python,
-        target: &PyDucklake,
-        name: Option<Wrap<ducklake::TableName>>,
-    ) -> PyResult<PyTable> {
-        block_on(py, self.0.copy_to(&target.0, name.map(|name| name.0)))
-            .map(PyTable::new)
-            .map_err(error::into_pyerr)
-    }
-
-    pub fn move_to(
-        &self,
-        py: Python,
-        target: &PyDucklake,
-        name: Option<Wrap<ducklake::TableName>>,
-    ) -> PyResult<PyTable> {
-        block_on(py, self.0.move_to(&target.0, name.map(|name| name.0)))
-            .map(PyTable::new)
-            .map_err(error::into_pyerr)
     }
 
     pub fn add_tag(&mut self, py: Python, key: &str, value: &str) -> PyResult<()> {

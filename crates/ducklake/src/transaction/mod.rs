@@ -14,8 +14,8 @@ use changes::{AppliedChangeSet, Change, ChangeSet};
 use commit_state::CommitState;
 use sea_query::{Asterisk, ExprTrait, Query};
 pub use table::TransactionTable;
+pub(crate) use typedefs::TransferDataFile;
 use typedefs::*;
-pub(crate) use typedefs::{TransferDataFile, TransferDeleteFile};
 pub use view::TransactionView;
 
 use super::catalog::Catalog;

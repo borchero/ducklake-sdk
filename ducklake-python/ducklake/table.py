@@ -35,7 +35,6 @@ if TYPE_CHECKING:
 
     from ._native import PyDataFilePathGenerator, PyTable
     from ._storage import StorageOptionSet
-    from .ducklake import Ducklake
 
 
 class Table:
@@ -138,36 +137,6 @@ class Table:
 
     def _write_inline_data(self, data: ArrowStreamExportable) -> None:
         self._pytable.write_inline_data(data)
-
-    def copy_to(
-        self,
-        target: Ducklake,
-        name: str | tuple[str, str] | TableName | None = None,
-    ) -> Table:
-        """Copy this table into another DuckLake.
-
-        The target receives newly copied data files and becomes their owner. If ``name`` is not
-        provided, this table's fully qualified name is retained.
-        """
-        pytable = self._pytable.copy_to(target._pyducklake, name)
-        return Table._from_pytable(
-            pytable, lambda: target._duckdb_connection, target._storage_options, target.time_zone
-        )
-
-    def move_to(
-        self,
-        target: Ducklake,
-        name: str | tuple[str, str] | TableName | None = None,
-    ) -> Table:
-        """Move this table into another DuckLake without copying its data files.
-
-        The target stores absolute file paths and takes ownership of the files. The source table is
-        removed without scheduling those files for maintenance deletion.
-        """
-        pytable = self._pytable.move_to(target._pyducklake, name)
-        return Table._from_pytable(
-            pytable, lambda: target._duckdb_connection, target._storage_options, target.time_zone
-        )
 
     # ------------------------------------------ DUCKDB ----------------------------------------- #
 
