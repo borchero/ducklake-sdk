@@ -450,7 +450,7 @@ impl DucklakeConnection {
     }
 
     /// Whether two connection handles refer to the same DuckLake catalog.
-    pub(crate) fn is_same(&self, other: &DucklakeConnection) -> bool {
+    pub(crate) fn is_same_catalog(&self, other: &DucklakeConnection) -> bool {
         self.0.pool.is_same_catalog(&other.0.pool)
     }
 }

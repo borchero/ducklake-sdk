@@ -24,14 +24,6 @@ pub(super) fn build_partition_values_query(table_id: i64) -> SelectStatement {
                 .col()
                 .eq(table_id),
         )
-        .order_by(
-            ducklake_file_partition_value::Column::DataFileId,
-            Order::Asc,
-        )
-        .order_by(
-            ducklake_file_partition_value::Column::PartitionKeyIndex,
-            Order::Asc,
-        )
         .to_owned()
 }
 

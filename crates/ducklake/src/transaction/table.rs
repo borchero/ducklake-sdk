@@ -154,6 +154,13 @@ impl<'a> Transaction<'a> {
         self.delete_table_inner(name, false)
     }
 
+    pub(crate) fn delete_table_transferring_file_ownership(
+        &mut self,
+        name: &TableName,
+    ) -> DucklakeResult<()> {
+        self.delete_table_inner(name, true)
+    }
+
     fn delete_table_inner(&mut self, name: &TableName, detach_files: bool) -> DucklakeResult<()> {
         let mut table = self.catalog_mut().table_mut(name)?;
         table.delete();
@@ -163,13 +170,6 @@ impl<'a> Transaction<'a> {
         };
         self.changes.push(change);
         Ok(())
-    }
-
-    pub(crate) fn delete_table_transferring_file_ownership(
-        &mut self,
-        name: &TableName,
-    ) -> DucklakeResult<()> {
-        self.delete_table_inner(name, true)
     }
 }
 

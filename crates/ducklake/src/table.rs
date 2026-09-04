@@ -141,13 +141,12 @@ impl Table {
         let table = catalog.table(self.id)?;
         let info = table.info();
         let data_path = table.data_path(&self.conn.metadata().data_path());
-        let scan = scan::scan_table(
+        let scan = scan::scan_table_for_transfer(
             self.conn.pool(),
             self.id,
             snapshot,
             self.conn.snapshot_cache(),
             &data_path,
-            true,
         )
         .await?;
         Ok(TableTransferInfo { info, scan })
@@ -218,13 +217,13 @@ impl Ducklake {
         let source_conn = &self.conn;
         if !tables
             .iter()
-            .all(|transfer| transfer.table.conn.is_same(source_conn))
+            .all(|transfer| transfer.table.conn.is_same_catalog(source_conn))
         {
             return Err(DucklakeError::InvalidTableTransfer(
                 "all tables must belong to the source DuckLake".to_string(),
             ));
         }
-        if target.conn.is_same(source_conn) {
+        if target.conn.is_same_catalog(source_conn) {
             return Err(DucklakeError::InvalidTableTransfer(
                 "the source and target must be different DuckLake catalogs".to_string(),
             ));
@@ -397,7 +396,7 @@ async fn copy_transfer_file(
 
 struct TableTransferInfo {
     info: TableInfo,
-    scan: scan::TableScan,
+    scan: scan::TableTransferScan,
 }
 
 fn transfer_column_ids(source: &[crate::Column], target: &[crate::Column]) -> HashMap<i64, i64> {
@@ -620,9 +619,7 @@ impl Table {
             snapshot,
             self.conn.snapshot_cache(),
             &data_path,
-            false,
         )
         .await
-        .map(|scan| scan.result)
     }
 }
