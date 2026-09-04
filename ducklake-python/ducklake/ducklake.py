@@ -401,9 +401,8 @@ class Ducklake:
 
     def copy_tables(
         self,
-        tables: Sequence[Table],
+        tables: list[Table] | dict[str | tuple[str, str], Table],
         target: Ducklake,
-        names: Sequence[str | tuple[str, str] | TableName] | None = None,
     ) -> list[Table]:
         """Copy tables from this DuckLake into a target DuckLake.
 
@@ -412,26 +411,26 @@ class Ducklake:
         unchanged.
 
         Args:
-            tables: The tables to copy. All must belong to this DuckLake.
+            tables: The tables to copy. A list retains each table's existing name; a dictionary
+                maps new target names to source tables. All tables must belong to this DuckLake,
+                and no target table may already exist.
             target: The DuckLake to copy the tables into.
-            names: Optional target names, one per table. If omitted, each table's
-                fully qualified name is retained. No target table may already exist.
 
         Returns:
             The newly created tables, in the same order as ``tables``.
         """
-        pytables = self._pyducklake.copy_tables(
-            [table._pytable for table in tables],
-            target._pyducklake,
-            list(names) if names is not None else None,
+        transfers: list[tuple[str | tuple[str, str] | None, PyTable]] = (
+            [(name, table._pytable) for name, table in tables.items()]
+            if isinstance(tables, dict)
+            else [(None, table._pytable) for table in tables]
         )
+        pytables = self._pyducklake.copy_tables(transfers, target._pyducklake)
         return [target._wrap_table(pytable) for pytable in pytables]
 
     def move_tables(
         self,
-        tables: Sequence[Table],
+        tables: list[Table] | dict[str | tuple[str, str], Table],
         target: Ducklake,
-        names: Sequence[str | tuple[str, str] | TableName] | None = None,
     ) -> list[Table]:
         """Move tables from this DuckLake into a target DuckLake.
 
@@ -440,19 +439,20 @@ class Ducklake:
         creation is atomic; the source drop is committed separately once the target commit succeeds.
 
         Args:
-            tables: The tables to move. All must belong to this DuckLake.
+            tables: The tables to move. A list retains each table's existing name; a dictionary
+                maps new target names to source tables. All tables must belong to this DuckLake,
+                and no target table may already exist.
             target: The DuckLake to move the tables into.
-            names: Optional target names, one per table. If omitted, each table's
-                fully qualified name is retained. No target table may already exist.
 
         Returns:
             The newly created tables, in the same order as ``tables``.
         """
-        pytables = self._pyducklake.move_tables(
-            [table._pytable for table in tables],
-            target._pyducklake,
-            list(names) if names is not None else None,
+        transfers: list[tuple[str | tuple[str, str] | None, PyTable]] = (
+            [(name, table._pytable) for name, table in tables.items()]
+            if isinstance(tables, dict)
+            else [(None, table._pytable) for table in tables]
         )
+        pytables = self._pyducklake.move_tables(transfers, target._pyducklake)
         return [target._wrap_table(pytable) for pytable in pytables]
 
     # ----------------------------------------- METADATA ---------------------------------------- #

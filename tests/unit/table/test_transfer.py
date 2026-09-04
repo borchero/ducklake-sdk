@@ -37,6 +37,7 @@ def source_tables(ducklake: dl.Ducklake) -> tuple[dl.Table, dl.Table]:
     ("operation", "source_remains", "files_are_copied"),
     [("copy_tables", True, True), ("move_tables", False, False)],
 )
+@pytest.mark.parametrize("rename", [False, True])
 def test_transfer_table(
     ducklake: dl.Ducklake,
     transfer_target: dl.Ducklake,
@@ -44,6 +45,7 @@ def test_transfer_table(
     operation: str,
     source_remains: bool,
     files_are_copied: bool,
+    rename: bool,
 ) -> None:
     # Arrange
     source = ducklake.create_table(
@@ -56,9 +58,10 @@ def test_transfer_table(
     source.write_polars(data)
     ducklake._duckdb_connection.execute(f"DELETE FROM {source.name} WHERE x < 2")
     source_paths = {file.path for file in source.scan().data_files}
+    tables = {"renamed": source} if rename else [source]
 
     # Act
-    transferred = getattr(ducklake, operation)([source], transfer_target, ["renamed"])[0]
+    transferred = getattr(ducklake, operation)(tables, transfer_target)[0]
     deleted_paths = None
     if not source_remains:
         snapshots = [snapshot.id for snapshot in ducklake.list_snapshots()]
@@ -72,7 +75,7 @@ def test_transfer_table(
     assert deleted_paths == ([] if not source_remains else None)
     assert source_paths.isdisjoint(target_paths) is files_are_copied
     assert any(file.delete_files for file in target_scan.data_files)
-    assert transferred.name == ("main", "renamed")
+    assert transferred.name == ("main", "renamed" if rename else random_table_name)
     assert_frame_equal(transferred.read_polars().sort("x"), data.filter(pl.col("x") >= 2))
 
 
@@ -92,12 +95,12 @@ def test_transfer_multiple_tables(
 
     # Act
     transferred = getattr(ducklake, operation)(
-        [first, second], transfer_target, ["renamed_first", "renamed_second"]
+        {("target_schema", "renamed_first"): first, "renamed_second": second}, transfer_target
     )
 
     # Assert
     assert [table.name for table in transferred] == [
-        ("main", "renamed_first"),
+        ("target_schema", "renamed_first"),
         ("main", "renamed_second"),
     ]
     assert ducklake.has_table("first") is source_remains
@@ -117,7 +120,7 @@ def test_transfer_is_atomic_when_target_exists(
 
     # Act
     with pytest.raises(dlexc.AlreadyExistsError):
-        ducklake.copy_tables([first, second], transfer_target, ["new", "existing"])
+        ducklake.copy_tables({"new": first, "existing": second}, transfer_target)
 
     # Assert
     assert not transfer_target.has_table("new")
@@ -157,7 +160,7 @@ def test_transfer_rejects_same_catalog(
 
     # Act
     with second_connection, pytest.raises(ValueError, match="must be different"):
-        getattr(ducklake, operation)([source], second_connection, ["renamed"])
+        getattr(ducklake, operation)({"renamed": source}, second_connection)
 
     # Assert
     assert ducklake.has_table(random_table_name)

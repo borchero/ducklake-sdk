@@ -59,15 +59,13 @@ class PyDucklake:
     def list_tables(self, schema: str | None) -> list[PyTable]: ...
     def copy_tables(
         self,
-        tables: list[PyTable],
+        tables: list[tuple[str | tuple[str, str] | None, PyTable]],
         target: PyDucklake,
-        names: list[str | tuple[str, str]] | None,
     ) -> list[PyTable]: ...
     def move_tables(
         self,
-        tables: list[PyTable],
+        tables: list[tuple[str | tuple[str, str] | None, PyTable]],
         target: PyDucklake,
-        names: list[str | tuple[str, str]] | None,
     ) -> list[PyTable]: ...
     def create_view(
         self,

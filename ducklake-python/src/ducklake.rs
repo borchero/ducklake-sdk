@@ -183,13 +183,17 @@ impl PyDucklake {
     pub fn copy_tables(
         &self,
         py: Python,
-        tables: Vec<PyRef<PyTable>>,
+        tables: Vec<(Option<Wrap<ducklake::TableName>>, PyRef<PyTable>)>,
         target: &PyDucklake,
-        names: Option<Vec<Wrap<ducklake::TableName>>>,
     ) -> PyResult<Vec<PyTable>> {
-        let tables = tables.iter().map(|table| table.inner()).collect::<Vec<_>>();
-        let names = names.map(|names| names.into_iter().map(|name| name.0).collect());
-        block_on(py, self.0.copy_tables(&tables, &target.0, names))
+        let tables = tables
+            .iter()
+            .map(|(name, table)| match name {
+                Some(name) => (name.0.clone(), table.inner()).into(),
+                None => table.inner().into(),
+            })
+            .collect::<Vec<ducklake::TableTransfer<'_>>>();
+        block_on(py, self.0.copy_tables(tables, &target.0))
             .map(|tables| tables.into_iter().map(PyTable::new).collect())
             .map_err(error::into_pyerr)
     }
@@ -197,13 +201,17 @@ impl PyDucklake {
     pub fn move_tables(
         &self,
         py: Python,
-        tables: Vec<PyRef<PyTable>>,
+        tables: Vec<(Option<Wrap<ducklake::TableName>>, PyRef<PyTable>)>,
         target: &PyDucklake,
-        names: Option<Vec<Wrap<ducklake::TableName>>>,
     ) -> PyResult<Vec<PyTable>> {
-        let tables = tables.iter().map(|table| table.inner()).collect::<Vec<_>>();
-        let names = names.map(|names| names.into_iter().map(|name| name.0).collect());
-        block_on(py, self.0.move_tables(&tables, &target.0, names))
+        let tables = tables
+            .iter()
+            .map(|(name, table)| match name {
+                Some(name) => (name.0.clone(), table.inner()).into(),
+                None => table.inner().into(),
+            })
+            .collect::<Vec<ducklake::TableTransfer<'_>>>();
+        block_on(py, self.0.move_tables(tables, &target.0))
             .map(|tables| tables.into_iter().map(PyTable::new).collect())
             .map_err(error::into_pyerr)
     }

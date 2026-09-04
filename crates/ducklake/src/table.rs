@@ -25,6 +25,27 @@ pub struct Table {
     id: i64,
 }
 
+/// A table to transfer, optionally with a new name in the target DuckLake.
+pub struct TableTransfer<'a> {
+    table: &'a Table,
+    name: Option<TableName>,
+}
+
+impl<'a> From<&'a Table> for TableTransfer<'a> {
+    fn from(table: &'a Table) -> Self {
+        Self { table, name: None }
+    }
+}
+
+impl<'a> From<(TableName, &'a Table)> for TableTransfer<'a> {
+    fn from((name, table): (TableName, &'a Table)) -> Self {
+        Self {
+            table,
+            name: Some(name),
+        }
+    }
+}
+
 impl PartialEq for Table {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id && self.conn == other.conn
@@ -140,16 +161,20 @@ impl Ducklake {
     /// All tables are created and populated within one transaction, so the entire batch is
     /// committed as a single snapshot (or fails without any partial changes to the catalog).
     ///
-    /// If `names` is provided, it must contain exactly one target name per table; otherwise, each
-    /// table's name is retained. All tables must belong to this DuckLake and no target table may
-    /// already exist.
-    pub async fn copy_tables(
+    /// Passing tables directly retains their names. Passing `(TableName, &Table)` pairs renames
+    /// them in the target. All tables must belong to this DuckLake and no target table may already
+    /// exist.
+    pub async fn copy_tables<'a, I, T>(
         &self,
-        tables: &[&Table],
+        tables: I,
         target: &Ducklake,
-        names: Option<Vec<TableName>>,
-    ) -> DucklakeResult<Vec<Table>> {
-        self.transfer_tables(tables, target, names, true).await
+    ) -> DucklakeResult<Vec<Table>>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<TableTransfer<'a>>,
+    {
+        let tables = tables.into_iter().map(Into::into).collect::<Vec<_>>();
+        self.transfer_tables(&tables, target, true).await
     }
 
     /// Move tables from this DuckLake into `target` in a single transaction.
@@ -164,40 +189,37 @@ impl Ducklake {
     /// rejected with [`DucklakeError::TableChangedDuringTransfer`] and the (already committed)
     /// target tables are retained.
     ///
-    /// If `names` is provided, it must contain exactly one target name per table; otherwise, each
-    /// table's name is retained. All tables must belong to this DuckLake and no target table may
-    /// already exist.
-    pub async fn move_tables(
+    /// Passing tables directly retains their names. Passing `(TableName, &Table)` pairs renames
+    /// them in the target. All tables must belong to this DuckLake and no target table may already
+    /// exist.
+    pub async fn move_tables<'a, I, T>(
         &self,
-        tables: &[&Table],
+        tables: I,
         target: &Ducklake,
-        names: Option<Vec<TableName>>,
-    ) -> DucklakeResult<Vec<Table>> {
-        self.transfer_tables(tables, target, names, false).await
+    ) -> DucklakeResult<Vec<Table>>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<TableTransfer<'a>>,
+    {
+        let tables = tables.into_iter().map(Into::into).collect::<Vec<_>>();
+        self.transfer_tables(&tables, target, false).await
     }
 
     async fn transfer_tables(
         &self,
-        tables: &[&Table],
+        tables: &[TableTransfer<'_>],
         target: &Ducklake,
-        names: Option<Vec<TableName>>,
         copy_files: bool,
     ) -> DucklakeResult<Vec<Table>> {
-        if let Some(names) = names.as_ref()
-            && names.len() != tables.len()
-        {
-            return Err(DucklakeError::InvalidTableTransfer(format!(
-                "expected {} target name(s) but received {}",
-                tables.len(),
-                names.len()
-            )));
-        }
         if tables.is_empty() {
             return Ok(Vec::new());
         }
 
         let source_conn = &self.conn;
-        if !tables.iter().all(|table| table.conn.is_same(source_conn)) {
+        if !tables
+            .iter()
+            .all(|transfer| transfer.table.conn.is_same(source_conn))
+        {
             return Err(DucklakeError::InvalidTableTransfer(
                 "all tables must belong to the source DuckLake".to_string(),
             ));
@@ -209,7 +231,7 @@ impl Ducklake {
         }
         if !copy_files {
             let mut seen = std::collections::HashSet::with_capacity(tables.len());
-            if !tables.iter().all(|table| seen.insert(table.id)) {
+            if !tables.iter().all(|transfer| seen.insert(transfer.table.id)) {
                 return Err(DucklakeError::InvalidTableTransfer(
                     "a table cannot occur more than once in a move".to_string(),
                 ));
@@ -225,16 +247,23 @@ impl Ducklake {
         };
 
         // Scan all sources before making any target changes.
-        let transfers =
-            futures::future::try_join_all(tables.iter().map(|table| table.transfer_info()))
-                .await?;
-        let source_names = transfers
+        let transfer_info = futures::future::try_join_all(
+            tables.iter().map(|transfer| transfer.table.transfer_info()),
+        )
+        .await?;
+        let source_names = transfer_info
             .iter()
             .map(|transfer| transfer.info.name.clone())
             .collect::<Vec<_>>();
 
         // Resolve the target names, defaulting to the source names.
-        let target_names = names.unwrap_or_else(|| source_names.clone());
+        let target_names = tables
+            .iter()
+            .zip(&source_names)
+            .map(|(transfer, source_name)| {
+                transfer.name.clone().unwrap_or_else(|| source_name.clone())
+            })
+            .collect::<Vec<_>>();
 
         // Reject duplicate target names up front so a collision surfaces clearly rather than as a
         // confusing "already exists" error midway through the transaction.
@@ -251,8 +280,9 @@ impl Ducklake {
         // (for `copy`) happen mid-transaction; the transaction is buffered in memory until commit,
         // so no database lock is held while copying.
         let mut tx = target.conn.transaction(None).await?;
-        for ((source, transfer), name) in tables.iter().zip(transfers).zip(&target_names) {
-            let TableTransferInfo { info, scan } = transfer;
+        for ((transfer, info), name) in tables.iter().zip(transfer_info).zip(&target_names) {
+            let source = transfer.table;
+            let TableTransferInfo { info, scan } = info;
             let source_columns = info.schema.columns.into_values().collect::<Vec<_>>();
 
             tx.create_schema(&name.schema, None, IfExistsStrategy::Skip)?;
