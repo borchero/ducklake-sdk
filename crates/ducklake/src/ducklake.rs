@@ -449,9 +449,9 @@ impl DucklakeConnection {
         self.0.time_zone.name()
     }
 
-    /// Whether two connection handles refer to the same underlying connection.
+    /// Whether two connection handles refer to the same DuckLake catalog.
     pub(crate) fn is_same(&self, other: &DucklakeConnection) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        self.0.pool.is_same_catalog(&other.0.pool)
     }
 }
 

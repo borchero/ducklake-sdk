@@ -267,7 +267,9 @@ impl<'a> Transaction<'a> {
                 .into_iter()
                 .map(|data_file| super::TransferDataFile {
                     data_file,
+                    partition_values: None,
                     delete_files: Vec::new(),
+                    inline_deletes: Vec::new(),
                 })
                 .collect(),
         )
@@ -321,24 +323,32 @@ impl<'a> Transaction<'a> {
                     num_rows: stats.num_rows,
                     file_size_bytes: stats.file_size_bytes,
                     footer_size_bytes: stats.footer_size_bytes,
-                    partition_values: match (
-                        table_info.partitioning.as_ref(),
-                        data_file.data_file.partition_values,
-                    ) {
-                        // If partitioning is defined, and the user-provided data file contains
-                        // partition values, we ensure that they match. Otherwise, we simply ignore
-                        // the partition values provided by the user.
-                        (Some(target), Some(p)) => target
-                            .0
-                            .iter()
-                            .map(|col| p.get(&col.column).cloned().ok_or(()))
-                            .collect::<Result<Vec<_>, _>>()
-                            .ok(),
-                        // - If the table is partitioned but no partitions are provided, this is
-                        //   fine. We simply don't add partition values.
-                        // - If the table is not partitioned, we simply ignore the partition
-                        //   values. Users are free to partition data files regardless.
-                        (Some(_), None) | (None, _) => None,
+                    partition_values: if data_file.partition_values.is_some() {
+                        data_file.partition_values
+                    } else {
+                        match (
+                            table_info.partitioning.as_ref(),
+                            data_file.data_file.partition_values,
+                        ) {
+                            // If partitioning is defined, and the user-provided data file contains
+                            // partition values, we ensure that they match. Otherwise, we simply ignore
+                            // the partition values provided by the user.
+                            (Some(target), Some(p)) => target
+                                .0
+                                .iter()
+                                .map(|col| {
+                                    p.get(&col.column)
+                                        .map(|value| value.as_ref().map(ToString::to_string))
+                                        .ok_or(())
+                                })
+                                .collect::<Result<Vec<_>, _>>()
+                                .ok(),
+                            // - If the table is partitioned but no partitions are provided, this is
+                            //   fine. We simply don't add partition values.
+                            // - If the table is not partitioned, we simply ignore the partition
+                            //   values. Users are free to partition data files regardless.
+                            (Some(_), None) | (None, _) => None,
+                        }
                     },
                     column_stats: stats
                         .column_stats
@@ -369,6 +379,7 @@ impl<'a> Transaction<'a> {
                             })
                         })
                         .collect::<DucklakeResult<_>>()?,
+                    inline_deletes: data_file.inline_deletes,
                 };
                 Ok(commit_data_file)
             })

@@ -6,6 +6,7 @@ use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Schema as Arr
 use sea_query::{ColumnDef, ExprTrait, Query, Table};
 
 use crate::catalog::TableRef;
+use crate::db::sea_query_ext::CreateTable;
 use crate::spec::*;
 use crate::transaction::{CommitDataFile, CommitInlineData, CommitState};
 use crate::{DucklakeResult, db};
@@ -31,6 +32,7 @@ pub(crate) async fn write_table_data(
     let mut ducklake_partition_values = Vec::new();
     let mut ducklake_file_column_stats = Vec::with_capacity(data_files.len()); // surely too small
     let mut ducklake_delete_files = Vec::new();
+    let mut ducklake_inlined_deletes = Vec::new();
     let mut all_column_ids = HashSet::new();
     for data_file in data_files {
         let file_id = state.file_id();
@@ -80,13 +82,21 @@ pub(crate) async fn write_table_data(
             });
         }
 
+        ducklake_inlined_deletes.extend(data_file.inline_deletes.iter().map(|row_id| {
+            DucklakeInlinedDelete {
+                file_id,
+                row_id: *row_id,
+                begin_snapshot: state.snapshot_id(),
+            }
+        }));
+
         if let Some(partition_values) = &data_file.partition_values {
             for (idx, value) in partition_values.iter().enumerate() {
                 let ducklake_partition_value = DucklakeFilePartitionValue {
                     data_file_id: file_id,
                     table_id,
                     partition_key_index: idx as i64,
-                    partition_value: value.as_ref().map(|v| v.to_string()),
+                    partition_value: value.clone(),
                 };
                 ducklake_partition_values.push(ducklake_partition_value);
             }
@@ -114,6 +124,14 @@ pub(crate) async fn write_table_data(
     tx.insert_entities(ducklake_partition_values).await?;
     tx.insert_entities(ducklake_file_column_stats).await?;
     tx.insert_entities(ducklake_delete_files).await?;
+    if !ducklake_inlined_deletes.is_empty() {
+        let table_name = DucklakeInlinedDelete::table_name(table_id);
+        let mut create_table = Table::create_entity::<DucklakeInlinedDelete>(tx.dialect());
+        create_table.table(table_name.clone()).if_not_exists();
+        tx.execute(&create_table).await?;
+        tx.insert_entities_into(&table_name, ducklake_inlined_deletes)
+            .await?;
+    }
 
     // After all data files have been added, we insert/update table and column stats
     persist_table_stats(tx, state, table_id).await?;

@@ -1,17 +1,18 @@
 use std::collections::HashMap;
 
 use crate::catalog::ColumnRef;
-use crate::{ArrayColumnStats, FileColumnStats, Value, io};
+use crate::{ArrayColumnStats, FileColumnStats, io};
 
 #[derive(Debug, Clone)]
 pub(super) struct CommitDataFile {
     pub path: io::DucklakePath,
-    pub partition_values: Option<Vec<Option<Value>>>,
+    pub partition_values: Option<Vec<Option<String>>>,
     pub num_rows: usize,
     pub file_size_bytes: Option<usize>,
     pub footer_size_bytes: Option<usize>,
     pub column_stats: HashMap<ColumnRef, FileColumnStats>,
     pub delete_files: Vec<CommitDeleteFile>,
+    pub inline_deletes: Vec<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -25,7 +26,9 @@ pub(super) struct CommitDeleteFile {
 #[derive(Debug, Clone)]
 pub(crate) struct TransferDataFile {
     pub data_file: crate::WriteDataFile,
+    pub partition_values: Option<Vec<Option<String>>>,
     pub delete_files: Vec<TransferDeleteFile>,
+    pub inline_deletes: Vec<i64>,
 }
 
 #[derive(Debug, Clone)]

@@ -10,6 +10,15 @@ use crate::caches::{Snapshot, SnapshotCache};
 use crate::spec::*;
 use crate::{DucklakeResult, db, io};
 
+pub(crate) struct TableScan {
+    pub result: crate::ScanResult,
+    pub data_file_metadata: Vec<TransferDataFileMetadata>,
+}
+
+pub(crate) struct TransferDataFileMetadata {
+    pub partition_values: Option<Vec<Option<String>>>,
+}
+
 pub(crate) async fn scan_table(
     pool: &db::Pool,
     table_id: i64,
@@ -17,12 +26,39 @@ pub(crate) async fn scan_table(
     snapshot_cache: &SnapshotCache,
     data_path: &io::DucklakePath,
 ) -> DucklakeResult<crate::ScanResult> {
+    Ok(
+        scan_table_inner(pool, table_id, snapshot, snapshot_cache, data_path, false)
+            .await?
+            .result,
+    )
+}
+
+pub(crate) async fn scan_table_with_transfer_metadata(
+    pool: &db::Pool,
+    table_id: i64,
+    snapshot: Arc<Snapshot>,
+    snapshot_cache: &SnapshotCache,
+    data_path: &io::DucklakePath,
+) -> DucklakeResult<TableScan> {
+    scan_table_inner(pool, table_id, snapshot, snapshot_cache, data_path, true).await
+}
+
+async fn scan_table_inner(
+    pool: &db::Pool,
+    table_id: i64,
+    snapshot: Arc<Snapshot>,
+    snapshot_cache: &SnapshotCache,
+    data_path: &io::DucklakePath,
+    include_transfer_metadata: bool,
+) -> DucklakeResult<TableScan> {
     let snapshot_id = snapshot.info().id;
 
     // Build all queries
     let data_files_query = queries::build_data_files_query(table_id, snapshot_id);
     let column_stats_query = queries::build_column_stats_query(table_id, snapshot_id);
     let delete_files_query = queries::build_delete_files_query(table_id, snapshot_id);
+    let partition_values_query = queries::build_partition_values_query(table_id);
+    let partition_info_query = queries::build_partition_info_query(table_id, snapshot_id);
     let inlined_data_query = queries::build_inlined_data_tables_query(table_id);
     let inlined_deletes_query = queries::build_inlined_deletes_query(table_id, snapshot_id);
 
@@ -32,18 +68,36 @@ pub(crate) async fn scan_table(
         fetched_data_files,
         fetched_column_stats,
         fetched_delete_files,
+        fetched_partition_values,
+        fetched_partition_infos,
         fetched_inlined_data_tables,
         fetched_inlined_deletes,
     ): (
         Vec<DucklakeDataFile>,
         Vec<DucklakeFileColumnStats>,
         Vec<DucklakeDeleteFile>,
+        Vec<DucklakeFilePartitionValue>,
+        Vec<DucklakePartitionInfo>,
         Vec<DucklakeInlinedDataTables>,
         Vec<DucklakeInlinedDelete>,
     ) = tokio::try_join!(
         pool.fetch_all(&data_files_query),
         pool.fetch_all(&column_stats_query),
         pool.fetch_all(&delete_files_query),
+        async {
+            if include_transfer_metadata {
+                pool.fetch_all(&partition_values_query).await
+            } else {
+                Ok(Vec::new())
+            }
+        },
+        async {
+            if include_transfer_metadata {
+                pool.fetch_all(&partition_info_query).await
+            } else {
+                Ok(Vec::new())
+            }
+        },
         pool.fetch_all(&inlined_data_query),
         async {
             pool.fetch_all(&inlined_deletes_query).await.or_else(|err| {
@@ -112,6 +166,18 @@ pub(crate) async fn scan_table(
                     .push(record.row_id);
                 acc
             });
+    let mut partition_values_by_file_id: HashMap<_, _> = fetched_partition_values
+        .into_iter()
+        .fold(HashMap::new(), |mut acc, value| {
+            acc.entry(value.data_file_id)
+                .or_insert_with(Vec::new)
+                .push(value);
+            acc
+        });
+    let current_partition_id = fetched_partition_infos
+        .into_iter()
+        .next()
+        .map(|partition| partition.partition_id);
 
     // Before iterating over the data files, we extract some information from the catalog
     let catalog = snapshot.catalog().await?;
@@ -119,8 +185,24 @@ pub(crate) async fn scan_table(
 
     // Then, we can iterate over the data files
     let mut result = Vec::with_capacity(fetched_data_files.len());
+    let mut data_file_metadata = Vec::with_capacity(fetched_data_files.len());
     for fetched_data_file in fetched_data_files {
         let file_id = fetched_data_file.data_file_id;
+        let partition_values = match (fetched_data_file.partition_id, current_partition_id) {
+            (Some(file_partition_id), Some(current_partition_id))
+                if file_partition_id == current_partition_id =>
+            {
+                Some(
+                    partition_values_by_file_id
+                        .remove(&file_id)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|value| value.partition_value)
+                        .collect(),
+                )
+            }
+            _ => None,
+        };
 
         let (data_file, statistics) = parsing::parse_data_file(
             fetched_data_file,
@@ -147,10 +229,14 @@ pub(crate) async fn scan_table(
                 .get(&file_id)
                 .map(|ids| Arc::new(Int64Array::from(ids.clone()))),
         });
+        data_file_metadata.push(TransferDataFileMetadata { partition_values });
     }
 
-    Ok(crate::ScanResult {
-        data_files: result,
-        inline_data: fetched_inlined_data,
+    Ok(TableScan {
+        result: crate::ScanResult {
+            data_files: result,
+            inline_data: fetched_inlined_data,
+        },
+        data_file_metadata,
     })
 }

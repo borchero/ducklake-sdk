@@ -151,7 +151,7 @@ class Table:
         """
         pytable = self._pytable.copy_to(target._pyducklake, name)
         return Table._from_pytable(
-            pytable, lambda: target._duckdb_connection, target._storage_options, self._time_zone
+            pytable, lambda: target._duckdb_connection, target._storage_options, target.time_zone
         )
 
     def move_to(
@@ -166,7 +166,7 @@ class Table:
         """
         pytable = self._pytable.move_to(target._pyducklake, name)
         return Table._from_pytable(
-            pytable, lambda: target._duckdb_connection, target._storage_options, self._time_zone
+            pytable, lambda: target._duckdb_connection, target._storage_options, target.time_zone
         )
 
     # ------------------------------------------ DUCKDB ----------------------------------------- #

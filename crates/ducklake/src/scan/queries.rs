@@ -15,6 +15,39 @@ pub(super) fn build_data_files_query(table_id: i64, snapshot_id: i64) -> SelectS
         .to_owned()
 }
 
+pub(super) fn build_partition_values_query(table_id: i64) -> SelectStatement {
+    Query::select()
+        .column(Asterisk)
+        .from(ducklake_file_partition_value::Table)
+        .and_where(
+            ducklake_file_partition_value::Column::TableId
+                .col()
+                .eq(table_id),
+        )
+        .order_by(
+            ducklake_file_partition_value::Column::DataFileId,
+            Order::Asc,
+        )
+        .order_by(
+            ducklake_file_partition_value::Column::PartitionKeyIndex,
+            Order::Asc,
+        )
+        .to_owned()
+}
+
+pub(super) fn build_partition_info_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
+    Query::select()
+        .column(Asterisk)
+        .from(ducklake_partition_info::Table)
+        .and_where(ducklake_partition_info::Column::TableId.col().eq(table_id))
+        .filter_for_snapshot(
+            ducklake_partition_info::Column::BeginSnapshot.col(),
+            ducklake_partition_info::Column::EndSnapshot.col(),
+            snapshot_id,
+        )
+        .to_owned()
+}
+
 pub(super) fn build_column_stats_query(table_id: i64, snapshot_id: i64) -> SelectStatement {
     Query::select()
         .column((ducklake_file_column_stats::Table, Asterisk))

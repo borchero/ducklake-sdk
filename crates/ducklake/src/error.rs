@@ -95,16 +95,10 @@ pub enum DucklakeError {
     ReadonlyDucklake,
     #[error("the connection is pinned to a snapshot")]
     SnapshotPinned,
-    #[error("cannot transfer a table containing inline deletes")]
-    TableTransferWithInlineDeletes,
+    #[error("invalid table transfer: {0}")]
+    InvalidTableTransfer(String),
     #[error("the table changed while it was being transferred")]
     TableChangedDuringTransfer,
-    #[error("all tables in a single transfer must originate from the same DuckLake")]
-    MixedTransferSources,
-    #[error("multiple tables in the transfer target the same name '{name}'")]
-    DuplicateTransferTarget { name: String },
-    #[error("expected {expected} target name(s) for the transfer but received {actual}")]
-    TransferNameCountMismatch { expected: usize, actual: usize },
 }
 
 impl From<Infallible> for DucklakeError {

@@ -160,7 +160,7 @@ impl Table {
         let table = catalog.table(self.id)?;
         let info = table.info();
         let data_path = table.data_path(&self.conn.metadata().data_path());
-        let scan = scan::scan_table(
+        let scan = scan::scan_table_with_transfer_metadata(
             self.conn.pool(),
             self.id,
             snapshot.clone(),
@@ -168,13 +168,6 @@ impl Table {
             &data_path,
         )
         .await?;
-        if scan
-            .data_files
-            .iter()
-            .any(|file| file.inline_deletes.is_some())
-        {
-            return Err(DucklakeError::TableTransferWithInlineDeletes);
-        }
         Ok(TableTransferInfo { info, scan })
     }
 }
@@ -226,6 +219,15 @@ impl Ducklake {
         names: Option<Vec<TableName>>,
         copy_files: bool,
     ) -> DucklakeResult<Vec<Table>> {
+        if let Some(names) = names.as_ref()
+            && names.len() != sources.len()
+        {
+            return Err(DucklakeError::InvalidTableTransfer(format!(
+                "expected {} target name(s) but received {}",
+                sources.len(),
+                names.len()
+            )));
+        }
         if sources.is_empty() {
             return Ok(Vec::new());
         }
@@ -234,7 +236,22 @@ impl Ducklake {
         // drop the source tables in one transaction.
         let source_conn = &sources[0].conn;
         if !sources.iter().all(|table| table.conn.is_same(source_conn)) {
-            return Err(DucklakeError::MixedTransferSources);
+            return Err(DucklakeError::InvalidTableTransfer(
+                "all tables must originate from the same DuckLake".to_string(),
+            ));
+        }
+        if self.conn.is_same(source_conn) {
+            return Err(DucklakeError::InvalidTableTransfer(
+                "the source and target must be different DuckLake catalogs".to_string(),
+            ));
+        }
+        if !copy_files {
+            let mut seen = std::collections::HashSet::with_capacity(sources.len());
+            if !sources.iter().all(|table| seen.insert(table.id)) {
+                return Err(DucklakeError::InvalidTableTransfer(
+                    "a table cannot occur more than once in a move".to_string(),
+                ));
+            }
         }
 
         // For a move, capture the source's head snapshot up front (also asserting the source is
@@ -256,25 +273,16 @@ impl Ducklake {
             .collect::<Vec<_>>();
 
         // Resolve the target names, defaulting to the source names.
-        let target_names = match names {
-            Some(names) if names.len() != sources.len() => {
-                return Err(DucklakeError::TransferNameCountMismatch {
-                    expected: sources.len(),
-                    actual: names.len(),
-                });
-            }
-            Some(names) => names,
-            None => source_names.clone(),
-        };
+        let target_names = names.unwrap_or_else(|| source_names.clone());
 
         // Reject duplicate target names up front so a collision surfaces clearly rather than as a
         // confusing "already exists" error midway through the transaction.
         let mut seen = std::collections::HashSet::with_capacity(target_names.len());
         for name in &target_names {
             if !seen.insert(name) {
-                return Err(DucklakeError::DuplicateTransferTarget {
-                    name: name.to_string(),
-                });
+                return Err(DucklakeError::InvalidTableTransfer(format!(
+                    "multiple tables target the same name '{name}'"
+                )));
             }
         }
 
@@ -313,8 +321,14 @@ impl Ducklake {
             let column_ids = transfer_column_ids(&source_columns, &target_columns);
 
             let (_, generator) = table.get_write_info()?;
-            let mut data_files = Vec::with_capacity(transfer.scan.data_files.len());
-            for data_file in transfer.scan.data_files {
+            let mut data_files = Vec::with_capacity(transfer.scan.result.data_files.len());
+            for (data_file, metadata) in transfer
+                .scan
+                .result
+                .data_files
+                .into_iter()
+                .zip(transfer.scan.data_file_metadata)
+            {
                 let path = copy_transfer_file(
                     source.conn.storage_options(),
                     self.conn.storage_options(),
@@ -346,14 +360,19 @@ impl Ducklake {
                         statistics: Some(remap_statistics(data_file.statistics, &column_ids)),
                         partition_values: None,
                     },
+                    partition_values: metadata.partition_values,
                     delete_files,
+                    inline_deletes: data_file
+                        .inline_deletes
+                        .map(|row_ids| row_ids.values().to_vec())
+                        .unwrap_or_default(),
                 });
             }
             if !data_files.is_empty() {
                 table.write_transfer_data_files(data_files).await?;
             }
-            if !transfer.scan.inline_data.is_empty() {
-                table.write_inline_data(transfer.scan.inline_data)?;
+            if !transfer.scan.result.inline_data.is_empty() {
+                table.write_inline_data(transfer.scan.result.inline_data)?;
             }
         }
         tx.commit().await?;
@@ -408,7 +427,7 @@ async fn copy_transfer_file(
 
 struct TableTransferInfo {
     info: TableInfo,
-    scan: crate::ScanResult,
+    scan: scan::TableScan,
 }
 
 fn transfer_column_ids(source: &[crate::Column], target: &[crate::Column]) -> HashMap<i64, i64> {
