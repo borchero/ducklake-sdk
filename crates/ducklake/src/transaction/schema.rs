@@ -38,7 +38,8 @@ impl<'a> Transaction<'a> {
     ) -> DucklakeResult<()> {
         // If the schema does not exist and the strategy is specified accordingly, simply
         // return without making any changes
-        if matches!(if_not_exists, IfExistsStrategy::Skip) && self.catalog().schema(name).is_err() {
+        if matches!(if_not_exists, IfExistsStrategy::Skip) && self.catalog().schema(name).is_err()
+        {
             return Ok(());
         }
 
