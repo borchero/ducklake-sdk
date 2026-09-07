@@ -63,9 +63,14 @@ impl PyTransaction {
             .map_err(error::into_pyerr)
     }
 
-    fn delete_schema(&mut self, name: String, cascade: bool) -> PyResult<()> {
+    fn delete_schema(
+        &mut self,
+        name: String,
+        cascade: bool,
+        if_not_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<()> {
         self.tx()
-            .delete_schema(&name, cascade)
+            .delete_schema(&name, cascade, if_not_exists.0)
             .map_err(error::into_pyerr)
     }
 

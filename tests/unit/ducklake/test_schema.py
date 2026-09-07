@@ -68,6 +68,33 @@ def test_delete_missing_schema_raises(
         shared_ducklake.delete_schema(random_schema_name)
 
 
+def test_delete_missing_schema_skip(
+    shared_ducklake: dl.Ducklake, random_schema_name: str
+) -> None:
+    # Arrange
+    snapshot = shared_ducklake.get_latest_snapshot()
+
+    # Act
+    shared_ducklake.delete_schema(random_schema_name, if_not_exists="skip")
+
+    # Assert
+    assert random_schema_name not in shared_ducklake.list_schemas()
+    assert shared_ducklake.get_latest_snapshot().id == snapshot.id
+
+
+def test_delete_existing_schema_skip(
+    shared_ducklake: dl.Ducklake, random_schema_name: str
+) -> None:
+    # Arrange
+    shared_ducklake.create_schema(random_schema_name)
+
+    # Act
+    shared_ducklake.delete_schema(random_schema_name, if_not_exists="skip")
+
+    # Assert
+    assert random_schema_name not in shared_ducklake.list_schemas()
+
+
 def test_delete_nonempty_schema_without_cascade_raises(
     shared_ducklake: dl.Ducklake, random_schema_name: str, random_table_name: str
 ) -> None:
