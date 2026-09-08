@@ -4,6 +4,7 @@ from typing import Literal, overload
 
 import polars as pl
 import polars.datatypes as pld
+import polars_hash  # noqa: F401 
 from polars._typing import EngineType
 from polars.io.partition import FileProviderArgs, SinkedPathsCallbackArgs
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
@@ -248,17 +249,33 @@ def _apply_default_value(expr: pl.Expr, column: Column) -> pl.Expr:
 # ------------------------------------------ PARTITIONS ----------------------------------------- #
 
 
+def _create_bucket_partition(expr: pl.Expr, dtype: pl.DataType, num_buckets: int) -> pl.Expr:
+    # The DuckLake bucket transform must produce hashes that are compatible with Iceberg's bucket
+    # transform. Per the Iceberg spec, integers narrower than 64 bits must hash identically to
+    # their sign-extended 64-bit (`long`) representation, so we widen them before hashing.
+    if dtype in (pld.Int8, pld.Int16, pld.Int32):
+        expr = expr.cast(pl.Int64)
+    return (expr.bytes.to_le().nchash.murmur32(seed=0) & 0x7FFFFFFF) % num_buckets
+
+
 def _prepare_partitions(
     lf: pl.LazyFrame, partitioning: Partitioning
 ) -> tuple[pl.LazyFrame, list[str]]:
     result: list[str] = []
+    schema = lf.collect_schema()
 
     for partition_col in partitioning.columns:
         partition_name = f"{PARTITION_COLUMN_PREFIX}{partition_col.name}"
         result.append(partition_name)
 
         if partition_col.transform == "bucket":
-            raise NotImplementedError("Bucket transforms are currently not supported via polars")
+            lf = lf.with_columns(
+                _create_bucket_partition(
+                    pl.col(partition_col.name),
+                    schema[partition_col.name],
+                    partition_col.num_buckets,
+                ).alias(partition_name)
+            )
         elif partition_col.transform == "year":
             lf = lf.with_columns(pl.col(partition_col.name).dt.year().alias(partition_name))
         elif partition_col.transform == "month":

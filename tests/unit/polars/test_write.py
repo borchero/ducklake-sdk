@@ -1,4 +1,5 @@
 import datetime as dt
+import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -348,6 +349,96 @@ def test_sink_parquet_partition_year(
     assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
 
 
+def test_sink_parquet_partition_bucket(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    # DuckLake's `bucket` transform is documented to use an Iceberg-compatible hash (32-bit
+    # Murmur3, x86 variant, seeded with 0), so the expected bucket ids below are derived from the
+    # official test vector published in the Iceberg spec's "32-bit Hash Requirements" appendix:
+    #   `hashLong(long(34)) == 2017239379`, so `bucket(8, 34) == 2017239379 % 8 == 3`.
+    # `35` and `36` were picked because they happen to land in different buckets from `34` and
+    # from each other, while `37` collides with `36`, so the test exercises both grouping and
+    # separation of partitions.
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": dl.Int64()},
+        partition_by=dl.PartitionColumn("x", transform="bucket", num_buckets=8),
+    )
+    lf = pl.LazyFrame({"x": [34, 35, 36, 37]})
+
+    # Act
+    table.sink_polars(lf)
+    lf_roundtrip = table.scan_polars()
+
+    # Assert
+    scan_result = table.scan()
+    assert len(scan_result.data_files) == 3
+    assert {_partition_value_from_path(f.path, "x") for f in scan_result.data_files} == {3, 5, 6}
+    assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
+
+
+def test_sink_parquet_partition_bucket_string(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    # `hashBytes(utf8Bytes("iceberg")) == 1210000089` per the Iceberg spec's test vectors, so
+    # `bucket(8, "iceberg") == 1210000089 % 8 == 1`.
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": dl.Varchar()},
+        partition_by=dl.PartitionColumn("x", transform="bucket", num_buckets=8),
+    )
+    lf = pl.LazyFrame({"x": ["iceberg"]})
+
+    # Act
+    table.sink_polars(lf)
+    lf_roundtrip = table.scan_polars()
+
+    # Assert
+    scan_result = table.scan()
+    assert len(scan_result.data_files) == 1
+    assert _partition_value_from_path(scan_result.data_files[0].path, "x") == 1
+    assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "pl_dtype"),
+    [
+        (dl.Int8(), pl.Int8()),
+        (dl.Int16(), pl.Int16()),
+        (dl.Int32(), pl.Int32()),
+        (dl.Int64(), pl.Int64()),
+    ],
+    ids=lambda d: type(d).__name__,
+)
+def test_sink_parquet_partition_bucket_matches_across_integer_widths(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    dtype: dl.DataType,
+    pl_dtype: pl.DataType,
+) -> None:
+    # Arrange
+    # The Iceberg spec requires that "Integer and long hash results must be identical for all
+    # integer values" so that widening an integer column does not change its bucket assignment.
+    # `34` always hashes to bucket `3` out of `8` (see `test_sink_parquet_partition_bucket`),
+    # regardless of the physical width of the column being bucketed.
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": dtype},
+        partition_by=dl.PartitionColumn("x", transform="bucket", num_buckets=8),
+    )
+    lf = pl.LazyFrame({"x": [34]}, schema={"x": pl_dtype})
+
+    # Act
+    table.sink_polars(lf)
+
+    # Assert
+    scan_result = table.scan()
+    assert len(scan_result.data_files) == 1
+    assert _partition_value_from_path(scan_result.data_files[0].path, "x") == 3
+
+
 # ------------------------------------------- DEFAULTS ------------------------------------------ #
 
 
@@ -518,6 +609,12 @@ def test_sink_many_tiny_files(shared_ducklake: dl.Ducklake, random_table_name: s
 # ----------------------------------------------------------------------------------------------- #
 #                                              UTILS                                              #
 # ----------------------------------------------------------------------------------------------- #
+
+
+def _partition_value_from_path(path: str, column: str) -> int:
+    match = re.search(rf"/{column}=([^/]+)/", path)
+    assert match is not None, f"no `{column}=` partition segment found in path {path!r}"
+    return int(match.group(1))
 
 
 def read_table_stats(url: str, table: str) -> dict[str, Any]:
