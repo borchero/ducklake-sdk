@@ -402,6 +402,58 @@ def test_sink_parquet_partition_bucket_string(
     assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
 
 
+def test_sink_parquet_partition_bucket_binary(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    # `hashBytes([0x00, 0x01, 0x02, 0x03]) == -188683207` per the Iceberg spec's test vectors.
+    # Masking off the sign bit (as the `bucket` transform does) yields `1958800441`, so
+    # `bucket(8, [0x00, 0x01, 0x02, 0x03]) == 1958800441 % 8 == 1`.
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": dl.Blob()},
+        partition_by=dl.PartitionColumn("x", transform="bucket", num_buckets=8),
+    )
+    lf = pl.LazyFrame({"x": [bytes([0, 1, 2, 3])]}, schema={"x": pl.Binary()})
+
+    # Act
+    table.sink_polars(lf)
+    lf_roundtrip = table.scan_polars()
+
+    # Assert
+    scan_result = table.scan()
+    assert len(scan_result.data_files) == 1
+    assert _partition_value_from_path(scan_result.data_files[0].path, "x") == 1
+    assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
+
+
+def test_sink_parquet_partition_bucket_negative_value(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    # The Iceberg spec doesn't publish a test vector for negative inputs, so this doesn't assert
+    # against an externally verifiable bucket id. Instead, it guards against a sign-handling
+    # regression: the mask applied to the hash (`& 0x7FFFFFFF`) must always clear the sign bit, so
+    # the resulting bucket id must be a valid, non-negative bucket regardless of whether the
+    # *input* value is negative, and the original value must still round-trip correctly.
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": dl.Int64()},
+        partition_by=dl.PartitionColumn("x", transform="bucket", num_buckets=8),
+    )
+    lf = pl.LazyFrame({"x": [-34]})
+
+    # Act
+    table.sink_polars(lf)
+    lf_roundtrip = table.scan_polars()
+
+    # Assert
+    scan_result = table.scan()
+    assert len(scan_result.data_files) == 1
+    assert 0 <= _partition_value_from_path(scan_result.data_files[0].path, "x") < 8
+    assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
+
+
 @pytest.mark.parametrize(
     ("dtype", "pl_dtype"),
     [
