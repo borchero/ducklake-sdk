@@ -61,7 +61,7 @@ pub struct AuthorInfo {
     pub extra_info: Option<String>,
 }
 
-/// Strategy to apply when creating entities.
+/// Strategy to apply when an entity's presence or absence conflicts with the requested operation.
 pub enum IfExistsStrategy {
     Fail,
     Skip,

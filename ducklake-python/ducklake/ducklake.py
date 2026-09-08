@@ -206,17 +206,27 @@ class Ducklake:
         """
         return self._pyducklake.list_schemas()
 
-    def delete_schema(self, name: str, *, cascade: bool = False) -> None:
+    def delete_schema(
+        self,
+        name: str,
+        *,
+        cascade: bool = False,
+        if_not_exists: Literal["fail", "skip"] = "fail",
+    ) -> None:
         """Delete an existing schema from the catalog.
 
         Args:
             name: The name of the schema to delete.
             cascade: Whether to also delete all tables and views in the schema.
+            if_not_exists: The strategy to apply if the schema does not exist.
+                "fail" raises a :class:`~ducklake.exceptions.NotFoundError`, while "skip"
+                leaves the catalog unchanged.
 
         Raises:
+            NotFoundError: If the schema does not exist and `if_not_exists` is "fail".
             ValueError: If the schema is not empty and `cascade` is `False`.
         """
-        self._pyducklake.delete_schema(name, cascade)
+        self._pyducklake.delete_schema(name, cascade, if_not_exists)
 
     # ------------------------------------------ TABLES ----------------------------------------- #
 

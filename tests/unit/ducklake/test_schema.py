@@ -60,12 +60,55 @@ def test_create_schema_skip_when_missing(
     assert random_schema_name in shared_ducklake.list_schemas()
 
 
+@pytest.mark.parametrize("use_transaction", [False, True])
 def test_delete_missing_schema_raises(
-    shared_ducklake: dl.Ducklake, random_schema_name: str
+    shared_ducklake: dl.Ducklake, random_schema_name: str, use_transaction: bool
 ) -> None:
     # Act & Assert
-    with pytest.raises(dlexc.NotFoundError):
-        shared_ducklake.delete_schema(random_schema_name)
+    if use_transaction:
+        with shared_ducklake.transaction() as tx:
+            with pytest.raises(dlexc.NotFoundError):
+                tx.delete_schema(random_schema_name)
+    else:
+        with pytest.raises(dlexc.NotFoundError):
+            shared_ducklake.delete_schema(random_schema_name)
+
+
+@pytest.mark.parametrize("use_transaction", [False, True])
+def test_delete_missing_schema_skip(
+    shared_ducklake: dl.Ducklake, random_schema_name: str, use_transaction: bool
+) -> None:
+    # Arrange
+    snapshot = shared_ducklake.get_latest_snapshot()
+
+    # Act
+    if use_transaction:
+        with shared_ducklake.transaction() as tx:
+            tx.delete_schema(random_schema_name, if_not_exists="skip")
+    else:
+        shared_ducklake.delete_schema(random_schema_name, if_not_exists="skip")
+
+    # Assert
+    assert random_schema_name not in shared_ducklake.list_schemas()
+    assert shared_ducklake.get_latest_snapshot().id == snapshot.id
+
+
+@pytest.mark.parametrize("use_transaction", [False, True])
+def test_delete_existing_schema_skip(
+    shared_ducklake: dl.Ducklake, random_schema_name: str, use_transaction: bool
+) -> None:
+    # Arrange
+    shared_ducklake.create_schema(random_schema_name)
+
+    # Act
+    if use_transaction:
+        with shared_ducklake.transaction() as tx:
+            tx.delete_schema(random_schema_name, if_not_exists="skip")
+    else:
+        shared_ducklake.delete_schema(random_schema_name, if_not_exists="skip")
+
+    # Assert
+    assert random_schema_name not in shared_ducklake.list_schemas()
 
 
 def test_delete_nonempty_schema_without_cascade_raises(

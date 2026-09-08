@@ -30,7 +30,19 @@ impl<'a> Transaction<'a> {
 
     /// Delete an existing schema from the catalog, optionally deleting all of its tables and
     /// views.
-    pub fn delete_schema(&mut self, name: &str, cascade: bool) -> DucklakeResult<()> {
+    pub fn delete_schema(
+        &mut self,
+        name: &str,
+        cascade: bool,
+        if_not_exists: IfExistsStrategy,
+    ) -> DucklakeResult<()> {
+        // If the schema does not exist and the strategy is specified accordingly, simply
+        // return without making any changes
+        if matches!(if_not_exists, IfExistsStrategy::Skip) && self.catalog().schema(name).is_err()
+        {
+            return Ok(());
+        }
+
         if cascade {
             for table_name in self.list_tables(Some(name))? {
                 self.delete_table(&table_name)?;
