@@ -85,7 +85,8 @@ impl Ducklake {
     /// The moved tables re-register the existing data files using absolute paths. Once the target
     /// commit succeeds, the source tables are dropped and their file metadata is detached in a
     /// single source-side transaction, so source maintenance cannot delete files now owned by this
-    /// DuckLake.
+    /// DuckLake. Note that this means that time travel on the source DuckLake cannot recover moved
+    /// files.
     ///
     /// The target creation is atomic, but because the source and target are distinct catalogs the
     /// overall move is not: if the source changed since the transfer began, the source drop is
@@ -180,8 +181,7 @@ impl Ducklake {
         }
 
         // Create every table and write its data within a single target transaction. File copies
-        // (for `copy`) happen mid-transaction; the transaction is buffered in memory until commit,
-        // so no database lock is held while copying.
+        // (for `copy`) happen mid-transaction.
         let mut tx = target.conn.transaction(None).await?;
         for ((transfer, info), name) in tables.iter().zip(transfer_info).zip(&target_names) {
             let source = transfer.table;
@@ -211,25 +211,25 @@ impl Ducklake {
                 .into_iter()
                 .zip(scan.partition_values)
             {
-                let path = copy_transfer_file(
-                    source.conn.storage_options(),
-                    target.conn.storage_options(),
-                    &generator,
-                    &data_file.path,
-                    copy_files,
-                )
-                .await?;
+                let mut path = data_file.path;
                 let mut delete_files = data_file.delete_files;
-                for delete_file in &mut delete_files {
-                    let path = copy_transfer_file(
+                if copy_files {
+                    path = copy_transfer_file(
                         source.conn.storage_options(),
                         target.conn.storage_options(),
                         &generator,
-                        &delete_file.path,
-                        copy_files,
+                        &path,
                     )
                     .await?;
-                    delete_file.path = path;
+                    for delete_file in &mut delete_files {
+                        delete_file.path = copy_transfer_file(
+                            source.conn.storage_options(),
+                            target.conn.storage_options(),
+                            &generator,
+                            &delete_file.path,
+                        )
+                        .await?;
+                    }
                 }
                 data_files.push(crate::transaction::TransferDataFile {
                     data_file: WriteDataFile {
@@ -261,11 +261,11 @@ impl Ducklake {
             if source_conn.snapshot(SnapshotAccess::Write).await?.info().id != snapshot_id {
                 return Err(DucklakeError::TableChangedDuringTransfer);
             }
-            let mut source_tx = source_conn.transaction(None).await?;
+            let mut tx = source_conn.transaction(None).await?;
             for name in &source_names {
-                source_tx.delete_table_transferring_file_ownership(name)?;
+                tx.delete_table_transferring_file_ownership(name)?;
             }
-            source_tx.commit().await?;
+            tx.commit().await?;
         }
 
         futures::future::try_join_all(target_names.into_iter().map(|name| target.table(name)))
@@ -273,19 +273,13 @@ impl Ducklake {
     }
 }
 
-/// Resolve the path a transferred file should be registered under in the target. When copying, the
-/// file is physically copied into the target's data directory and the new absolute path is
-/// returned. When moving, the source path is registered as-is (as an absolute path).
+/// Copy a file into the target's data directory and return its new absolute path.
 async fn copy_transfer_file(
     source_options: &[(String, String)],
     target_options: &[(String, String)],
     generator: &utils::DataFilePathGenerator,
     source_path: &str,
-    copy_files: bool,
 ) -> DucklakeResult<String> {
-    if !copy_files {
-        return Ok(source_path.to_string());
-    }
     let source = source_path.parse::<io::DucklakePath>()?;
     let destination = generator.generate_absolute(&Default::default());
     io::copy_file(

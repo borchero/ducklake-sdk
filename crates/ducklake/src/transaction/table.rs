@@ -331,8 +331,8 @@ impl<'a> Transaction<'a> {
                             data_file.data_file.partition_values,
                         ) {
                             // If partitioning is defined, and the user-provided data file contains
-                            // partition values, we ensure that they match. Otherwise, we simply ignore
-                            // the partition values provided by the user.
+                            // partition values, we ensure that they match. Otherwise, we simply
+                            // ignore the partition values provided by the user.
                             (Some(target), Some(p)) => target
                                 .0
                                 .iter()
@@ -343,8 +343,8 @@ impl<'a> Transaction<'a> {
                                 })
                                 .collect::<Result<Vec<_>, _>>()
                                 .ok(),
-                            // - If the table is partitioned but no partitions are provided, this is
-                            //   fine. We simply don't add partition values.
+                            // - If the table is partitioned but no partitions are provided, this
+                            //   is fine. We simply don't add partition values.
                             // - If the table is not partitioned, we simply ignore the partition
                             //   values. Users are free to partition data files regardless.
                             (Some(_), None) | (None, _) => None,
