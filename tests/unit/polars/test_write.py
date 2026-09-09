@@ -378,18 +378,39 @@ def test_sink_parquet_partition_bucket(
     assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
 
 
-def test_sink_parquet_partition_bucket_string(
-    shared_ducklake: dl.Ducklake, random_table_name: str
+# Verified against a live Ducklake setup
+@pytest.mark.parametrize(
+    ("dtype", "pl_dtype", "value", "expected_bucket"),
+    [
+        pytest.param(dl.Varchar(), pl.Utf8(), "iceberg", 1, id="string"),
+        pytest.param(dl.Blob(), pl.Binary(), bytes([0, 1, 2, 3]), 1, id="binary"),
+        pytest.param(dl.Boolean(), pl.Boolean(), True, 4, id="boolean"),
+        pytest.param(dl.Date(), pl.Date(), dt.date(2017, 11, 16), 2, id="date"),
+        pytest.param(
+            dl.Timestamp("microseconds"),
+            pl.Datetime("us"),
+            dt.datetime(2017, 11, 16, 22, 31, 8),
+            7,
+            id="timestamp",
+        ),
+        pytest.param(dl.Float64(), pl.Float64(), 1.0, 7, id="float64"),
+    ],
+)
+def test_sink_parquet_partition_bucket_matches_iceberg_test_vectors(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    dtype: dl.DataType,
+    pl_dtype: pl.DataType,
+    value: object,
+    expected_bucket: int,
 ) -> None:
     # Arrange
-    # `hashBytes(utf8Bytes("iceberg")) == 1210000089` per the Iceberg spec's test vectors, so
-    # `bucket(8, "iceberg") == 1210000089 % 8 == 1`.
     table = shared_ducklake.create_table(
         random_table_name,
-        {"x": dl.Varchar()},
+        {"x": dtype},
         partition_by=dl.PartitionColumn("x", transform="bucket", num_buckets=8),
     )
-    lf = pl.LazyFrame({"x": ["iceberg"]})
+    lf = pl.LazyFrame({"x": [value]}, schema={"x": pl_dtype})
 
     # Act
     table.sink_polars(lf)
@@ -398,32 +419,7 @@ def test_sink_parquet_partition_bucket_string(
     # Assert
     scan_result = table.scan()
     assert len(scan_result.data_files) == 1
-    assert _partition_value_from_path(scan_result.data_files[0].path, "x") == 1
-    assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
-
-
-def test_sink_parquet_partition_bucket_binary(
-    shared_ducklake: dl.Ducklake, random_table_name: str
-) -> None:
-    # Arrange
-    # `hashBytes([0x00, 0x01, 0x02, 0x03]) == -188683207` per the Iceberg spec's test vectors.
-    # Masking off the sign bit (as the `bucket` transform does) yields `1958800441`, so
-    # `bucket(8, [0x00, 0x01, 0x02, 0x03]) == 1958800441 % 8 == 1`.
-    table = shared_ducklake.create_table(
-        random_table_name,
-        {"x": dl.Blob()},
-        partition_by=dl.PartitionColumn("x", transform="bucket", num_buckets=8),
-    )
-    lf = pl.LazyFrame({"x": [bytes([0, 1, 2, 3])]}, schema={"x": pl.Binary()})
-
-    # Act
-    table.sink_polars(lf)
-    lf_roundtrip = table.scan_polars()
-
-    # Assert
-    scan_result = table.scan()
-    assert len(scan_result.data_files) == 1
-    assert _partition_value_from_path(scan_result.data_files[0].path, "x") == 1
+    assert _partition_value_from_path(scan_result.data_files[0].path, "x") == expected_bucket
     assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
 
 
@@ -451,6 +447,56 @@ def test_sink_parquet_partition_bucket_negative_value(
     scan_result = table.scan()
     assert len(scan_result.data_files) == 1
     assert 0 <= _partition_value_from_path(scan_result.data_files[0].path, "x") < 8
+    assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
+
+
+def test_sink_parquet_partition_bucket_rejects_unverified_dtype(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    # `Decimal`'s hash in the real DuckLake extension doesn't even match the value published in
+    # the Iceberg spec it's supposed to be compatible with (see `test_create_bucket_partition_
+    # rejects_unverified_dtypes` in `test_sink.py`), so bucketing on it must fail loudly rather
+    # than silently produce an incompatible bucket id.
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": dl.Decimal(9, 2)},
+        partition_by=dl.PartitionColumn("x", transform="bucket", num_buckets=8),
+    )
+    lf = pl.LazyFrame({"x": [1.0]}, schema={"x": pl.Decimal(9, 2)})
+
+    # Act & Assert
+    with pytest.raises(NotImplementedError, match="bucket"):
+        table.sink_polars(lf)
+
+
+def test_sink_parquet_partition_bucket_millisecond_timestamp(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    # DuckLake hashes a `Timestamp` column's raw physical integer without converting between time
+    # units, so a millisecond-precision column hashes *differently* from the microsecond one in
+    # `test_sink_parquet_partition_bucket_matches_iceberg_test_vectors` for the same logical
+    # instant. Verified empirically against a real DuckDB + `ducklake` extension instance
+    # (`2017-11-16T22:31:08::TIMESTAMP_MS` hashes to `-1171784138`; masked and modulo `8` gives
+    # bucket `6`).
+    table = shared_ducklake.create_table(
+        random_table_name,
+        {"x": dl.Timestamp("milliseconds")},
+        partition_by=dl.PartitionColumn("x", transform="bucket", num_buckets=8),
+    )
+    lf = pl.LazyFrame(
+        {"x": [dt.datetime(2017, 11, 16, 22, 31, 8)]}, schema={"x": pl.Datetime("ms")}
+    )
+
+    # Act
+    table.sink_polars(lf)
+    lf_roundtrip = table.scan_polars()
+
+    # Assert
+    scan_result = table.scan()
+    assert len(scan_result.data_files) == 1
+    assert _partition_value_from_path(scan_result.data_files[0].path, "x") == 6
     assert_frame_equal(lf, lf_roundtrip, check_row_order=False)
 
 

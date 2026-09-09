@@ -4,7 +4,7 @@ from typing import Literal, overload
 
 import polars as pl
 import polars.datatypes as pld
-import polars_hash  # noqa: F401 
+import polars_hash  # noqa: F401
 from polars._typing import EngineType
 from polars.io.partition import FileProviderArgs, SinkedPathsCallbackArgs
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
@@ -249,13 +249,40 @@ def _apply_default_value(expr: pl.Expr, column: Column) -> pl.Expr:
 # ------------------------------------------ PARTITIONS ----------------------------------------- #
 
 
+_BUCKET_SUPPORTED_DTYPES = (
+    pld.Boolean,
+    pld.Int8,
+    pld.Int16,
+    pld.Int32,
+    pld.Int64,
+    pld.Float32,
+    pld.Float64,
+    pld.String,
+    pld.Binary,
+    pld.Date,
+)
+
+_BUCKET_WIDEN_TO_INT64_DTYPES = (pld.Boolean, pld.Int8, pld.Int16, pld.Int32, pld.Date)
+
+
 def _create_bucket_partition(expr: pl.Expr, dtype: pl.DataType, num_buckets: int) -> pl.Expr:
-    # The DuckLake bucket transform must produce hashes that are compatible with Iceberg's bucket
-    # transform. Per the Iceberg spec, integers narrower than 64 bits must hash identically to
-    # their sign-extended 64-bit (`long`) representation, so we widen them before hashing.
-    if dtype in (pld.Int8, pld.Int16, pld.Int32):
+    if isinstance(dtype, pld.Datetime):
         expr = expr.cast(pl.Int64)
-    return (expr.bytes.to_le().nchash.murmur32(seed=0) & 0x7FFFFFFF) % num_buckets
+    elif dtype not in _BUCKET_SUPPORTED_DTYPES:
+        raise NotImplementedError(
+            f"The `bucket` partition transform is not supported for columns of type `{dtype}` "
+            "via polars. Only boolean, signed integer, floating-point, string, binary, date, "
+            "and datetime columns are currently supported."
+        )
+    elif dtype in _BUCKET_WIDEN_TO_INT64_DTYPES:
+        expr = expr.cast(pl.Int64)
+    elif dtype in (pld.Float32, pld.Float64):
+        expr = expr.cast(pl.Float64)
+        expr = pl.when(expr == 0.0).then(0.0).otherwise(expr)
+
+    # NOTE: `.bytes`/`.nchash` are namespaces registered on `pl.Expr` by `polars_hash` at import
+    #  time, so static type checkers cannot see them.
+    return (expr.bytes.to_le().nchash.murmur32(seed=0) & 0x7FFFFFFF) % num_buckets  # ty: ignore[unresolved-attribute]
 
 
 def _prepare_partitions(
@@ -269,6 +296,7 @@ def _prepare_partitions(
         result.append(partition_name)
 
         if partition_col.transform == "bucket":
+            assert partition_col.num_buckets is not None
             lf = lf.with_columns(
                 _create_bucket_partition(
                     pl.col(partition_col.name),
