@@ -201,7 +201,7 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
 
 impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
-    fn delete_table(&mut self, name: &TableName) -> DucklakeResult<()> {
+    pub(crate) fn delete_table(&mut self, name: &TableName) -> DucklakeResult<()> {
         self.delete_table_inner(name, false)
     }
 
