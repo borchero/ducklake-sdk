@@ -118,8 +118,15 @@ impl PyDucklake {
             .map_err(error::into_pyerr)
     }
 
-    pub fn delete_schema(&self, py: Python, name: String, cascade: bool) -> PyResult<()> {
-        block_on(py, self.0.delete_schema(&name, cascade)).map_err(error::into_pyerr)
+    pub fn delete_schema(
+        &self,
+        py: Python,
+        name: String,
+        cascade: bool,
+        if_not_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<()> {
+        block_on(py, self.0.delete_schema(&name, cascade, if_not_exists.0))
+            .map_err(error::into_pyerr)
     }
 
     #[allow(clippy::too_many_arguments)]

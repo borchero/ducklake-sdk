@@ -22,6 +22,12 @@ API Reference
 
         Read and write data, inspect metadata, and manage table state.
 
+    .. grid-item-card:: View
+        :link: view/index
+        :link-type: doc
+
+        Read query results and inspect view definitions.
+
 .. grid::
 
     .. grid-item-card:: Transactions
@@ -63,6 +69,7 @@ API Reference
     connect/index
     ducklake/index
     table/index
+    view/index
     transaction/index
     types/index
     errors/index
