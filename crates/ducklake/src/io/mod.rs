@@ -3,6 +3,7 @@ pub(crate) mod arrow;
 pub(crate) mod parquet;
 mod path;
 
+use object_store::ObjectStoreExt;
 pub(crate) use path::{DucklakePath, Path};
 
 /// Copy a file between two object stores.
@@ -12,14 +13,15 @@ pub(crate) async fn copy_file(
     destination: &DucklakePath,
     destination_options: &[(String, String)],
 ) -> crate::DucklakeResult<()> {
-    use object_store::ObjectStoreExt;
-
     let source = source.resolve()?;
     let destination = destination.resolve()?;
+
     let source_store = source.object_store(Some(source_options.to_vec()));
     let destination_store = destination.object_store(Some(destination_options.to_vec()));
+
     let source_path = source.path();
     let destination_path = destination.path();
+
     if std::sync::Arc::ptr_eq(&source_store, &destination_store) {
         source_store.copy(&source_path, &destination_path).await?;
     } else {
@@ -28,5 +30,6 @@ pub(crate) async fn copy_file(
             .put(&destination_path, contents.into())
             .await?;
     }
+
     Ok(())
 }

@@ -145,12 +145,25 @@ impl ChangeSet {
         tx: &mut db::Transaction,
         state: &mut CommitState<'_>,
     ) -> DucklakeResult<()> {
-        // Inline writes run after any required backing catalog tables have been created.
-        for change in self
+        let created_tables = self
             .changes
             .iter()
-            .filter(|change| !matches!(change, Change::WriteTableInlineData { .. }))
-        {
+            .filter_map(|change| match change {
+                Change::CreateTable { table_ref, .. } => Some(*table_ref),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+
+        // First, execute all changes except inline writes to newly created tables. Those writes
+        // have to wait until their backing catalog tables have been created below.
+        for change in &self.changes {
+            if matches!(
+                change,
+                Change::WriteTableInlineData { table_ref, .. }
+                    if created_tables.contains(table_ref)
+            ) {
+                continue;
+            }
             change.apply(tx, state).await?;
         }
 
@@ -160,12 +173,18 @@ impl ChangeSet {
             executors::create_inlined_data_table(tx, state, &table_ref).await?;
         }
 
-        for change in self
-            .changes
-            .iter()
-            .filter(|change| matches!(change, Change::WriteTableInlineData { .. }))
-        {
-            change.apply(tx, state).await?;
+        // TODO: Ideally, all inline writes would happen here. This requires rewriting inline data
+        //  to match the changed schema; until then, inline writes to existing tables with schema
+        //  changes are rejected. Newly created tables already have their final schema, so their
+        //  inline writes can safely be applied here.
+        for change in &self.changes {
+            if matches!(
+                change,
+                Change::WriteTableInlineData { table_ref, .. }
+                    if created_tables.contains(table_ref)
+            ) {
+                change.apply(tx, state).await?;
+            }
         }
 
         // Finally, we need to check whether we wrote inline data without writing any data files.
