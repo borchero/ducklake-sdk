@@ -30,6 +30,24 @@ macro_rules! arrow_match_time {
     };
 }
 
+macro_rules! arrow_match_timestamp {
+    ($dtype:expr, second => $second:expr, millisecond => $millisecond:expr, microsecond => $microsecond:expr, nanosecond => $nanosecond:expr) => {
+        match $dtype {
+            arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Second, _) => $second,
+            arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Millisecond, _) => {
+                $millisecond
+            }
+            arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Microsecond, _) => {
+                $microsecond
+            }
+            arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, _) => {
+                $nanosecond
+            }
+            _ => unreachable!(),
+        }
+    };
+}
+
 pub(crate) mod aggregate;
 pub(crate) mod conversion;
 mod statistics;
