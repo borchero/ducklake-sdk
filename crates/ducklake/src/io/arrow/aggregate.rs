@@ -177,8 +177,14 @@ mod tests {
             Some(2_000),
         ]));
         let dtype = DataType::timestamp(crate::TimestampPrecision::Milliseconds);
-        assert_eq!(find_min(&dtype, &array), Some(Value::Timestamp(expected_min)));
-        assert_eq!(find_max(&dtype, &array), Some(Value::Timestamp(expected_max)));
+        assert_eq!(
+            find_min(&dtype, &array),
+            Some(Value::Timestamp(expected_min))
+        );
+        assert_eq!(
+            find_max(&dtype, &array),
+            Some(Value::Timestamp(expected_max))
+        );
     }
 
     #[test]
