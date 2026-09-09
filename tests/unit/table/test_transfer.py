@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import polars as pl
 import pytest
@@ -15,11 +16,18 @@ pytestmark = pytest.mark.skip_config(
 
 
 @pytest.fixture()
-def transfer_target(catalog: str, storage: str, tmp_path: Path) -> Iterator[dl.Ducklake]:
+def transfer_target_url(catalog: str, tmp_path: Path) -> Iterator[str]:
+    with make_catalog_url(catalog, tmp_path) as catalog_url:
+        yield catalog_url
+
+
+@pytest.fixture()
+def transfer_target(
+    transfer_target_url: str, storage: str, tmp_path: Path
+) -> Iterator[dl.Ducklake]:
     with (
-        make_catalog_url(catalog, tmp_path) as catalog_url,
         make_storage_path(storage, tmp_path) as storage_path,
-        dl.create(catalog_url, data_path=storage_path) as ducklake,
+        dl.create(transfer_target_url, data_path=storage_path) as ducklake,
     ):
         yield ducklake
 
@@ -165,3 +173,103 @@ def test_transfer_rejects_same_catalog(
     # Assert
     assert ducklake.has_table(random_table_name)
     assert not ducklake.has_table("renamed")
+
+
+# --------------------------------------- SCHEMA EVOLUTION -------------------------------------- #
+
+
+@pytest.fixture(params=[False, True], ids=["flat", "nested"])
+def evolved_source(
+    ducklake: dl.Ducklake, request: pytest.FixtureRequest
+) -> tuple[dl.Table, pl.DataFrame, int]:
+    payload_type = dl.Struct({"values": dl.List(dl.Int64())}) if request.param else dl.Int64()
+    payload = [{"values": [10, 20]}, {"values": [30]}] if request.param else [10, 20]
+    source = ducklake.create_table(
+        "evolved",
+        {"discarded": dl.Int64(), "key": dl.Int64(), "payload": payload_type},
+    )
+    source.set_metadata(data_inlining_row_limit=0)
+    original = pl.DataFrame({"discarded": [100, 200], "key": [1, 2], "payload": payload})
+    source.write_polars(original)
+    source.remove_column("discarded")
+    source.rename_column("key", "renamed")
+    source.add_column(dl.Column("added", dl.Varchar(), initial_default="old"))
+    source.add_column(dl.Column("retired", dl.Int64()))
+    retired_id = source.schema.columns[-1].field_id
+    assert retired_id is not None
+    later = (
+        original.drop("discarded")
+        .rename({"key": "renamed"})
+        .with_columns(
+            pl.col("renamed") + 2,
+            pl.lit("new").alias("added"),
+            pl.lit(999, dtype=pl.Int64).alias("retired"),
+        )
+    )
+    source.write_polars(later)
+    source.remove_column("retired")
+    expected = pl.concat(
+        [
+            original.drop("discarded")
+            .rename({"key": "renamed"})
+            .with_columns(pl.lit("old").alias("added")),
+            later.drop("retired"),
+        ]
+    )
+    return source, expected, retired_id
+
+
+@pytest.mark.parametrize("operation", ["copy_tables", "move_tables"])
+def test_transfer_preserves_evolved_column_ids(
+    ducklake: dl.Ducklake,
+    evolved_source: tuple[dl.Table, pl.DataFrame, int],
+    transfer_target: dl.Ducklake,
+    operation: str,
+) -> None:
+    # Arrange
+    source, expected, _ = evolved_source
+    source_columns = source.schema.columns
+    source_stats = [
+        {key: vars(stats) for key, stats in file.statistics.column_stats.items()}
+        for file in source.scan().data_files
+    ]
+
+    # Act
+    transferred = getattr(ducklake, operation)([source], transfer_target)[0]
+
+    # Assert
+    assert transferred.schema.columns == source_columns
+    assert [
+        {key: vars(stats) for key, stats in file.statistics.column_stats.items()}
+        for file in transferred.scan().data_files
+    ] == source_stats
+    assert_frame_equal(transferred.read_polars().sort("renamed"), expected)
+    # read_arrow uses DuckDB, providing an independent check of the file-to-column mapping.
+    duckdb_data = cast(pl.DataFrame, pl.from_arrow(transferred.read_arrow()))
+    assert_frame_equal(duckdb_data.sort("renamed"), expected)
+
+
+@pytest.mark.parametrize("operation", ["copy_tables", "move_tables"])
+@pytest.mark.parametrize("reconnect", [False, True])
+def test_transfer_reserves_dropped_column_ids(
+    ducklake: dl.Ducklake,
+    evolved_source: tuple[dl.Table, pl.DataFrame, int],
+    transfer_target: dl.Ducklake,
+    transfer_target_url: str,
+    operation: str,
+    reconnect: bool,
+) -> None:
+    # Arrange
+    source, expected, retired_id = evolved_source
+    transferred = getattr(ducklake, operation)([source], transfer_target)[0]
+    expected = expected.with_columns(pl.lit(123, dtype=pl.Int64).alias("fresh"))
+
+    with dl.connect(transfer_target_url) as reopened:
+        table = reopened.table("evolved") if reconnect else transferred
+
+        # Act
+        table.add_column(dl.Column("fresh", dl.Int64(), initial_default=123))
+
+        # Assert
+        assert table.schema.columns[-1].field_id == retired_id + 1
+        assert_frame_equal(table.read_polars().sort("renamed"), expected)

@@ -101,7 +101,46 @@ impl<'a> Transaction<'a> {
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
         let name = name.try_into().map_err(|e| e.into())?;
+        self.create_table_inner(
+            name,
+            columns,
+            partition_columns,
+            path,
+            tags,
+            if_exists,
+            None,
+        )
+    }
 
+    /// Create a table with the source's field IDs, reserving IDs of its dropped columns.
+    pub(crate) fn create_transfer_table(
+        &mut self,
+        name: TableName,
+        info: crate::TableInfo,
+        retired_columns: Vec<crate::spec::DucklakeColumn>,
+    ) -> DucklakeResult<TransactionTable<'_, 'a>> {
+        self.create_table_inner(
+            name,
+            info.schema.columns.into_values().collect(),
+            info.partitioning.map(|partition| partition.0),
+            None,
+            Some(info.tags),
+            IfExistsStrategy::Fail,
+            Some(retired_columns),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_table_inner(
+        &mut self,
+        name: TableName,
+        columns: Vec<Column>,
+        partition_columns: Option<Vec<PartitionColumn>>,
+        path: Option<String>,
+        tags: Option<Vec<Tag>>,
+        if_exists: IfExistsStrategy,
+        retired_columns: Option<Vec<crate::spec::DucklakeColumn>>,
+    ) -> DucklakeResult<TransactionTable<'_, 'a>> {
         // If the table already exists and the strategy is specified accordingly, simply
         // return the existing table
         if matches!(if_exists, IfExistsStrategy::Skip) && self.catalog().table(&name).is_ok() {
@@ -119,8 +158,19 @@ impl<'a> Transaction<'a> {
             partitioning: partition_columns.clone().map(|p| p.into()),
             tags: tags.clone().unwrap_or_default(),
         };
+        let next_column_id = retired_columns.as_ref().map(|retired| {
+            columns
+                .iter()
+                .flat_map(Column::flatten)
+                .filter_map(|column| column.column.field_id)
+                .chain(retired.iter().map(|column| column.column_id))
+                .max()
+                .unwrap_or(0)
+                + 1
+        });
         let (schema_ref, table_ref, column_refs, partition_refs) =
-            self.catalog_mut().add_table(info, path.clone())?;
+            self.catalog_mut()
+                .add_table(info, path.clone(), next_column_id)?;
 
         // Create the change object
         let change = Change::CreateTable {
@@ -130,6 +180,7 @@ impl<'a> Transaction<'a> {
             partition_column_refs: partition_refs,
             name: name.clone(),
             columns,
+            retired_columns: retired_columns.unwrap_or_default(),
             partition_columns,
             path,
             tags,

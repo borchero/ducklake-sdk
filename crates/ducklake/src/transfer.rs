@@ -1,6 +1,10 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
+
+use itertools::Itertools;
+use sea_query::{Asterisk, ExprTrait, Order, Query};
 
 use crate::ducklake::SnapshotAccess;
+use crate::spec::{DucklakeColumn, ducklake_column};
 use crate::table::TableInfo;
 use crate::{
     Ducklake,
@@ -38,6 +42,12 @@ impl<'a> From<(TableName, &'a Table)> for TableTransfer<'a> {
 
 /* -------------------------------------- TABLE TRANSFER -------------------------------------- */
 
+struct TableTransferInfo {
+    info: TableInfo,
+    scan: scan::TableTransferScan,
+    retired_columns: Vec<DucklakeColumn>,
+}
+
 impl Table {
     async fn transfer_info(&self) -> DucklakeResult<TableTransferInfo> {
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -45,6 +55,29 @@ impl Table {
         let table = catalog.table(self.id)?;
         let info = table.info();
         let data_path = table.data_path(&self.conn.metadata().data_path());
+
+        // Find all retired column IDs. These IDs must stay reserved to not expose any IDs.
+        let active_column_ids: HashSet<_> = info
+            .schema
+            .columns
+            .values()
+            .flat_map(crate::Column::flatten)
+            .filter_map(|column| column.column.field_id)
+            .collect();
+        let query = Query::select()
+            .column(Asterisk)
+            .from(ducklake_column::Table)
+            .and_where(ducklake_column::Column::TableId.col().eq(self.id))
+            .order_by(ducklake_column::Column::BeginSnapshot, Order::Desc)
+            .to_owned();
+        let columns: Vec<DucklakeColumn> = self.conn.pool().fetch_all(&query).await?;
+        let retired_columns = columns
+            .into_iter()
+            .filter(|column| !active_column_ids.contains(&column.column_id))
+            .unique_by(|column| column.column_id)
+            .collect();
+
+        // Scan the table
         let scan = scan::scan_table_for_transfer(
             self.conn.pool(),
             self.id,
@@ -53,7 +86,11 @@ impl Table {
             &data_path,
         )
         .await?;
-        Ok(TableTransferInfo { info, scan })
+        Ok(TableTransferInfo {
+            info,
+            scan,
+            retired_columns,
+        })
     }
 }
 
@@ -185,23 +222,14 @@ impl Ducklake {
         let mut tx = target.conn.transaction(None).await?;
         for ((transfer, info), name) in tables.iter().zip(transfer_info).zip(&target_names) {
             let source = transfer.table;
-            let TableTransferInfo { info, scan } = info;
-            let source_columns = info.schema.columns.into_values().collect::<Vec<_>>();
+            let TableTransferInfo {
+                info,
+                scan,
+                retired_columns,
+            } = info;
 
             tx.create_schema(&name.schema, None, IfExistsStrategy::Skip)?;
-            let mut table = tx.create_table(
-                name.clone(),
-                source_columns.clone(),
-                info.partitioning.map(|partition| partition.0),
-                None,
-                Some(info.tags),
-                IfExistsStrategy::Fail,
-            )?;
-
-            // Field IDs are assigned deterministically when the table is created, so the freshly
-            // created target columns line up positionally with the source columns.
-            let target_columns = table.columns()?.collect::<Vec<_>>();
-            let column_ids = transfer_column_ids(&source_columns, &target_columns);
+            let mut table = tx.create_transfer_table(name.clone(), info, retired_columns)?;
 
             let (_, generator) = table.get_write_info()?;
             let mut data_files = Vec::with_capacity(scan.result.data_files.len());
@@ -234,7 +262,7 @@ impl Ducklake {
                 data_files.push(crate::transaction::TransferDataFile {
                     data_file: WriteDataFile {
                         path,
-                        statistics: Some(remap_statistics(data_file.statistics, &column_ids)),
+                        statistics: Some(data_file.statistics),
                         partition_values: None,
                     },
                     partition_values: metadata,
@@ -290,47 +318,4 @@ async fn copy_transfer_file(
     )
     .await?;
     Ok(destination)
-}
-
-struct TableTransferInfo {
-    info: TableInfo,
-    scan: scan::TableTransferScan,
-}
-
-fn transfer_column_ids(source: &[crate::Column], target: &[crate::Column]) -> HashMap<i64, i64> {
-    let mut source_ids = Vec::new();
-    let mut target_ids = Vec::new();
-    for column in source {
-        source_ids.extend(
-            column
-                .flatten()
-                .into_iter()
-                .map(|column| column.column.field_id),
-        );
-    }
-    for column in target {
-        target_ids.extend(
-            column
-                .flatten()
-                .into_iter()
-                .map(|column| column.column.field_id),
-        );
-    }
-    source_ids
-        .into_iter()
-        .zip(target_ids)
-        .filter_map(|(source, target)| source.zip(target))
-        .collect()
-}
-
-fn remap_statistics(
-    mut statistics: crate::DataFileStatistics,
-    column_ids: &HashMap<i64, i64>,
-) -> crate::DataFileStatistics {
-    statistics.column_stats = statistics
-        .column_stats
-        .into_iter()
-        .filter_map(|(source_id, stats)| column_ids.get(&source_id).map(|id| (*id, stats)))
-        .collect();
-    statistics
 }

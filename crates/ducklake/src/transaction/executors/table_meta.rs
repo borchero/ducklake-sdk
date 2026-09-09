@@ -21,6 +21,7 @@ pub(crate) async fn create_table<'a>(
     partition_column_refs: &Option<Vec<ColumnRef>>,
     name: &crate::TableName,
     columns: &[crate::Column],
+    retired_columns: &[DucklakeColumn],
     partition_columns: &Option<Vec<crate::PartitionColumn>>,
     path: &io::DucklakePath,
     tags: &Option<Vec<crate::Tag>>,
@@ -54,6 +55,14 @@ pub(crate) async fn create_table<'a>(
             &mut column_tags,
         )?;
     }
+    // Retain dropped field IDs so future columns cannot reuse IDs still present in transferred
+    // Parquet files. An empty snapshot interval keeps these columns out of every target schema.
+    ducklake_columns.extend(retired_columns.iter().cloned().map(|mut column| {
+        column.table_id = table_id;
+        column.begin_snapshot = state.snapshot_id();
+        column.end_snapshot = Some(state.snapshot_id());
+        column
+    }));
     tx.insert_entities(ducklake_columns).await?;
     tx.insert_entities(column_tags).await?;
 
