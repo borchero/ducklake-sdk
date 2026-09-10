@@ -16,6 +16,7 @@ mod scan;
 mod spec;
 mod table;
 mod transaction;
+mod transfer;
 mod typedefs;
 mod utils;
 mod view;
@@ -34,6 +35,7 @@ pub use transaction::{
     TransactionTable,
     TransactionView,
 };
+pub use transfer::TableTransfer;
 pub use typedefs::*;
 pub use utils::DataFilePathGenerator;
 pub use view::*;
