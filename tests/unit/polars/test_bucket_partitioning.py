@@ -31,7 +31,7 @@ import ducklake as dl
         ),
     ],
 )
-def test_sink_parquet_partition_bucket_matches_iceberg_test_vectors(
+def test_sink_parquet_partition_bucket_matches_known_hashes(
     shared_ducklake: dl.Ducklake,
     random_table_name: str,
     dtype: dl.DataType,
