@@ -4,19 +4,17 @@ import re
 import tempfile
 from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import polars as pl
 import polars.datatypes as pld
 import polars.selectors as cs
 
-from ducklake import typedefs
-from ducklake._native import arrow_schema_field_ids
 from ducklake.table import Table
 from ducklake.view import View
 
 if TYPE_CHECKING:
-    from ducklake.typedefs import Column, Schema
+    from ducklake import typedefs
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
@@ -171,16 +169,7 @@ def scan_ducklake(
     # 4) If we had any inline data, we also want to include that in the scan result
     if scan_result.inline_data:
         for inline_data in scan_result.inline_data:
-            inline_lf = (
-                pl.LazyFrame(inline_data)
-                .pipe(
-                    _align_schema,
-                    ducklake_schema=schema,
-                    polars_schema=target_schema,
-                    field_id_mapping=arrow_schema_field_ids(inline_data),
-                )
-                .match_to_schema(target_schema, integer_cast="upcast", float_cast="upcast")
-            )
+            inline_lf = pl.LazyFrame(inline_data)
             if include_file_paths is not None:
                 inline_lf = inline_lf.with_columns(
                     pl.lit(None, dtype=pl.String).alias(include_file_paths)
@@ -270,107 +259,3 @@ def _convert_datetime_time_zone(
             return pl.List(_convert_datetime_time_zone(inner, time_zone))
         case _:
             return dtype
-
-
-def _align_schema(
-    lf: pl.LazyFrame,
-    ducklake_schema: Schema,
-    polars_schema: pl.Schema,
-    field_id_mapping: dict[int, str],
-) -> pl.LazyFrame:
-    projections = _derive_projections(ducklake_schema.columns, polars_schema, field_id_mapping)
-    return lf.select(projections)
-
-
-def _derive_projections(
-    columns: list[Column], target_schema: pl.Schema, field_id_mapping: dict[int, str]
-) -> list[pl.Expr]:
-    projections: list[pl.Expr] = []
-    for column in columns:
-        field_id = cast(int, column.field_id)
-        existing_column_name = field_id_mapping.get(field_id)
-        target_dtype = target_schema[column.name]
-        if existing_column_name is not None:
-            # "Existing column" -> reference it and reshape to match the target dtype,
-            # recursively descending into nested types (renames, inserted fields, etc.).
-            projection = _reshape_existing(
-                pl.col(existing_column_name), column, target_dtype, field_id_mapping
-            )
-        else:
-            # "Missing column" -> create new expression with (possibly nested) defaults.
-            projection = _new_column_expression(column, target_dtype)
-
-        # Select the expression and apply the alias to apply renames
-        projections.append(projection.alias(column.name))
-
-    return projections
-
-
-def _reshape_existing(
-    base: pl.Expr,
-    column: Column,
-    target_dtype: pl.DataType | pld.DataTypeClass,
-    field_id_mapping: dict[int, str],
-) -> pl.Expr:
-    """Reshape `base` (an expression producing a value whose source shape corresponds to `column`)
-    so that it matches `target_dtype`.
-
-    This recursively handles nested renames and inserted fields for Struct/List types.
-    `base` may be any expression: `pl.col(name)` at the top level, `pl.element()` inside
-    a `list.eval`, or `<parent>.struct.field(name)` inside a struct.
-    """
-    if isinstance(column.data_type, typedefs.Struct):
-        struct_dtype = cast(pl.Struct, target_dtype)
-        target_fields = {field.name: field.dtype for field in struct_dtype.fields}
-        rebuilt: list[pl.Expr] = []
-        for field in column.data_type.fields:
-            sub_target = target_fields[field.name]
-            existing_name = field_id_mapping.get(cast(int, field.field_id))
-            if existing_name is None:
-                rebuilt.append(_new_column_expression(field, sub_target).alias(field.name))
-            else:
-                sub_base = base.struct.field(existing_name)
-                rebuilt.append(
-                    _reshape_existing(sub_base, field, sub_target, field_id_mapping).alias(
-                        field.name
-                    )
-                )
-        return pl.struct(rebuilt)
-
-    if isinstance(column.data_type, typedefs.List):
-        inner_target = cast(pl.List, target_dtype).inner
-        inner_column = column.data_type.inner
-        existing_name = field_id_mapping.get(cast(int, inner_column.field_id))
-        if existing_name is None:
-            # The inner element itself was replaced with a new field. Fall back to a
-            # default expression per element.
-            inner_expr = _new_column_expression(inner_column, inner_target)
-        else:
-            inner_expr = _reshape_existing(
-                pl.element(), inner_column, inner_target, field_id_mapping
-            )
-        return base.list.eval(inner_expr)
-
-    # Leaf scalar: nothing to reshape.
-    return base
-
-
-def _new_column_expression(column: Column, dtype: pl.DataType | pld.DataTypeClass) -> pl.Expr:
-    if isinstance(column.data_type, typedefs.Struct):
-        if column.initial_default is not None:
-            raise NotImplementedError("Initial defaults for struct columns are not supported")
-        struct_schema = cast(pl.Struct, dtype).to_schema()
-        return pl.struct(
-            _new_column_expression(field, struct_schema[field.name]).alias(field.name)
-            for field in column.data_type.fields
-        )
-    if isinstance(column.data_type, typedefs.List):
-        if column.initial_default is not None:
-            raise NotImplementedError("Initial defaults for list columns are not supported")
-        inner_dtype = cast(pl.List, dtype).inner
-        inner_expr = _new_column_expression(column.data_type.inner, inner_dtype)
-        return pl.concat_list([inner_expr]).alias(column.name)
-
-    if column.initial_default is None:
-        return pl.lit(None, dtype=dtype).alias(column.name)
-    return pl.lit(column.initial_default, dtype=dtype).alias(column.name)

@@ -32,6 +32,7 @@ macro_rules! arrow_match_time {
 
 pub(crate) mod aggregate;
 pub(crate) mod conversion;
+pub(crate) mod schema;
 mod statistics;
 
 pub(crate) use statistics::compute_record_batch_statistics;

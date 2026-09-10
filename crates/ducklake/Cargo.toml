@@ -11,7 +11,9 @@ version = "0.0.0"
 [dependencies]
 arrow-arith = { workspace = true }
 arrow-array = { workspace = true }
+arrow-cast = { workspace = true }
 arrow-schema = { workspace = true, features = ["canonical_extension_types"] }
+arrow-select = { workspace = true }
 async-recursion = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }

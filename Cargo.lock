@@ -723,7 +723,9 @@ version = "0.0.0"
 dependencies = [
  "arrow-arith",
  "arrow-array",
+ "arrow-cast",
  "arrow-schema",
+ "arrow-select",
  "async-recursion",
  "bytes",
  "chrono",
