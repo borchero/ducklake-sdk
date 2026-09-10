@@ -14,13 +14,9 @@ duckdb-engine = "*"
 # NOTE: This is the oldest supported polars version. It should always match the version in
 # feature.polars-minimal. The latest polars version is in feature.polars-latest.
 polars = ">=1.43.2,<2"
+polars-hash = ">=0.9.3"
 pyarrow = "*"
 python-dateutil = "*"
-
-[feature.optionals.pypi-dependencies]
-# NOTE: polars-hash is not available on conda-forge for the version we need (>=0.9.3), so it is
-# pulled from PyPI instead.
-polars-hash = ">=0.9.3"
 
 # ------------------------------------ DEVELOPMENT UTILITIES ------------------------------------ #
 
