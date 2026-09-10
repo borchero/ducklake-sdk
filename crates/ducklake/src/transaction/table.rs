@@ -101,7 +101,46 @@ impl<'a> Transaction<'a> {
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
         let name = name.try_into().map_err(|e| e.into())?;
+        self.create_table_inner(
+            name,
+            columns,
+            partition_columns,
+            path,
+            tags,
+            if_exists,
+            None,
+        )
+    }
 
+    /// Create a table with the source's field IDs, reserving IDs of its dropped columns.
+    pub(crate) fn create_transfer_table(
+        &mut self,
+        name: TableName,
+        info: crate::TableInfo,
+        retired_columns: Vec<crate::spec::DucklakeColumn>,
+    ) -> DucklakeResult<TransactionTable<'_, 'a>> {
+        self.create_table_inner(
+            name,
+            info.schema.columns.into_values().collect(),
+            info.partitioning.map(|partition| partition.0),
+            None,
+            Some(info.tags),
+            IfExistsStrategy::Fail,
+            Some(retired_columns),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_table_inner(
+        &mut self,
+        name: TableName,
+        columns: Vec<Column>,
+        partition_columns: Option<Vec<PartitionColumn>>,
+        path: Option<String>,
+        tags: Option<Vec<Tag>>,
+        if_exists: IfExistsStrategy,
+        retired_columns: Option<Vec<crate::spec::DucklakeColumn>>,
+    ) -> DucklakeResult<TransactionTable<'_, 'a>> {
         // If the table already exists and the strategy is specified accordingly, simply
         // return the existing table
         if matches!(if_exists, IfExistsStrategy::Skip) && self.catalog().table(&name).is_ok() {
@@ -119,8 +158,19 @@ impl<'a> Transaction<'a> {
             partitioning: partition_columns.clone().map(|p| p.into()),
             tags: tags.clone().unwrap_or_default(),
         };
+        let next_column_id = retired_columns.as_ref().map(|retired| {
+            columns
+                .iter()
+                .flat_map(Column::flatten)
+                .filter_map(|column| column.column.field_id)
+                .chain(retired.iter().map(|column| column.column_id))
+                .max()
+                .unwrap_or(0)
+                + 1
+        });
         let (schema_ref, table_ref, column_refs, partition_refs) =
-            self.catalog_mut().add_table(info, path.clone())?;
+            self.catalog_mut()
+                .add_table(info, path.clone(), next_column_id)?;
 
         // Create the change object
         let change = Change::CreateTable {
@@ -130,6 +180,7 @@ impl<'a> Transaction<'a> {
             partition_column_refs: partition_refs,
             name: name.clone(),
             columns,
+            retired_columns: retired_columns.unwrap_or_default(),
             partition_columns,
             path,
             tags,
@@ -150,11 +201,23 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
 
 impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
-    pub(super) fn delete_table(&mut self, name: &TableName) -> DucklakeResult<()> {
+    pub(crate) fn delete_table(&mut self, name: &TableName) -> DucklakeResult<()> {
+        self.delete_table_inner(name, false)
+    }
+
+    pub(crate) fn delete_table_transferring_file_ownership(
+        &mut self,
+        name: &TableName,
+    ) -> DucklakeResult<()> {
+        self.delete_table_inner(name, true)
+    }
+
+    fn delete_table_inner(&mut self, name: &TableName, detach_files: bool) -> DucklakeResult<()> {
         let mut table = self.catalog_mut().table_mut(name)?;
         table.delete();
         let change = Change::DeleteTable {
             table_ref: table.ref_(),
+            detach_files,
         };
         self.changes.push(change);
         Ok(())
@@ -191,6 +254,15 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
         data_files: Vec<crate::WriteDataFile>,
     ) -> DucklakeResult<()> {
         self.tx.write_table_data_files(&self.name, data_files).await
+    }
+
+    pub(crate) async fn write_transfer_data_files(
+        &mut self,
+        data_files: Vec<super::TransferDataFile>,
+    ) -> DucklakeResult<()> {
+        self.tx
+            .write_table_transfer_data_files(&self.name, data_files)
+            .await
     }
 
     /// Write the provided record batches as inline data into the catalog.
@@ -240,6 +312,26 @@ impl<'a> Transaction<'a> {
         table_name: &TableName,
         data_files: Vec<crate::WriteDataFile>,
     ) -> DucklakeResult<()> {
+        self.write_table_transfer_data_files(
+            table_name,
+            data_files
+                .into_iter()
+                .map(|data_file| super::TransferDataFile {
+                    data_file,
+                    partition_values: None,
+                    delete_files: Vec::new(),
+                    inline_deletes: Vec::new(),
+                })
+                .collect(),
+        )
+        .await
+    }
+
+    async fn write_table_transfer_data_files(
+        &mut self,
+        table_name: &TableName,
+        data_files: Vec<super::TransferDataFile>,
+    ) -> DucklakeResult<()> {
         let table = self.catalog().table(table_name)?;
         let base_path = table.data_path(&self.metadata.data_path());
         let table_info = table.info();
@@ -249,7 +341,7 @@ impl<'a> Transaction<'a> {
         let mut data_files = data_files;
         let paths = data_files
             .iter()
-            .map(|data_file| data_file.path.parse::<io::DucklakePath>())
+            .map(|data_file| data_file.data_file.path.parse::<io::DucklakePath>())
             .collect::<Result<Vec<_>, _>>()?;
         let statistics =
             futures::future::try_join_all(data_files.iter_mut().zip(paths.iter()).map(
@@ -257,7 +349,7 @@ impl<'a> Transaction<'a> {
                     let path = base_path.join(path);
                     let storage_options = self.storage_options.clone();
                     async move {
-                        if let Some(stats) = data_file.statistics.take() {
+                        if let Some(stats) = data_file.data_file.statistics.take() {
                             Ok(stats)
                         } else {
                             io::parquet::read_file_statistics(
@@ -282,24 +374,32 @@ impl<'a> Transaction<'a> {
                     num_rows: stats.num_rows,
                     file_size_bytes: stats.file_size_bytes,
                     footer_size_bytes: stats.footer_size_bytes,
-                    partition_values: match (
-                        table_info.partitioning.as_ref(),
-                        data_file.partition_values,
-                    ) {
-                        // If partitioning is defined, and the user-provided data file contains
-                        // partition values, we ensure that they match. Otherwise, we simply ignore
-                        // the partition values provided by the user.
-                        (Some(target), Some(p)) => target
-                            .0
-                            .iter()
-                            .map(|col| p.get(&col.column).cloned().ok_or(()))
-                            .collect::<Result<Vec<_>, _>>()
-                            .ok(),
-                        // - If the table is partitioned but no partitions are provided, this is
-                        //   fine. We simply don't add partition values.
-                        // - If the table is not partitioned, we simply ignore the partition
-                        //   values. Users are free to partition data files regardless.
-                        (Some(_), None) | (None, _) => None,
+                    partition_values: if data_file.partition_values.is_some() {
+                        data_file.partition_values
+                    } else {
+                        match (
+                            table_info.partitioning.as_ref(),
+                            data_file.data_file.partition_values,
+                        ) {
+                            // If partitioning is defined, and the user-provided data file contains
+                            // partition values, we ensure that they match. Otherwise, we simply
+                            // ignore the partition values provided by the user.
+                            (Some(target), Some(p)) => target
+                                .0
+                                .iter()
+                                .map(|col| {
+                                    p.get(&col.column)
+                                        .map(|value| value.as_ref().map(ToString::to_string))
+                                        .ok_or(())
+                                })
+                                .collect::<Result<Vec<_>, _>>()
+                                .ok(),
+                            // - If the table is partitioned but no partitions are provided, this
+                            //   is fine. We simply don't add partition values.
+                            // - If the table is not partitioned, we simply ignore the partition
+                            //   values. Users are free to partition data files regardless.
+                            (Some(_), None) | (None, _) => None,
+                        }
                     },
                     column_stats: stats
                         .column_stats
@@ -318,6 +418,19 @@ impl<'a> Transaction<'a> {
                             Ok((col_ref, stats))
                         })
                         .collect::<DucklakeResult<_>>()?,
+                    delete_files: data_file
+                        .delete_files
+                        .into_iter()
+                        .map(|delete_file| {
+                            Ok(super::CommitDeleteFile {
+                                path: delete_file.path.parse()?,
+                                num_deletes: delete_file.num_deletes,
+                                file_size_bytes: delete_file.file_size_bytes,
+                                footer_size_bytes: delete_file.footer_size_bytes,
+                            })
+                        })
+                        .collect::<DucklakeResult<_>>()?,
+                    inline_deletes: data_file.inline_deletes,
                 };
                 Ok(commit_data_file)
             })

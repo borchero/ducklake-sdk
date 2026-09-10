@@ -197,7 +197,7 @@ impl CatalogColumns {
         // If so, add the column to the arena - this does not "register" the column in the "tree"
         // of columns yet
         let column_name = column.name.clone();
-        let arena_idxs = self.add_column_to_arena(column, parent_idx);
+        let arena_idxs = self.add_column_to_arena(column, parent_idx, false);
 
         // We either add the column as a root column or as a struct field
         if let Some(pidx) = parent_idx {
@@ -224,6 +224,7 @@ impl CatalogColumns {
         &mut self,
         column: crate::Column,
         parent: Option<ArenaIdx>,
+        preserve_column_ids: bool,
     ) -> Vec<ArenaIdx> {
         use crate::DataType::*;
 
@@ -266,7 +267,16 @@ impl CatalogColumns {
                 .map(|i| ArenaIdx(first_idx + i))
                 .or(parent);
             let catalog_column = CatalogColumn {
-                id: self.next_column_id(),
+                id: if preserve_column_ids {
+                    // SAFETY: Transfers use catalog-derived schemas; schema_column_from_arena_index
+                    // supplies a field ID for every column, including nested children.
+                    flat_column
+                        .column
+                        .field_id
+                        .expect("transferred columns must have field IDs")
+                } else {
+                    self.next_column_id()
+                },
                 parent_column,
                 name: flat_column.column.name,
                 dtype,
@@ -370,14 +380,17 @@ impl CatalogColumns {
     }
 }
 
-impl From<crate::Schema> for CatalogColumns {
-    fn from(value: crate::Schema) -> Self {
-        // NOTE: This implementation is only called when creating a new table. In this instance,
-        //  we know that the first column ID will be a 1.
-        let mut result = Self::new(Some(1));
-        for column in value.columns.into_values() {
+impl CatalogColumns {
+    pub(in crate::catalog) fn from_schema(
+        schema: crate::Schema,
+        next_column_id: Option<i64>,
+    ) -> Self {
+        // A transfer supplies both existing field IDs and the next unused ID, accounting for
+        // dropped columns. Ordinary table creation always allocates fresh IDs starting at one.
+        let mut result = Self::new(Some(next_column_id.unwrap_or(1)));
+        for column in schema.columns.into_values() {
             let column_name = column.name.clone();
-            let idxs = result.add_column_to_arena(column, None);
+            let idxs = result.add_column_to_arena(column, None, next_column_id.is_some());
             result.root_columns.insert(column_name, idxs[0]);
         }
         result

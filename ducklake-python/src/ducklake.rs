@@ -187,6 +187,42 @@ impl PyDucklake {
         block_on(py, self.0.table_exists(name.0)).map_err(error::into_pyerr)
     }
 
+    pub fn copy_tables(
+        &self,
+        py: Python,
+        tables: Vec<(Option<Wrap<ducklake::TableName>>, PyRef<PyTable>)>,
+        target: &PyDucklake,
+    ) -> PyResult<Vec<PyTable>> {
+        let tables = tables
+            .iter()
+            .map(|(name, table)| match name {
+                Some(name) => (name.0.clone(), table.inner()).into(),
+                None => table.inner().into(),
+            })
+            .collect::<Vec<ducklake::TableTransfer<'_>>>();
+        block_on(py, self.0.copy_tables(tables, &target.0))
+            .map(|tables| tables.into_iter().map(PyTable::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn move_tables(
+        &self,
+        py: Python,
+        tables: Vec<(Option<Wrap<ducklake::TableName>>, PyRef<PyTable>)>,
+        target: &PyDucklake,
+    ) -> PyResult<Vec<PyTable>> {
+        let tables = tables
+            .iter()
+            .map(|(name, table)| match name {
+                Some(name) => (name.0.clone(), table.inner()).into(),
+                None => table.inner().into(),
+            })
+            .collect::<Vec<ducklake::TableTransfer<'_>>>();
+        block_on(py, self.0.move_tables(tables, &target.0))
+            .map(|tables| tables.into_iter().map(PyTable::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
     pub fn list_tables(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyTable>> {
         block_on(py, self.0.list_tables(schema.as_deref()))
             .map(|tables| tables.into_iter().map(PyTable::new).collect())

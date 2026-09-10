@@ -74,12 +74,16 @@ impl Catalog {
     ///  - References to all created columns (organized by root column)
     ///  - References to all created partition columns (if any)
     ///
+    /// When transferring a table, preserve its schema's field IDs and use the supplied next
+    /// column ID, which also accounts for dropped columns.
+    ///
     /// Returns an error if the schema does not exist or the table already exists.
     #[allow(clippy::type_complexity)]
     pub(crate) fn add_table(
         &mut self,
         table: crate::TableInfo,
         path: io::DucklakePath,
+        next_column_id: Option<i64>,
     ) -> DucklakeResult<(
         SchemaRef,
         TableRef,
@@ -98,7 +102,7 @@ impl Catalog {
         // NOTE: We might still return an error at this point as we didn't check explicitly
         //  above whether the schema exists. This is not an issue, however, as it's transparent to
         //  the caller.
-        let columns = table.schema.into();
+        let columns = CatalogColumns::from_schema(table.schema, next_column_id);
         let partition = table
             .partitioning
             .map(|p| CatalogTablePartition::from_partition(p, &columns))
