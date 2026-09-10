@@ -100,6 +100,7 @@ impl Ducklake {
     /// Each copied table owns newly-created copies of the corresponding source table's data files.
     /// All tables are created and populated within one transaction, so the entire batch is
     /// committed as a single snapshot (or fails without any partial changes to the catalog).
+    /// File copies precede the commit, so a failed copy or commit may leave orphaned target files.
     ///
     /// Passing tables directly retains their names. Passing `(TableName, &Table)` pairs renames
     /// them in the target. All tables must belong to this DuckLake and no target table may already
@@ -301,7 +302,7 @@ impl Ducklake {
     }
 }
 
-/// Copy a file into the target's data directory and return its new absolute path.
+/// Copy a file into the target's data directory and return its table-relative path.
 async fn copy_transfer_file(
     source_options: &[(String, String)],
     target_options: &[(String, String)],
@@ -309,13 +310,11 @@ async fn copy_transfer_file(
     source_path: &str,
 ) -> DucklakeResult<String> {
     let source = source_path.parse::<io::DucklakePath>()?;
-    let destination = generator.generate_absolute(&Default::default());
-    io::copy_file(
-        &source,
-        source_options,
-        &destination.parse::<io::DucklakePath>()?,
-        target_options,
-    )
-    .await?;
-    Ok(destination)
+    let relative_path = generator.generate_relative(&Default::default());
+    let destination = generator
+        .base_path()
+        .parse::<io::DucklakePath>()?
+        .join_str(&relative_path);
+    io::copy_file(&source, source_options, &destination, target_options).await?;
+    Ok(relative_path)
 }

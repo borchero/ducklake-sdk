@@ -268,6 +268,8 @@ impl CatalogColumns {
                 .or(parent);
             let catalog_column = CatalogColumn {
                 id: if preserve_column_ids {
+                    // SAFETY: Transfers use catalog-derived schemas; schema_column_from_arena_index
+                    // supplies a field ID for every column, including nested children.
                     flat_column
                         .column
                         .field_id

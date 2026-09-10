@@ -87,6 +87,31 @@ def test_transfer_table(
     assert_frame_equal(transferred.read_polars().sort("x"), data.filter(pl.col("x") >= 2))
 
 
+@pytest.mark.parametrize("relative_path", [False, True])
+def test_copy_to_local_data_path(
+    ducklake: dl.Ducklake,
+    transfer_target_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative_path: bool,
+) -> None:
+    # Arrange
+    source = ducklake.create_table("source", {"x": dl.Int64()})
+    source.set_metadata(data_inlining_row_limit=0)
+    source.write_polars(pl.DataFrame({"x": [1, 2, 3]}))
+    ducklake._duckdb_connection.execute(f"DELETE FROM {source.name} WHERE x = 1")
+    monkeypatch.chdir(tmp_path)
+    data_path = "target_data" if relative_path else str(tmp_path / "target_data")
+    with dl.create(transfer_target_url, data_path=data_path) as target:
+        # Act
+        copied = ducklake.copy_tables([source], target)[0]
+
+        # Assert
+        assert_frame_equal(copied.read_polars().sort("x"), pl.DataFrame({"x": [2, 3]}))
+        assert any(file.delete_files for file in copied.scan().data_files)
+        assert len(list((tmp_path / "target_data").rglob("*.parquet"))) == 2
+
+
 @pytest.mark.parametrize(
     ("operation", "source_remains"),
     [("copy_tables", True), ("move_tables", False)],

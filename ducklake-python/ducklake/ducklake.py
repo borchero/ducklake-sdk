@@ -418,7 +418,8 @@ class Ducklake:
 
         Each copied table receives newly copied data files and becomes their owner. The whole batch
         is committed as a single snapshot, so it either fully succeeds or leaves the catalog
-        unchanged.
+        unchanged. File copies precede the catalog commit, so a failed copy or commit may leave
+        copied files for orphan cleanup.
 
         Args:
             tables: The tables to copy. A list retains each table's existing name; a dictionary
