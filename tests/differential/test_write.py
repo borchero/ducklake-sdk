@@ -50,19 +50,11 @@ _BUCKET_PARTITION_IGNORED_COLUMNS = {
 
 @pytest.mark.differential
 @pytest.mark.parametrize(
-    (
-        "ducklake_dtype",
-        "pl_dtype",
-        "sql_type",
-        "values",
-        "to_sql_literal",
-        "extra_ignored_columns",
-    ),
+    ("ducklake_dtype", "sql_type", "values", "to_sql_literal", "extra_ignored_columns"),
     [
-        pytest.param(dl.Int64(), pl.Int64(), "BIGINT", list(range(100)), str, {}, id="int64"),
+        pytest.param(dl.Int64(), "BIGINT", list(range(100)), str, {}, id="int64"),
         pytest.param(
             dl.Varchar(),
-            pl.Utf8(),
             "VARCHAR",
             [f"item-{i}" for i in range(100)],
             lambda v: f"'{v}'",
@@ -71,7 +63,6 @@ _BUCKET_PARTITION_IGNORED_COLUMNS = {
         ),
         pytest.param(
             dl.Boolean(),
-            pl.Boolean(),
             "BOOLEAN",
             [i % 2 == 0 for i in range(100)],
             lambda v: "TRUE" if v else "FALSE",
@@ -80,7 +71,6 @@ _BUCKET_PARTITION_IGNORED_COLUMNS = {
         ),
         pytest.param(
             dl.Date(),
-            pl.Date(),
             "DATE",
             [dt.date(2020, 1, 1) + dt.timedelta(days=i) for i in range(100)],
             lambda v: f"DATE '{v.isoformat()}'",
@@ -89,15 +79,12 @@ _BUCKET_PARTITION_IGNORED_COLUMNS = {
         ),
         pytest.param(
             dl.Timestamp("microseconds"),
-            pl.Datetime("us"),
             "TIMESTAMP",
             [dt.datetime(2020, 1, 1) + dt.timedelta(minutes=i) for i in range(100)],
             lambda v: f"TIMESTAMP '{v.isoformat(sep=' ')}'",
             # TODO: `ducklake-sdk` formats `Timestamp` stats as RFC3339 (with a `+00:00` offset),
             #  while the reference extension formats them without an offset (`'2020-01-01
-            #  00:00:00'`). This is a pre-existing, unrelated formatting difference in `Value`'s
-            #  `Literal` implementation (shared with e.g. column defaults), not something
-            #  introduced by bucket partitioning.
+            #  00:00:00'`).
             {
                 "ducklake_table_column_stats": ["min_value", "max_value"],
                 "ducklake_file_column_stats": ["min_value", "max_value"],
@@ -106,13 +93,11 @@ _BUCKET_PARTITION_IGNORED_COLUMNS = {
         ),
         pytest.param(
             dl.Float64(),
-            pl.Float64(),
             "DOUBLE",
             [i + 0.5 for i in range(100)],
             repr,
             # TODO: `contains_nan` is never actually computed by `ducklake-sdk` (always `None`),
-            #  in both the in-memory-Arrow and read-Parquet-footer statistics paths. This is a
-            #  pre-existing, unrelated gap, not something introduced by bucket partitioning.
+            #  in both the in-memory-Arrow and read-Parquet-footer statistics paths.
             {
                 "ducklake_table_column_stats": ["contains_nan"],
                 "ducklake_file_column_stats": ["contains_nan"],
@@ -127,7 +112,6 @@ def test_match_reference_write_bucket_partition(
     reference_catalog_url: str,
     reference_duckdb_connection: duckdb.DuckDBPyConnection,
     ducklake_dtype: dl.DataType,
-    pl_dtype: pl.DataType,
     sql_type: str,
     values: list,
     to_sql_literal: Callable[[object], str],
@@ -145,6 +129,7 @@ def test_match_reference_write_bucket_partition(
     reference_duckdb_connection.execute("ALTER TABLE test SET PARTITIONED BY (bucket(8, x))")
 
     # Act
+    pl_dtype = pl.Schema(dl.Schema({"x": ducklake_dtype}))["x"]
     table.sink_polars(pl.LazyFrame({"x": values}, schema={"x": pl_dtype}))
     reference_duckdb_connection.execute(
         "INSERT INTO test VALUES " + ", ".join(f"({to_sql_literal(v)})" for v in values)
