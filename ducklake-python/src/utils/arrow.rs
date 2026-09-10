@@ -42,6 +42,15 @@ pub(crate) fn schema_to_arrow(columns: Vec<Wrap<ducklake::Column>>) -> PyResult<
 fn arrow_field_from_column(column: &ducklake::Column) -> Field {
     // First, we translate the column into its direct Arrow representation
     let field = column.to_arrow_field_with(&arrow_field_from_column);
+    // Polars' Iceberg mapping requires storage types for catalog columns with field IDs.
+    let field = if column.field_id.is_some() {
+        let mut metadata = field.metadata().clone();
+        metadata.remove(arrow_schema::extension::EXTENSION_TYPE_NAME_KEY);
+        metadata.remove(arrow_schema::extension::EXTENSION_TYPE_METADATA_KEY);
+        field.with_metadata(metadata)
+    } else {
+        field
+    };
 
     // Then, we check for the comment tag to see if we need to attach metadata and/or convert to
     // a dictionary type

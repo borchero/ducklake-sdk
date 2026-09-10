@@ -109,6 +109,8 @@ pub enum DucklakeError {
     InvalidTableTransfer(String),
     #[error("the table changed while it was being transferred")]
     TableChangedDuringTransfer,
+    #[error("schema error: {0}")]
+    SchemaError(String),
 }
 
 impl From<Infallible> for DucklakeError {
