@@ -106,7 +106,9 @@ impl Column {
             }
         };
         if let Some(field_id) = self.field_id {
-            field.with_metadata([(PARQUET_FIELD_ID_KEY.to_string(), field_id.to_string())].into())
+            let mut metadata = field.metadata().clone();
+            metadata.insert(PARQUET_FIELD_ID_KEY.to_string(), field_id.to_string());
+            field.with_metadata(metadata)
         } else {
             field
         }
@@ -178,6 +180,15 @@ impl Column {
             }
             ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView => {
                 Ok(DataType::blob())
+            }
+            ArrowDataType::FixedSizeBinary(16)
+                if field.try_extension_type::<extension::Opaque>().is_ok() =>
+            {
+                match field.try_extension_type::<extension::Opaque>()?.type_name() {
+                    "hugeint" => Ok(DataType::int128()),
+                    "uhugeint" => Ok(DataType::uint128()),
+                    other => Err(DucklakeError::UnsupportedArrowDataType(other.to_string())),
+                }
             }
             ArrowDataType::FixedSizeBinary(16)
                 if field.try_extension_type::<extension::Uuid>().is_ok() =>

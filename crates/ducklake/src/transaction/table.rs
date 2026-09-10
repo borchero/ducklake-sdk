@@ -452,13 +452,17 @@ impl<'a> Transaction<'a> {
         let table = self.catalog_mut().table(table_name)?;
         let table_ref = table.ref_();
         let schema = table.schema();
-        let schema_columns = schema.columns_by_id();
 
         let change = Change::WriteTableInlineData {
             table_ref,
             data: data
                 .into_iter()
                 .map(|batch| {
+                    let batch = io::arrow::schema::match_to_schema(
+                        &batch,
+                        &schema,
+                        io::arrow::schema::Defaults::DefaultValue,
+                    )?;
                     let statistics = io::arrow::compute_record_batch_statistics(&schema, &batch);
                     let data = CommitInlineData {
                         record_batch: batch.clone(),
@@ -466,14 +470,6 @@ impl<'a> Transaction<'a> {
                             .column_stats
                             .into_iter()
                             .map(|(column_id, stats)| {
-                                if let Some(col) = schema_columns.get(&column_id)
-                                    && !col.nullable
-                                    && stats.null_count.unwrap_or(0) > 0
-                                {
-                                    return Err(DucklakeError::InvalidNullValue {
-                                        column: col.name.to_string(),
-                                    });
-                                }
                                 let Ok(table) = self.catalog().table(table_ref);
                                 let col_ref = table.column(column_id)?.ref_();
                                 Ok((col_ref, stats))

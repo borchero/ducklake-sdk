@@ -5,6 +5,38 @@ use crate::io::arrow::conversion::{IntoLogical, IntoLogicalWithContext};
 use crate::{DataType, Value};
 
 macro_rules! aggregate {
+    ($array:expr, timestamp, $fn:ident, $precision:expr) => {
+        match $precision {
+            crate::TimestampPrecision::Seconds => aggregate!(
+                $array,
+                TimestampSecondArray,
+                $fn,
+                Timestamp,
+                ArrowTimeUnit::Second
+            ),
+            crate::TimestampPrecision::Milliseconds => aggregate!(
+                $array,
+                TimestampMillisecondArray,
+                $fn,
+                Timestamp,
+                ArrowTimeUnit::Millisecond
+            ),
+            crate::TimestampPrecision::Microseconds => aggregate!(
+                $array,
+                TimestampMicrosecondArray,
+                $fn,
+                Timestamp,
+                ArrowTimeUnit::Microsecond
+            ),
+            crate::TimestampPrecision::Nanoseconds => aggregate!(
+                $array,
+                TimestampNanosecondArray,
+                $fn,
+                Timestamp,
+                ArrowTimeUnit::Nanosecond
+            ),
+        }
+    };
     ($array:expr, $array_type:ident, $fn:ident, $value_type:ident) => {{
         let array = $array
             .as_any()
@@ -55,13 +87,7 @@ pub(crate) fn find_min(data_type: &DataType, array: &arrow_array::ArrayRef) -> O
         ),
         DataType::TimeTz => aggregate!(array, FixedSizeBinaryArray, min_fixed_size_binary, TimeTz),
         DataType::Date => aggregate!(array, Date32Array, min, Date),
-        DataType::Timestamp { precision } => aggregate!(
-            array,
-            TimestampMicrosecondArray,
-            min,
-            Timestamp,
-            (*precision).into()
-        ),
+        DataType::Timestamp { precision } => aggregate!(array, timestamp, min, precision),
         DataType::TimestampTz => aggregate!(array, TimestampMicrosecondArray, min, TimestampTz),
         DataType::Interval => aggregate!(array, IntervalMonthDayNanoArray, min, Interval),
         DataType::Varchar => arrow_match_varchar!(array.data_type(),
@@ -119,13 +145,7 @@ pub(crate) fn find_max(data_type: &DataType, array: &arrow_array::ArrayRef) -> O
         ),
         DataType::TimeTz => aggregate!(array, FixedSizeBinaryArray, max_fixed_size_binary, TimeTz),
         DataType::Date => aggregate!(array, Date32Array, max, Date),
-        DataType::Timestamp { precision } => aggregate!(
-            array,
-            TimestampMicrosecondArray,
-            max,
-            Timestamp,
-            (*precision).into()
-        ),
+        DataType::Timestamp { precision } => aggregate!(array, timestamp, max, precision),
         DataType::TimestampTz => aggregate!(array, TimestampMicrosecondArray, max, TimestampTz),
         DataType::Interval => aggregate!(array, IntervalMonthDayNanoArray, max, Interval),
         DataType::Varchar => arrow_match_varchar!(array.data_type(),
@@ -162,6 +182,37 @@ mod tests {
 
     use super::*;
     use crate::Column;
+
+    #[rstest::rstest]
+    #[case::seconds(crate::TimestampPrecision::Seconds)]
+    #[case::milliseconds(crate::TimestampPrecision::Milliseconds)]
+    #[case::microseconds(crate::TimestampPrecision::Microseconds)]
+    #[case::nanoseconds(crate::TimestampPrecision::Nanoseconds)]
+    fn test_timestamp_precision(#[case] precision: crate::TimestampPrecision) {
+        // Arrange
+        let dtype = DataType::Timestamp { precision };
+        let field = Column::new("x".into(), dtype.clone()).to_arrow_field();
+        let values = arrow_array::TimestampSecondArray::from(vec![Some(-2), None, Some(3)]);
+        let array = arrow_cast::cast(&values, field.data_type()).unwrap();
+
+        // Act
+        let min = find_min(&dtype, &array);
+        let max = find_max(&dtype, &array);
+
+        // Assert
+        assert_eq!(
+            min,
+            Some(Value::Timestamp(
+                chrono::DateTime::from_timestamp(-2, 0).unwrap().naive_utc()
+            ))
+        );
+        assert_eq!(
+            max,
+            Some(Value::Timestamp(
+                chrono::DateTime::from_timestamp(3, 0).unwrap().naive_utc()
+            ))
+        );
+    }
 
     #[test]
     fn test_find_min_max_int32() {
