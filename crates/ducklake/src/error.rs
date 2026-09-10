@@ -95,6 +95,10 @@ pub enum DucklakeError {
     ReadonlyDucklake,
     #[error("the connection is pinned to a snapshot")]
     SnapshotPinned,
+    #[error("invalid table transfer: {0}")]
+    InvalidTableTransfer(String),
+    #[error("the table changed while it was being transferred")]
+    TableChangedDuringTransfer,
 }
 
 impl From<Infallible> for DucklakeError {

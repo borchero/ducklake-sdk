@@ -14,6 +14,7 @@ use changes::{AppliedChangeSet, Change, ChangeSet};
 use commit_state::CommitState;
 use sea_query::{Asterisk, ExprTrait, Query};
 pub use table::TransactionTable;
+pub(crate) use typedefs::TransferDataFile;
 use typedefs::*;
 pub use view::TransactionView;
 
@@ -285,12 +286,13 @@ impl<'a> Transaction<'a> {
             .table_ids_with_inline_data_writes(state)
             .into_iter()
             .collect();
+        let created_table_ids: HashSet<_> =
+            change_set.created_table_ids(state).into_iter().collect();
         let table_ids_with_schema_changes = change_set.table_ids_with_schema_changes(state);
 
-        if table_ids_with_inline_data_writes
-            .iter()
-            .any(|id| table_ids_with_schema_changes.contains(id))
-        {
+        if table_ids_with_inline_data_writes.iter().any(|id| {
+            table_ids_with_schema_changes.contains(id) && !created_table_ids.contains(id)
+        }) {
             unimplemented!(
                 "Cannot currently write inline data to a table that has schema changes within the same transaction"
             );

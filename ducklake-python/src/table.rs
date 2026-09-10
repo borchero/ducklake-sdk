@@ -15,6 +15,10 @@ impl PyTable {
     pub fn new(table: ducklake::Table) -> Self {
         PyTable(table)
     }
+
+    pub(crate) fn inner(&self) -> &ducklake::Table {
+        &self.0
+    }
 }
 
 #[pymethods]

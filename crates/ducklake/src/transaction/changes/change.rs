@@ -47,7 +47,7 @@ impl ChangeSet {
         let deleted_tables: HashSet<_> = changes
             .iter()
             .filter_map(|c| {
-                if let Change::DeleteTable { table_ref } = c {
+                if let Change::DeleteTable { table_ref, .. } = c {
                     Some(*table_ref)
                 } else {
                     None
@@ -55,7 +55,7 @@ impl ChangeSet {
             })
             .collect();
         changes.retain(|c| match c {
-            Change::DeleteTable { table_ref } => !created_tables.contains(table_ref),
+            Change::DeleteTable { table_ref, .. } => !created_tables.contains(table_ref),
             c => c
                 .affected_table_ref()
                 .map(|r| !deleted_tables.contains(&r))
@@ -145,8 +145,25 @@ impl ChangeSet {
         tx: &mut db::Transaction,
         state: &mut CommitState<'_>,
     ) -> DucklakeResult<()> {
-        // First, we execute all the changes
+        let created_tables = self
+            .changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::CreateTable { table_ref, .. } => Some(*table_ref),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+
+        // First, execute all changes except inline writes to newly created tables. Those writes
+        // have to wait until their backing catalog tables have been created below.
         for change in &self.changes {
+            if matches!(
+                change,
+                Change::WriteTableInlineData { table_ref, .. }
+                    if created_tables.contains(table_ref)
+            ) {
+                continue;
+            }
             change.apply(tx, state).await?;
         }
 
@@ -156,8 +173,19 @@ impl ChangeSet {
             executors::create_inlined_data_table(tx, state, &table_ref).await?;
         }
 
-        // TODO: Ideally, we'd want to write inlined data only here. However, this requires
-        //  modifying the inlined data before writing...
+        // TODO: Ideally, all inline writes would happen here. This requires rewriting inline data
+        //  to match the changed schema; until then, inline writes to existing tables with schema
+        //  changes are rejected. Newly created tables already have their final schema, so their
+        //  inline writes can safely be applied here.
+        for change in &self.changes {
+            if matches!(
+                change,
+                Change::WriteTableInlineData { table_ref, .. }
+                    if created_tables.contains(table_ref)
+            ) {
+                change.apply(tx, state).await?;
+            }
+        }
 
         // Finally, we need to check whether we wrote inline data without writing any data files.
         // In this case, we need to bump the next file ID as table stats are cached by file ID
@@ -207,6 +235,17 @@ impl ChangeSet {
             .collect()
     }
 
+    /// Obtain the IDs of newly created tables.
+    pub(crate) fn created_table_ids(&self, state: &mut CommitState<'_>) -> Vec<i64> {
+        self.changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::CreateTable { table_ref, .. } => Some(state.table_id(*table_ref)),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Obtain the IDs of all tables for which the schema changes in this change set. This includes
     /// created and deleted tables. This information is required for the `DucklakeSchemaVersions`
     /// table, which tracks schema changes on a per-table basis.
@@ -253,6 +292,7 @@ pub(crate) enum Change {
         partition_column_refs: Option<Vec<ColumnRef>>,
         name: crate::TableName,
         columns: Vec<crate::Column>,
+        retired_columns: Vec<crate::spec::DucklakeColumn>,
         partition_columns: Option<Vec<crate::PartitionColumn>>,
         path: io::DucklakePath,
         tags: Option<Vec<crate::Tag>>,
@@ -276,6 +316,7 @@ pub(crate) enum Change {
     },
     DeleteTable {
         table_ref: TableRef,
+        detach_files: bool,
     },
     AddTableTag {
         table_ref: TableRef,
@@ -349,7 +390,7 @@ impl Change {
             | RemoveTableColumnTag { column_ref, .. } => AppliedChange::AlteredTable {
                 id: state.table_id(column_ref.table_ref),
             },
-            DeleteTable { table_ref } => AppliedChange::DroppedTable {
+            DeleteTable { table_ref, .. } => AppliedChange::DroppedTable {
                 id: state.table_id(*table_ref),
             },
             CreateView { name, .. } => AppliedChange::CreatedView {
@@ -389,6 +430,7 @@ impl Change {
                 partition_column_refs,
                 name,
                 columns,
+                retired_columns,
                 partition_columns,
                 path,
                 tags,
@@ -402,6 +444,7 @@ impl Change {
                     partition_column_refs,
                     name,
                     columns,
+                    retired_columns,
                     partition_columns,
                     path,
                     tags,
@@ -432,7 +475,10 @@ impl Change {
                 )
                 .await
             }
-            DeleteTable { table_ref } => executors::delete_table(tx, state, table_ref).await,
+            DeleteTable {
+                table_ref,
+                detach_files,
+            } => executors::delete_table(tx, state, table_ref, *detach_files).await,
             AddTableTag { table_ref, tag } => {
                 executors::add_table_tag(tx, state, table_ref, tag).await
             }
@@ -677,7 +723,7 @@ impl From<&Change> for HashableChange {
             Change::UpdateTablePartitioning { table_ref, .. } => UpdateTablePartitioning {
                 table_ref: *table_ref,
             },
-            Change::DeleteTable { table_ref } => DeleteTable {
+            Change::DeleteTable { table_ref, .. } => DeleteTable {
                 table_ref: *table_ref,
             },
             Change::AddTableTag { table_ref, tag } => AddTableTag {

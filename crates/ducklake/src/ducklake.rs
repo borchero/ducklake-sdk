@@ -448,6 +448,11 @@ impl DucklakeConnection {
     pub(crate) fn time_zone(&self) -> &str {
         self.0.time_zone.name()
     }
+
+    /// Whether two connection handles refer to the same DuckLake catalog.
+    pub(crate) fn is_same_catalog(&self, other: &DucklakeConnection) -> bool {
+        self.0.pool.is_same_catalog(&other.0.pool)
+    }
 }
 
 /* ---------------------------------------- TRANSACTIONS --------------------------------------- */

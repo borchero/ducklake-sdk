@@ -57,6 +57,16 @@ class PyDucklake:
     def table(self, name: str | tuple[str, str]) -> PyTable: ...
     def has_table(self, name: str | tuple[str, str]) -> bool: ...
     def list_tables(self, schema: str | None) -> list[PyTable]: ...
+    def copy_tables(
+        self,
+        tables: list[tuple[str | tuple[str, str] | None, PyTable]],
+        target: PyDucklake,
+    ) -> list[PyTable]: ...
+    def move_tables(
+        self,
+        tables: list[tuple[str | tuple[str, str] | None, PyTable]],
+        target: PyDucklake,
+    ) -> list[PyTable]: ...
     def create_view(
         self,
         name: str | tuple[str, str],

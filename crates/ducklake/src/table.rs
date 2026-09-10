@@ -6,9 +6,9 @@ use crate::{DucklakeResult, IntoColumnName, TableMetadata, TableName, scan, util
 /// Handle to a table in the DuckLake catalog.
 #[derive(Clone)]
 pub struct Table {
-    conn: DucklakeConnection,
+    pub(crate) conn: DucklakeConnection,
     schema_id: i64,
-    id: i64,
+    pub(crate) id: i64,
 }
 
 impl PartialEq for Table {

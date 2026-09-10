@@ -10,6 +10,11 @@ use crate::caches::{Snapshot, SnapshotCache};
 use crate::spec::*;
 use crate::{DucklakeResult, db, io};
 
+pub(crate) struct TableTransferScan {
+    pub result: crate::ScanResult,
+    pub partition_values: Vec<Option<Vec<Option<String>>>>,
+}
+
 pub(crate) async fn scan_table(
     pool: &db::Pool,
     table_id: i64,
@@ -17,7 +22,78 @@ pub(crate) async fn scan_table(
     snapshot_cache: &SnapshotCache,
     data_path: &io::DucklakePath,
 ) -> DucklakeResult<crate::ScanResult> {
+    let scan = scan_table_inner(pool, table_id, snapshot, snapshot_cache, data_path).await?;
+    Ok(scan.result)
+}
+
+pub(crate) async fn scan_table_for_transfer(
+    pool: &db::Pool,
+    table_id: i64,
+    snapshot: Arc<Snapshot>,
+    snapshot_cache: &SnapshotCache,
+    data_path: &io::DucklakePath,
+) -> DucklakeResult<TableTransferScan> {
+    let current_partition_id = snapshot.catalog().await?.table(table_id)?.partition_id();
+    let partition_values_query = queries::build_partition_values_query(table_id);
+    let (scan, fetched_partition_values): (_, Vec<DucklakeFilePartitionValue>) = tokio::try_join!(
+        scan_table_inner(pool, table_id, snapshot, snapshot_cache, data_path),
+        pool.fetch_all(&partition_values_query),
+    )?;
+
+    let mut partition_values_by_file_id: HashMap<_, _> = fetched_partition_values
+        .into_iter()
+        .fold(HashMap::new(), |mut acc, value| {
+            acc.entry(value.data_file_id)
+                .or_insert_with(Vec::new)
+                .push(value);
+            acc
+        });
+    let partition_values = scan
+        .file_partition_ids
+        .into_iter()
+        .map(
+            |(file_id, file_partition_id)| match (file_partition_id, current_partition_id) {
+                (Some(file_partition_id), Some(current_partition_id))
+                    if file_partition_id == current_partition_id =>
+                {
+                    let mut values = partition_values_by_file_id
+                        .remove(&file_id)
+                        .unwrap_or_default();
+                    values.sort_unstable_by_key(|value| value.partition_key_index);
+                    Some(
+                        values
+                            .into_iter()
+                            .map(|value| value.partition_value)
+                            .collect(),
+                    )
+                }
+                _ => None,
+            },
+        )
+        .collect();
+
+    Ok(TableTransferScan {
+        result: scan.result,
+        partition_values,
+    })
+}
+
+struct TableScan {
+    result: crate::ScanResult,
+    file_partition_ids: Vec<(i64, Option<i64>)>,
+}
+
+async fn scan_table_inner(
+    pool: &db::Pool,
+    table_id: i64,
+    snapshot: Arc<Snapshot>,
+    snapshot_cache: &SnapshotCache,
+    data_path: &io::DucklakePath,
+) -> DucklakeResult<TableScan> {
     let snapshot_id = snapshot.info().id;
+    let catalog = snapshot.catalog().await?;
+    let table = catalog.table(table_id)?;
+    let column_dtypes = table.column_data_types();
 
     // Build all queries
     let data_files_query = queries::build_data_files_query(table_id, snapshot_id);
@@ -112,15 +188,12 @@ pub(crate) async fn scan_table(
                     .push(record.row_id);
                 acc
             });
-
-    // Before iterating over the data files, we extract some information from the catalog
-    let catalog = snapshot.catalog().await?;
-    let column_dtypes = catalog.table(table_id)?.column_data_types();
-
     // Then, we can iterate over the data files
     let mut result = Vec::with_capacity(fetched_data_files.len());
+    let mut file_partition_ids = Vec::with_capacity(fetched_data_files.len());
     for fetched_data_file in fetched_data_files {
         let file_id = fetched_data_file.data_file_id;
+        file_partition_ids.push((file_id, fetched_data_file.partition_id));
 
         let (data_file, statistics) = parsing::parse_data_file(
             fetched_data_file,
@@ -149,8 +222,11 @@ pub(crate) async fn scan_table(
         });
     }
 
-    Ok(crate::ScanResult {
-        data_files: result,
-        inline_data: fetched_inlined_data,
+    Ok(TableScan {
+        result: crate::ScanResult {
+            data_files: result,
+            inline_data: fetched_inlined_data,
+        },
+        file_partition_ids,
     })
 }

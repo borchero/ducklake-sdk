@@ -74,6 +74,33 @@ impl Pool {
         }
     }
 
+    /// Whether two pools connect to the same catalog database.
+    pub(crate) fn is_same_catalog(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            #[cfg(feature = "postgres")]
+            (AnyPool::Postgres(this), AnyPool::Postgres(other)) => {
+                let this = this.connect_options();
+                let other = other.connect_options();
+                ServerCatalogKey::from_postgres(this.as_ref())
+                    == ServerCatalogKey::from_postgres(other.as_ref())
+            }
+            #[cfg(feature = "mysql")]
+            (AnyPool::MySql(this), AnyPool::MySql(other)) => {
+                let this = this.connect_options();
+                let other = other.connect_options();
+                ServerCatalogKey::from_mysql(this.as_ref())
+                    == ServerCatalogKey::from_mysql(other.as_ref())
+            }
+            #[cfg(feature = "sqlite")]
+            (AnyPool::Sqlite(this), AnyPool::Sqlite(other)) => {
+                let this = this.connect_options();
+                let other = other.connect_options();
+                normalized_path(this.get_filename()) == normalized_path(other.get_filename())
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) async fn new(url: &str) -> DucklakeResult<Self> {
         // NOTE: Choose 8 because this allows the highest concurrency query in this
         //  repo to send all queries simultaneously.
@@ -297,13 +324,27 @@ impl Transaction {
     where
         E: sea_query_ext::InsertableEntity,
     {
-        self.insert_entities_multi_row_values(entities).await
+        self.insert_entities_multi_row_values(None, entities).await
+    }
+
+    /// Insert the given entities into a dynamically named table.
+    pub(crate) async fn insert_entities_into<E>(
+        &mut self,
+        table: &str,
+        entities: impl IntoIterator<Item = E>,
+    ) -> DucklakeResult<()>
+    where
+        E: sea_query_ext::InsertableEntity,
+    {
+        self.insert_entities_multi_row_values(Some(table), entities)
+            .await
     }
 
     /// Insert the given entities using one or more multi-row `VALUES` statements, batching them
     /// such that the backend's bind parameter limit is respected.
     async fn insert_entities_multi_row_values<E>(
         &mut self,
+        table: Option<&str>,
         entities: impl IntoIterator<Item = E>,
     ) -> DucklakeResult<()>
     where
@@ -321,7 +362,10 @@ impl Transaction {
             if chunk.is_empty() {
                 break;
             }
-            let query = E::insert_all_into_table(chunk);
+            let mut query = E::insert_all_into_table(chunk);
+            if let Some(table) = table {
+                query.into_table(table.to_string());
+            }
             self.execute(&query).await?;
         }
         Ok(())
@@ -426,7 +470,11 @@ impl Transaction {
     }
 }
 
-/* ------------------------------------------- UTILS ------------------------------------------- */
+/* --------------------------------------------------------------------------------------------- */
+/*                                             UTILS                                             */
+/* --------------------------------------------------------------------------------------------- */
+
+/* ------------------------------------------ LOGGING ------------------------------------------ */
 
 #[allow(clippy::print_stdout)]
 fn log_sql(sql: &str, values: Option<&sea_query_sqlx::SqlxValues>) {
@@ -441,6 +489,70 @@ fn log_sql(sql: &str, values: Option<&sea_query_sqlx::SqlxValues>) {
             _ => println!("[ducklake sql] {sql}"),
         }
     }
+}
+
+/* ----------------------------------------- CONNECTION ---------------------------------------- */
+
+#[cfg(any(feature = "postgres", feature = "mysql"))]
+#[derive(PartialEq, Eq)]
+struct ServerCatalogKey<'a> {
+    endpoint: ServerEndpoint,
+    port: u16,
+    database: Option<&'a str>,
+}
+
+#[cfg(any(feature = "postgres", feature = "mysql"))]
+#[derive(PartialEq, Eq)]
+enum ServerEndpoint {
+    Host(String),
+    Socket(std::path::PathBuf),
+}
+
+#[cfg(any(feature = "postgres", feature = "mysql"))]
+impl<'a> ServerCatalogKey<'a> {
+    fn new(
+        host: &str,
+        port: u16,
+        socket: Option<&std::path::PathBuf>,
+        database: Option<&'a str>,
+    ) -> Self {
+        let socket = socket
+            .map(std::path::PathBuf::as_path)
+            .or_else(|| host.starts_with('/').then(|| std::path::Path::new(host)));
+        let endpoint = match socket {
+            Some(socket) => ServerEndpoint::Socket(normalized_path(socket)),
+            None => ServerEndpoint::Host(host.to_ascii_lowercase()),
+        };
+        Self {
+            endpoint,
+            port,
+            database,
+        }
+    }
+
+    #[cfg(feature = "postgres")]
+    fn from_postgres(options: &'a sqlx::postgres::PgConnectOptions) -> Self {
+        Self::new(
+            options.get_host(),
+            options.get_port(),
+            options.get_socket(),
+            options.get_database().or(Some(options.get_username())),
+        )
+    }
+
+    #[cfg(feature = "mysql")]
+    fn from_mysql(options: &'a sqlx::mysql::MySqlConnectOptions) -> Self {
+        Self::new(
+            options.get_host(),
+            options.get_port(),
+            options.get_socket(),
+            options.get_database(),
+        )
+    }
+}
+
+fn normalized_path(path: &std::path::Path) -> std::path::PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /* ------------------------------------------ ROW TYPE ----------------------------------------- */
