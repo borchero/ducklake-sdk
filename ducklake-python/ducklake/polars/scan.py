@@ -108,7 +108,7 @@ def scan_ducklake(
                 else None
                 for file in scan_result.data_files
             ],
-            dtype=target_schema[col.name],
+            dtype=_statistics_dtype(target_schema[col.name]),
         )
         for col in schema.columns
         if col.field_id is not None
@@ -121,7 +121,7 @@ def scan_ducklake(
                 else None
                 for file in scan_result.data_files
             ],
-            dtype=target_schema[col.name],
+            dtype=_statistics_dtype(target_schema[col.name]),
         )
         for col in schema.columns
         if col.field_id is not None
@@ -249,6 +249,32 @@ def read_view(view: View) -> pl.DataFrame:
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #
+
+
+def _statistics_dtype(
+    dtype: pl.DataType | pld.DataTypeClass,
+) -> pl.DataType | pld.DataTypeClass:
+    """Return the dtype to use for a column's min/max statistics series.
+
+    DuckLake stores string min/max values for ``Enum``/``Categorical`` columns in byte
+    (lexicographic) order. Polars, however, compares those dtypes by category *code*, so
+    materializing the statistics as the column's ``Enum`` dtype would re-encode the values into
+    codes and make predicate pushdown compare in code order. That silently prunes files whose
+    code-order range does not bracket the (byte-order) filter value. Representing the statistics
+    as plain strings keeps the comparison in the byte order the values were computed in, while the
+    scanned column itself is still returned with its original dtype.
+    """
+    match dtype:
+        case pl.Enum() | pl.Categorical():
+            return pl.String()
+        case pl.Struct(fields=fields):
+            return pl.Struct(
+                [pl.Field(field.name, _statistics_dtype(field.dtype)) for field in fields]
+            )
+        case pl.List(inner=inner):
+            return pl.List(_statistics_dtype(inner))
+        case _:
+            return dtype
 
 
 def _convert_datetime_time_zone(
