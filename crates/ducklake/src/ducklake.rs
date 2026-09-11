@@ -104,6 +104,7 @@ impl Ducklake {
             false,
             options.storage_options,
             options.time_zone,
+            options.snapshot_cache_capacity,
         )
         .await
     }
@@ -133,6 +134,7 @@ impl Ducklake {
             options.readonly,
             options.storage_options,
             options.time_zone,
+            options.snapshot_cache_capacity,
         )
         .await
     }
@@ -185,11 +187,13 @@ impl Ducklake {
         readonly: bool,
         storage_options: Vec<(String, String)>,
         time_zone: chrono_tz::Tz,
+        snapshot_cache_capacity: usize,
     ) -> DucklakeResult<Self> {
         let has_travel_snapshot = travel_snapshot.is_some();
 
         // Initialize the caches
-        let snapshot_cache = SnapshotCache::new(pool.clone(), travel_snapshot).await?;
+        let snapshot_cache =
+            SnapshotCache::new(pool.clone(), travel_snapshot, snapshot_cache_capacity).await?;
         let metadata_cache = MetadataCache::new(pool.clone()).await?;
 
         // Determine the access mode
@@ -234,7 +238,11 @@ impl Ducklake {
     }
 
     fn at_snapshot(&self, snapshot_info: SnapshotInfo) -> DucklakeResult<Self> {
-        let travel_snapshot = self.conn.0.snapshot_cache.insert_snapshot(snapshot_info);
+        let travel_snapshot = self
+            .conn
+            .0
+            .snapshot_cache
+            .insert_historical_snapshot(snapshot_info);
         Ok(self.with_mode(ConnectionMode::TimeTravel(travel_snapshot)))
     }
 

@@ -20,6 +20,29 @@ def test_create_connect(catalog_url: str, storage_path: str) -> None:
     dl.connect(catalog_url)
 
 
+def test_create_connect_with_snapshot_cache_capacity(catalog_url: str, storage_path: str) -> None:
+    # Act & Assert
+    dl.create(catalog_url, data_path=storage_path, snapshot_cache_capacity=2)
+    dl.connect(catalog_url, snapshot_cache_capacity=2)
+
+
+@pytest.mark.parametrize("operation", ["create", "connect"])
+@pytest.mark.parametrize("capacity", [0, -1])
+def test_invalid_snapshot_cache_capacity(
+    catalog_url: str, storage_path: str, operation: str, capacity: int
+) -> None:
+    # Act & Assert
+    with pytest.raises(ValueError, match="snapshot_cache_capacity must be greater than zero"):
+        if operation == "create":
+            dl.create(
+                catalog_url,
+                data_path=storage_path,
+                snapshot_cache_capacity=capacity,
+            )
+        else:
+            dl.connect(catalog_url, snapshot_cache_capacity=capacity)
+
+
 def test_create_connect_sqlalchemy_url(catalog_url: str, storage_path: str) -> None:
     # Arrange
     sa_url = sa.make_url(catalog_url)

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
 
 use sea_query::{Asterisk, ExprTrait, Query};
@@ -16,28 +16,45 @@ pub(crate) struct SnapshotCache {
     pool: db::Pool,
     catalog_cache: CatalogCache,
     table_stats_cache: TableStatsCache,
-    snapshots: Arc<RwLock<BTreeMap<i64, Arc<Snapshot>>>>,
+    snapshots: Arc<RwLock<SnapshotCacheState>>,
+    capacity: usize,
+}
+
+struct SnapshotCacheState {
+    current: Arc<Snapshot>,
+    historical: HashMap<i64, Arc<Snapshot>>,
+    historical_lru: VecDeque<i64>,
 }
 
 impl SnapshotCache {
     pub(crate) async fn new(
         pool: db::Pool,
         snapshot_info: Option<SnapshotInfo>,
+        capacity: usize,
     ) -> DucklakeResult<Self> {
-        let cache = Self {
-            pool: pool.clone(),
-            catalog_cache: CatalogCache::new(pool.clone()),
-            table_stats_cache: TableStatsCache::new(pool),
-            snapshots: Arc::new(RwLock::new(BTreeMap::new())),
+        debug_assert!(capacity > 0);
+        let catalog_cache = CatalogCache::new(pool.clone());
+        let table_stats_cache = TableStatsCache::new(pool.clone());
+        let snapshot_info = match snapshot_info {
+            Some(snapshot_info) => snapshot_info,
+            None => SnapshotInfo::load_latest(&pool).await?,
         };
-
-        // Unless a snapshot info is provided, we fetch the latest snapshot here to ensure that
-        // the cache is properly initialized and we can always fetch the "current" snapshot.
-        if let Some(snapshot_info) = snapshot_info {
-            cache.insert_snapshot(snapshot_info);
-        } else {
-            cache.get_latest().await?;
-        }
+        let current = Arc::new(Snapshot::new(
+            snapshot_info,
+            catalog_cache.clone(),
+            table_stats_cache.clone(),
+        ));
+        let cache = Self {
+            pool,
+            catalog_cache,
+            table_stats_cache,
+            snapshots: Arc::new(RwLock::new(SnapshotCacheState {
+                current,
+                historical: HashMap::new(),
+                historical_lru: VecDeque::new(),
+            })),
+            capacity,
+        };
         Ok(cache)
     }
 
@@ -50,9 +67,7 @@ impl SnapshotCache {
     }
 
     pub(crate) fn get_current(&self) -> Arc<Snapshot> {
-        let snapshots = self.snapshots.read().unwrap();
-        let (_, snapshot) = snapshots.last_key_value().unwrap();
-        snapshot.clone()
+        self.snapshots.read().unwrap().current.clone()
     }
 
     pub(crate) async fn get_for_schema_version(
@@ -60,21 +75,15 @@ impl SnapshotCache {
         schema_version: i64,
     ) -> DucklakeResult<Arc<Snapshot>> {
         // First check if we already have a snapshot for the given schema version
-        if let Some(snapshot) = self
-            .snapshots
-            .read()
-            .unwrap()
-            .values()
-            .find(|s| s.info().schema_version == schema_version)
-        {
-            return Ok(snapshot.clone());
+        if let Some(snapshot) = self.get_for_cached_schema_version(schema_version) {
+            return Ok(snapshot);
         }
 
         // Try to find a live snapshot at this schema_version.
         if let Some(info) =
             SnapshotInfo::load_for_schema_version(&self.pool, schema_version).await?
         {
-            return Ok(self.insert_snapshot(info));
+            return Ok(self.insert_historical_snapshot(info));
         }
 
         // Fall back to ducklake_schema_versions. ducklake_expire_snapshots prunes
@@ -95,24 +104,99 @@ impl SnapshotCache {
     /* ----------------------------------------- MODIFY ---------------------------------------- */
 
     pub(crate) fn insert_snapshot(&self, snapshot_info: SnapshotInfo) -> Arc<Snapshot> {
-        let snapshot = Arc::new(Snapshot::new(
-            snapshot_info.clone(),
-            self.catalog_cache.clone(),
-            self.table_stats_cache.clone(),
-        ));
-        self.snapshots
-            .write()
-            .unwrap()
-            .entry(snapshot_info.id)
-            .or_insert(snapshot.clone());
+        let mut snapshots = self.snapshots.write().unwrap();
+        if snapshots.current.info().id == snapshot_info.id {
+            return snapshots.current.clone();
+        }
+        if snapshots.current.info().id > snapshot_info.id {
+            if let Some(snapshot) = snapshots.get_historical(snapshot_info.id) {
+                return snapshot;
+            }
+            let snapshot = self.new_snapshot(snapshot_info);
+            snapshots.insert_historical(snapshot.clone(), self.capacity.saturating_sub(1));
+            return snapshot;
+        }
+
+        let snapshot = snapshots
+            .remove_historical(snapshot_info.id)
+            .unwrap_or_else(|| self.new_snapshot(snapshot_info));
+        let previous = std::mem::replace(&mut snapshots.current, snapshot.clone());
+        snapshots.insert_historical(previous, self.capacity.saturating_sub(1));
+        snapshot
+    }
+
+    pub(crate) fn insert_historical_snapshot(&self, snapshot_info: SnapshotInfo) -> Arc<Snapshot> {
+        let mut snapshots = self.snapshots.write().unwrap();
+        if snapshots.current.info().id == snapshot_info.id {
+            return snapshots.current.clone();
+        }
+        if let Some(snapshot) = snapshots.get_historical(snapshot_info.id) {
+            return snapshot;
+        }
+
+        let snapshot = self.new_snapshot(snapshot_info);
+        snapshots.insert_historical(snapshot.clone(), self.capacity.saturating_sub(1));
         snapshot
     }
 
     pub(crate) fn remove_snapshots(&self, snapshot_ids: &[i64]) {
         let mut snapshots = self.snapshots.write().unwrap();
         for snapshot_id in snapshot_ids {
-            snapshots.remove(snapshot_id);
+            snapshots.remove_historical(*snapshot_id);
         }
+    }
+
+    fn get_for_cached_schema_version(&self, schema_version: i64) -> Option<Arc<Snapshot>> {
+        let mut snapshots = self.snapshots.write().unwrap();
+        if snapshots.current.info().schema_version == schema_version {
+            return Some(snapshots.current.clone());
+        }
+        let snapshot_id = snapshots
+            .historical
+            .values()
+            .find(|snapshot| snapshot.info().schema_version == schema_version)
+            .map(|snapshot| snapshot.info().id)?;
+        snapshots.get_historical(snapshot_id)
+    }
+
+    fn new_snapshot(&self, snapshot_info: SnapshotInfo) -> Arc<Snapshot> {
+        Arc::new(Snapshot::new(
+            snapshot_info,
+            self.catalog_cache.clone(),
+            self.table_stats_cache.clone(),
+        ))
+    }
+}
+
+impl SnapshotCacheState {
+    fn get_historical(&mut self, snapshot_id: i64) -> Option<Arc<Snapshot>> {
+        let snapshot = self.historical.get(&snapshot_id)?.clone();
+        self.touch(snapshot_id);
+        Some(snapshot)
+    }
+
+    fn insert_historical(&mut self, snapshot: Arc<Snapshot>, capacity: usize) {
+        if capacity == 0 || snapshot.info().id == self.current.info().id {
+            return;
+        }
+        let snapshot_id = snapshot.info().id;
+        self.historical.insert(snapshot_id, snapshot);
+        self.touch(snapshot_id);
+        while self.historical.len() > capacity {
+            if let Some(expired_id) = self.historical_lru.pop_front() {
+                self.historical.remove(&expired_id);
+            }
+        }
+    }
+
+    fn remove_historical(&mut self, snapshot_id: i64) -> Option<Arc<Snapshot>> {
+        self.historical_lru.retain(|id| *id != snapshot_id);
+        self.historical.remove(&snapshot_id)
+    }
+
+    fn touch(&mut self, snapshot_id: i64) {
+        self.historical_lru.retain(|id| *id != snapshot_id);
+        self.historical_lru.push_back(snapshot_id);
     }
 }
 
@@ -293,5 +377,146 @@ impl From<DucklakeSnapshot> for SnapshotInfo {
             next_file_id: snapshot.next_file_id,
             snapshot_time: snapshot.snapshot_time.0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use chrono::{TimeZone, Utc};
+
+    use super::{SnapshotCache, SnapshotInfo};
+    use crate::db;
+
+    fn snapshot_info(id: i64) -> SnapshotInfo {
+        SnapshotInfo {
+            id,
+            schema_version: id,
+            next_catalog_id: id,
+            next_file_id: id,
+            snapshot_time: Utc.timestamp_opt(id, 0).unwrap(),
+        }
+    }
+
+    #[tokio::test]
+    async fn historical_snapshot_is_released_when_no_connection_pins_it() {
+        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
+        let cache = SnapshotCache::new(pool, Some(snapshot_info(2)), 1)
+            .await
+            .unwrap();
+        let historical = {
+            let historical = cache.insert_historical_snapshot(snapshot_info(1));
+            Arc::downgrade(&historical)
+        };
+
+        assert_eq!(cache.get_current().info().id, 2);
+        assert!(historical.upgrade().is_none());
+    }
+
+    #[tokio::test]
+    async fn inserting_an_existing_snapshot_reuses_its_arc() {
+        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
+        let cache = SnapshotCache::new(pool, Some(snapshot_info(2)), 2)
+            .await
+            .unwrap();
+        let first = cache.insert_historical_snapshot(snapshot_info(1));
+
+        let second = cache.insert_historical_snapshot(snapshot_info(1));
+
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[tokio::test]
+    async fn current_snapshot_is_protected_from_historical_eviction() {
+        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
+        let cache = SnapshotCache::new(pool, Some(snapshot_info(3)), 2)
+            .await
+            .unwrap();
+
+        cache.insert_historical_snapshot(snapshot_info(1));
+        cache.insert_historical_snapshot(snapshot_info(2));
+
+        assert_eq!(cache.get_current().info().id, 3);
+        assert_eq!(cache.snapshots.read().unwrap().historical.len(), 1);
+        assert!(cache.snapshots.read().unwrap().historical.contains_key(&2));
+    }
+
+    #[tokio::test]
+    async fn stale_latest_snapshot_does_not_replace_current_snapshot() {
+        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
+        let cache = SnapshotCache::new(pool, Some(snapshot_info(3)), 2)
+            .await
+            .unwrap();
+
+        let stale = cache.insert_snapshot(snapshot_info(2));
+
+        assert_eq!(stale.info().id, 2);
+        assert_eq!(cache.get_current().info().id, 3);
+    }
+
+    #[tokio::test]
+    async fn historical_cache_evicts_the_least_recently_used_snapshot() {
+        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
+        let cache = SnapshotCache::new(pool, Some(snapshot_info(4)), 3)
+            .await
+            .unwrap();
+        cache.insert_historical_snapshot(snapshot_info(1));
+        cache.insert_historical_snapshot(snapshot_info(2));
+        cache.insert_historical_snapshot(snapshot_info(1));
+
+        cache.insert_historical_snapshot(snapshot_info(3));
+
+        let snapshots = cache.snapshots.read().unwrap();
+        assert!(snapshots.historical.contains_key(&1));
+        assert!(!snapshots.historical.contains_key(&2));
+        assert!(snapshots.historical.contains_key(&3));
+    }
+
+    #[tokio::test]
+    async fn pinned_historical_snapshot_survives_shared_cache_eviction() {
+        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
+        let cache = SnapshotCache::new(pool, Some(snapshot_info(3)), 1)
+            .await
+            .unwrap();
+        let pinned = cache.insert_historical_snapshot(snapshot_info(1));
+        let pinned_weak = Arc::downgrade(&pinned);
+
+        cache.insert_historical_snapshot(snapshot_info(2));
+
+        assert_eq!(cache.get_current().info().id, 3);
+        assert_eq!(pinned.info().id, 1);
+        assert!(pinned_weak.upgrade().is_some());
+        drop(pinned);
+        assert!(pinned_weak.upgrade().is_none());
+    }
+
+    #[tokio::test]
+    async fn catalog_and_table_stats_are_released_with_evicted_snapshot() {
+        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
+        crate::spec::init_catalog(
+            &pool,
+            crate::spec::InitConfig {
+                data_path: "file:///tmp/ducklake-cache-test/".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+        let cache = SnapshotCache::new(pool, None, 1).await.unwrap();
+        let snapshot = cache.get_current();
+        let catalog = {
+            let catalog = snapshot.catalog().await.unwrap().clone();
+            Arc::downgrade(&catalog)
+        };
+        let table_stats = {
+            let table_stats = snapshot.table_stats().await.unwrap().clone();
+            Arc::downgrade(&table_stats)
+        };
+
+        cache.insert_snapshot(snapshot_info(1));
+        drop(snapshot);
+
+        assert!(catalog.upgrade().is_none());
+        assert!(table_stats.upgrade().is_none());
     }
 }

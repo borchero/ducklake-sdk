@@ -20,6 +20,7 @@ def create(
     data_path: str,
     storage_options: list[tuple[str, str]],
     time_zone: str,
+    snapshot_cache_capacity: int,
 ) -> PyDucklake: ...
 def connect(
     url: str,
@@ -29,6 +30,7 @@ def connect(
     readonly: bool,
     storage_options: list[tuple[str, str]],
     time_zone: str,
+    snapshot_cache_capacity: int,
 ) -> PyDucklake: ...
 
 class PyDucklake:

@@ -25,10 +25,12 @@ pub(crate) fn create(
     data_path: &str,
     storage_options: Vec<(String, String)>,
     time_zone: &str,
+    snapshot_cache_capacity: usize,
 ) -> PyResult<PyDucklake> {
     let options = CreateOptions::new(url, data_path)
         .with_storage_options(storage_options)
         .with_time_zone(time_zone)
+        .and_then(|options| options.with_snapshot_cache_capacity(snapshot_cache_capacity))
         .map_err(error::into_pyerr)?;
     let ducklake = block_on(py, Ducklake::create(options)).map_err(error::into_pyerr)?;
     Ok(PyDucklake(ducklake))
@@ -45,6 +47,7 @@ pub(crate) fn connect(
     readonly: bool,
     storage_options: Vec<(String, String)>,
     time_zone: &str,
+    snapshot_cache_capacity: usize,
 ) -> PyResult<PyDucklake> {
     let options = ConnectOptions::new(url)
         .with_migrate(migrate)
@@ -52,6 +55,7 @@ pub(crate) fn connect(
         .with_storage_options(storage_options);
     let mut options = options
         .with_time_zone(time_zone)
+        .and_then(|options| options.with_snapshot_cache_capacity(snapshot_cache_capacity))
         .map_err(error::into_pyerr)?;
     if let Some(id) = snapshot_id {
         options = options.with_snapshot_id(id);
