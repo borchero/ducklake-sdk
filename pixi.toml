@@ -14,6 +14,7 @@ duckdb-engine = "*"
 # NOTE: This is the oldest supported polars version. It should always match the version in
 # feature.polars-minimal. The latest polars version is in feature.polars-latest.
 polars = ">=1.43.2,<2"
+polars-hash = ">=0.9.3"
 pyarrow = "*"
 python-dateutil = "*"
 
@@ -68,6 +69,7 @@ test-py-make-snapshot = "bash tests/_snapshots/make_snapshot.sh"
 
 [feature.test-py-minimal.dependencies]
 polars = "*"
+polars-hash = ">=0.9.3"
 pytest = ">=9"
 
 # ----------------------------------- PYTHON - POLARS VERSIONS ---------------------------------- #

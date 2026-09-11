@@ -4,6 +4,7 @@ from typing import Literal, overload
 
 import polars as pl
 import polars.datatypes as pld
+import polars_hash  # noqa: F401
 from polars._typing import EngineType
 from polars.io.partition import FileProviderArgs, SinkedPathsCallbackArgs
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
@@ -258,7 +259,15 @@ def _prepare_partitions(
         result.append(partition_name)
 
         if partition_col.transform == "bucket":
-            raise NotImplementedError("Bucket transforms are currently not supported via polars")
+            assert partition_col.num_buckets is not None
+            lf = lf.pipe_with_schema(
+                partial(
+                    _apply_bucket_partition,
+                    column=partition_col.name,
+                    partition_name=partition_name,
+                    num_buckets=partition_col.num_buckets,
+                )
+            )
         elif partition_col.transform == "year":
             lf = lf.with_columns(pl.col(partition_col.name).dt.year().alias(partition_name))
         elif partition_col.transform == "month":
@@ -271,6 +280,43 @@ def _prepare_partitions(
             lf = lf.with_columns(pl.col(partition_col.name).alias(partition_name))
 
     return lf, result
+
+
+def _apply_bucket_partition(
+    lf: pl.LazyFrame,
+    schema: pl.Schema,
+    *,
+    column: str,
+    partition_name: str,
+    num_buckets: int,
+) -> pl.LazyFrame:
+    return lf.with_columns(
+        _create_bucket_partition(pl.col(column), schema[column], num_buckets).alias(partition_name)
+    )
+
+
+def _create_bucket_partition(expr: pl.Expr, dtype: pl.DataType, num_buckets: int) -> pl.Expr:
+    # `.bytes`/`.nchash` are namespaces registered on `pl.Expr` by `polars_hash`
+    # at import time, so static type checkers cannot see them
+    match dtype:
+        case pl.Boolean() | pl.Int8() | pl.Int16() | pl.Int32() | pl.Date() | pl.Datetime():
+            expr = expr.cast(pl.Int64).bytes.to_le()  # ty: ignore[unresolved-attribute]
+        case pl.Float32() | pl.Float64():
+            expr = expr.cast(pl.Float64)
+            # Normalize all zeros to +0.0 to get rid of -0.0
+            expr = pl.when(expr == 0.0).then(0.0).otherwise(expr).bytes.to_le()  # ty: ignore[unresolved-attribute]
+        case pl.Int64():
+            expr = expr.bytes.to_le()  # ty: ignore[unresolved-attribute]
+        case pl.String() | pl.Binary():
+            pass
+        case _:
+            raise NotImplementedError(
+                f"The `bucket` partition transform is not supported for columns of type "
+                f"`{dtype}` via polars. Only boolean, signed integer, floating-point, string, "
+                "binary, date, and datetime columns are currently supported."
+            )
+
+    return (expr.nchash.murmur32(seed=0) & 0x7FFFFFFF) % num_buckets  # ty: ignore[unresolved-attribute]
 
 
 # ------------------------------------------ CALLBACKS ------------------------------------------ #
