@@ -69,6 +69,7 @@ test-py-make-snapshot = "bash tests/_snapshots/make_snapshot.sh"
 
 [feature.test-py-minimal.dependencies]
 polars = "*"
+polars-hash = ">=0.9.3"
 pytest = ">=9"
 
 # ----------------------------------- PYTHON - POLARS VERSIONS ---------------------------------- #
