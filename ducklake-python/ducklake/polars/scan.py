@@ -103,12 +103,12 @@ def scan_ducklake(
     stat_min = {
         f"{col.name}_min": pl.Series(
             [
-                col_stats.min_value
+                _statistics_value(col_stats.min_value, target_schema[col.name])
                 if (col_stats := file.statistics.column_stats.get(col.field_id)) is not None
                 else None
                 for file in scan_result.data_files
             ],
-            dtype=target_schema[col.name],
+            dtype=_statistics_dtype(target_schema[col.name]),
         )
         for col in schema.columns
         if col.field_id is not None
@@ -116,12 +116,12 @@ def scan_ducklake(
     stat_max = {
         f"{col.name}_max": pl.Series(
             [
-                col_stats.max_value
+                _statistics_value(col_stats.max_value, target_schema[col.name])
                 if (col_stats := file.statistics.column_stats.get(col.field_id)) is not None
                 else None
                 for file in scan_result.data_files
             ],
-            dtype=target_schema[col.name],
+            dtype=_statistics_dtype(target_schema[col.name]),
         )
         for col in schema.columns
         if col.field_id is not None
@@ -249,6 +249,51 @@ def read_view(view: View) -> pl.DataFrame:
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #
+
+
+def _statistics_dtype(
+    dtype: pl.DataType | pld.DataTypeClass,
+) -> pl.DataType | pld.DataTypeClass:
+    """Return the dtype to use for a column's min/max statistics series.
+
+    DuckLake stores dictionary-column statistics as byte-ordered strings. This agrees with
+    Polars' lexical Categorical ordering. Enum bounds are discarded by `_statistics_value`
+    because Enum comparisons use category order. The scanned column retains its original dtype.
+    """
+    match dtype:
+        case pl.Enum() | pl.Categorical():
+            return pl.String()
+        case pl.Struct(fields=fields):
+            return pl.Struct(
+                [pl.Field(field.name, _statistics_dtype(field.dtype)) for field in fields]
+            )
+        case pl.List(inner=inner):
+            return pl.List(_statistics_dtype(inner))
+        case _:
+            return dtype
+
+
+def _statistics_value(value: object, dtype: pl.DataType | pld.DataTypeClass) -> object:
+    """Discard bounds that cannot safely be used for predicate pushdown.
+
+    DuckLake's lexical min/max are not bounds in Enum category order. String statistics fix
+    equality against string literals, but can still prune matching rows for ordered comparisons or
+    Enum-typed literals. Even bounds recomputed in Enum order make Polars raise when equality
+    against a nonmember string becomes an ordered statistics comparison. Null bounds tell Polars
+    the statistics are unknown; null counts and the original row predicate remain usable.
+    """
+    match dtype:
+        case pl.Enum():
+            return None
+        case pl.Struct(fields=fields) if isinstance(value, dict):
+            return {
+                field.name: _statistics_value(value.get(field.name), field.dtype)
+                for field in fields
+            }
+        case pl.List(inner=inner) if isinstance(value, list):
+            return [_statistics_value(item, inner) for item in value]
+        case _:
+            return value
 
 
 def _convert_datetime_time_zone(
