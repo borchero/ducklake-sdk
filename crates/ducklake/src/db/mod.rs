@@ -46,6 +46,8 @@ macro_rules! dispatch_tx {
     };
 }
 
+mod batch;
+
 /* -------------------------------------------- POOL ------------------------------------------- */
 
 /// Single-connection pool to a dynamic database backend (Postgres, MySQL, SQLite).
@@ -315,8 +317,7 @@ impl Transaction {
 
     /// Insert the given entities into their backing table.
     ///
-    /// Insertions are automatically batched into multiple statements to prevent exhausting the
-    /// underlying database's bind parameter limit.
+    /// Uses the same batching as raw rows to respect the database's bind parameter limit.
     pub(crate) async fn insert_entities<E>(
         &mut self,
         entities: impl IntoIterator<Item = E>,
@@ -324,7 +325,7 @@ impl Transaction {
     where
         E: sea_query_ext::InsertableEntity,
     {
-        self.insert_entities_multi_row_values(None, entities).await
+        self.insert_entities_into(E::TABLE, entities).await
     }
 
     /// Insert the given entities into a dynamically named table.
@@ -336,39 +337,9 @@ impl Transaction {
     where
         E: sea_query_ext::InsertableEntity,
     {
-        self.insert_entities_multi_row_values(Some(table), entities)
-            .await
-    }
-
-    /// Insert the given entities using one or more multi-row `VALUES` statements, batching them
-    /// such that the backend's bind parameter limit is respected.
-    async fn insert_entities_multi_row_values<E>(
-        &mut self,
-        table: Option<&str>,
-        entities: impl IntoIterator<Item = E>,
-    ) -> DucklakeResult<()>
-    where
-        E: sea_query_ext::InsertableEntity,
-    {
-        let chunk_size = self.dialect().max_bind_params() / E::NUM_COLUMNS;
-        // NOTE: We materialize the entities into an owned `vec::IntoIter` up front. Some call
-        //  sites pass borrowing iterators (e.g. `slice.iter().map(...)`); holding such an
-        //  iterator across the `await` below would make the resulting future non-`Send`.
-        let mut entities = entities.into_iter().collect::<Vec<_>>().into_iter();
-        // NOTE: Unfortunately, we cannot use `itertools.chunks` because the resulting future
-        //  would not be `Send`.
-        loop {
-            let chunk: Vec<E> = entities.by_ref().take(chunk_size).collect();
-            if chunk.is_empty() {
-                break;
-            }
-            let mut query = E::insert_all_into_table(chunk);
-            if let Some(table) = table {
-                query.into_table(table.to_string());
-            }
-            self.execute(&query).await?;
-        }
-        Ok(())
+        // Materialize owned rows before awaiting so borrowing iterators remain supported.
+        let rows = entities.into_iter().map(E::into_values).collect();
+        self.insert_rows(table, E::COLUMNS, rows).await
     }
 
     pub(crate) async fn insert_all_arrow(

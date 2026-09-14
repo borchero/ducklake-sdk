@@ -19,14 +19,27 @@ impl CreateTable for sea_query::Table {
 
 /* ------------------------------------- INSERT ------------------------------------- */
 
-pub(crate) trait InsertableEntity {
-    /// The number of columns that are inserted for each entity. This is used to determine how
-    /// many entities can be inserted within a single statement without exceeding the bind
-    /// parameter limit of the underlying database backend.
-    const NUM_COLUMNS: usize;
+/// An entity's backing table, columns, and values, shared by direct and buffered inserts.
+pub(crate) trait InsertableEntity: Sized {
+    const TABLE: &'static str;
+    const COLUMNS: &'static [&'static str];
 
-    fn insert_into_table(&self) -> sea_query::InsertStatement;
+    fn into_values(self) -> Vec<sea_query::Value>;
+
+    fn insert_into_table(self) -> sea_query::InsertStatement {
+        Self::insert_all_into_table([self])
+    }
+
     fn insert_all_into_table(
         entities: impl IntoIterator<Item = Self>,
-    ) -> sea_query::InsertStatement;
+    ) -> sea_query::InsertStatement {
+        let mut query = sea_query::Query::insert();
+        query
+            .into_table(Self::TABLE)
+            .columns(Self::COLUMNS.iter().copied());
+        for entity in entities {
+            query.values_panic(entity.into_values().into_iter().map(sea_query::Expr::val));
+        }
+        query
+    }
 }

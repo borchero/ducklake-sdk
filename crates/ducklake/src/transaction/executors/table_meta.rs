@@ -1,10 +1,9 @@
 use itertools::Itertools;
-use sea_query::{Expr, ExprTrait, Query};
-use strum::IntoEnumIterator;
 
 use crate::catalog::{ColumnRef, SchemaRef, TableRef};
 use crate::spec::*;
-use crate::transaction::CommitState;
+use crate::transaction::transaction_changes::TagChange;
+use crate::transaction::{CommitState, TransactionChanges};
 use crate::{DucklakeResult, Value, db, io};
 
 /* --------------------------------------------------------------------------------------------- */
@@ -12,8 +11,8 @@ use crate::{DucklakeResult, Value, db, io};
 /* --------------------------------------------------------------------------------------------- */
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn create_table<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn create_table<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     schema_ref: &SchemaRef,
     table_ref: &TableRef,
@@ -39,7 +38,7 @@ pub(crate) async fn create_table<'a>(
         path: path.to_string(),
         path_is_relative: true,
     };
-    tx.insert_entity(table).await?;
+    changes.new_tables.push(table);
 
     // 2/4) Create the columns and, optionally, their tags
     let mut ducklake_columns = Vec::new();
@@ -63,64 +62,64 @@ pub(crate) async fn create_table<'a>(
         column.end_snapshot = Some(state.snapshot_id());
         column
     }));
-    tx.insert_entities(ducklake_columns).await?;
-    tx.insert_entities(column_tags).await?;
+    changes.new_columns.extend(ducklake_columns);
+    changes.new_column_tags.extend(column_tags);
 
     // 3/4) Optionally create partition
     if let Some(partition_column_refs) = partition_column_refs
         && let Some(partition_columns) = partition_columns
     {
         create_partitioning(
-            tx,
+            changes,
             state,
             table_ref,
             table_id,
             partition_column_refs,
             partition_columns,
-        )
-        .await?;
+        )?;
     }
 
     // 4/4) Optionally add tags to the table
     if let Some(tags) = tags
         && !tags.is_empty()
     {
+        let snapshot_id = state.snapshot_id();
         let ducklake_tags = tags.iter().map(|t| DucklakeTag {
             object_id: table_id,
-            begin_snapshot: state.snapshot_id(),
+            begin_snapshot: snapshot_id,
             end_snapshot: None,
             key: t.key.clone(),
             value: t.value.clone(),
         });
-        tx.insert_entities(ducklake_tags).await?;
+        changes.new_tags.extend(ducklake_tags);
     }
 
     Ok(())
 }
 
-pub(crate) async fn rename_table<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn rename_table<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
     name: &crate::TableName,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
 
-    // Set the current active record as deleted.
-    set_end_snapshot!(ducklake_table, state, tx, conditions: { TableId => table_id });
-
-    // "Copy" the previously active record, updating the name and the snapshot IDs.
-    copy_row_with_updates!(
-        ducklake_table, state, tx,
-        conditions: { TableId => table_id },
-        updates: { TableName => name.name.clone() }
-    );
+    if let Some(table) = changes
+        .new_tables
+        .iter_mut()
+        .find(|t| t.table_id == table_id)
+    {
+        table.table_name = name.name.clone();
+    } else {
+        changes.renamed_tables.insert(table_id, name.name.clone());
+    }
 
     Ok(())
 }
 
-pub(crate) async fn update_table_partitioning<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn update_table_partitioning<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
     partition_column_refs: &Option<Vec<ColumnRef>>,
@@ -129,106 +128,88 @@ pub(crate) async fn update_table_partitioning<'a>(
     let table_id = state.table_id(*table_ref);
 
     // Set the current partitioning as deleted
-    set_end_snapshot!(ducklake_partition_info, state, tx, conditions: { TableId => table_id });
+    changes.retired_partition_tables.insert(table_id);
+    for partition in &mut changes.new_partition_info {
+        if partition.table_id == table_id {
+            partition.end_snapshot = Some(state.snapshot_id());
+        }
+    }
 
     // Optionally apply the new partitioning
     if let Some(partition_column_refs) = partition_column_refs
         && let Some(partition_columns) = partition_columns
     {
         create_partitioning(
-            tx,
+            changes,
             state,
             table_ref,
             table_id,
             partition_column_refs,
             partition_columns,
-        )
-        .await?;
+        )?;
     }
 
     Ok(())
 }
 
-pub(crate) async fn delete_table<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn delete_table<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
     detach_files: bool,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
 
-    set_end_snapshot!(ducklake_table, state, tx, conditions: { TableId => table_id });
-    set_end_snapshot!(ducklake_column, state, tx, conditions: { TableId => table_id });
-    set_end_snapshot!(ducklake_partition_info, state, tx, conditions: { TableId => table_id });
-    set_end_snapshot!(ducklake_tag, state, tx, conditions: { ObjectId => table_id });
-    set_end_snapshot!(ducklake_column_tag, state, tx, conditions: { TableId => table_id });
-    set_end_snapshot!(ducklake_data_file, state, tx, conditions: { TableId => table_id });
-    set_end_snapshot!(ducklake_delete_file, state, tx, conditions: { TableId => table_id });
-
+    changes.dropped_tables.insert(table_id);
     if detach_files {
-        macro_rules! delete_metadata {
-            ($entity:ident) => {{
-                let query = Query::delete()
-                    .from_table($entity::Table)
-                    .and_where($entity::Column::TableId.col().eq(table_id))
-                    .take();
-                tx.execute(&query).await?;
-            }};
-        }
-        delete_metadata!(ducklake_file_column_stats);
-        delete_metadata!(ducklake_file_partition_value);
-        delete_metadata!(ducklake_data_file);
-        delete_metadata!(ducklake_delete_file);
+        changes.detached_tables.insert(table_id);
     }
 
     Ok(())
 }
 
-pub(crate) async fn add_table_tag<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn add_table_tag<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
     tag: &crate::Tag,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
-
-    // Delete any existing tag with the same key
-    set_end_snapshot!(
-        ducklake_tag, state, tx,
-        conditions: { ObjectId => table_id, Key => &tag.key }
-    );
-
-    // Create the new tag
-    let ducklake_tag = DucklakeTag {
-        object_id: table_id,
-        begin_snapshot: state.snapshot_id(),
-        end_snapshot: None,
-        key: tag.key.clone(),
-        value: tag.value.clone(),
-    };
-    tx.insert_entity(ducklake_tag).await?;
+    changes
+        .table_tags
+        .entry(table_id)
+        .or_default()
+        .push(TagChange {
+            key: tag.key.clone(),
+            value: Some(tag.value.clone()),
+        });
 
     Ok(())
 }
 
-pub(crate) async fn remove_table_tag<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn remove_table_tag<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
-    key: &String,
+    key: &str,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
-    set_end_snapshot!(
-        ducklake_tag, state, tx,
-        conditions: { ObjectId => table_id, Key => key }
-    );
+    changes
+        .table_tags
+        .entry(table_id)
+        .or_default()
+        .push(TagChange {
+            key: key.to_owned(),
+            value: None,
+        });
+
     Ok(())
 }
 
 /* ------------------------------------------- UTILS ------------------------------------------- */
 
-async fn create_partitioning<'a>(
-    tx: &mut db::Transaction,
+fn create_partitioning<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
     table_id: i64,
@@ -252,11 +233,12 @@ async fn create_partitioning<'a>(
             partition_key_index: i as i64,
             column_id: state.column_id(*column_ref),
             transform: p.transform.to_string(),
-        });
+        })
+        .collect_vec();
 
-    tx.insert_entity(partition_info).await?;
+    changes.new_partition_info.push(partition_info);
 
-    tx.insert_entities(partition_columns).await?;
+    changes.new_partition_columns.extend(partition_columns);
     Ok(())
 }
 
@@ -264,8 +246,8 @@ async fn create_partitioning<'a>(
 /*                                             COLUMN                                            */
 /* --------------------------------------------------------------------------------------------- */
 
-pub(crate) async fn add_table_column(
-    tx: &mut db::Transaction,
+pub(crate) fn add_table_column(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'_>,
     parent_column_ref: &Option<ColumnRef>,
     column_refs: &[ColumnRef],
@@ -287,8 +269,8 @@ pub(crate) async fn add_table_column(
         &mut ducklake_column_tags,
     )?;
 
-    tx.insert_entities(ducklake_columns).await?;
-    tx.insert_entities(ducklake_column_tags).await?;
+    changes.new_columns.extend(ducklake_columns);
+    changes.new_column_tags.extend(ducklake_column_tags);
 
     // Optionally add tags
     if !column.tags.is_empty() {
@@ -298,8 +280,8 @@ pub(crate) async fn add_table_column(
     Ok(())
 }
 
-pub(crate) async fn update_table_column<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn update_table_column<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     parent_column_ref: &Option<ColumnRef>,
     column_ref: &ColumnRef,
@@ -308,11 +290,11 @@ pub(crate) async fn update_table_column<'a>(
     let table_id = state.table_id(column_ref.table_ref);
     let column_id = state.column_id(*column_ref);
 
-    // Set the current active column as deleted
-    set_end_snapshot!(
-        ducklake_column, state, tx,
-        conditions: { TableId => table_id, ColumnId => column_id }
-    );
+    changes.retired_columns.insert((table_id, column_id));
+    // A column created earlier in this commit only needs its final definition.
+    changes
+        .new_columns
+        .retain(|c| c.table_id != table_id || c.column_id != column_id);
 
     // Create a new version of the column with the up-to-date information.
     // NOTE: We ignore updating tags here as there are separate functions for that. The vector
@@ -329,69 +311,67 @@ pub(crate) async fn update_table_column<'a>(
         &mut ducklake_column_tags,
     )?;
 
-    tx.insert_entities(ducklake_columns).await?;
+    changes.new_columns.extend(ducklake_columns);
 
     Ok(())
 }
 
-pub(crate) async fn remove_table_column<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn remove_table_column<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     column_ref: &ColumnRef,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(column_ref.table_ref);
     let column_id = state.column_id(*column_ref);
 
-    // Set the current active column as deleted
-    set_end_snapshot!(
-        ducklake_column, state, tx,
-        conditions: { TableId => table_id, ColumnId => column_id }
-    );
+    changes.retired_columns.insert((table_id, column_id));
+    // Retain the field ID even if the column was added and removed in this commit.
+    for column in &mut changes.new_columns {
+        if column.table_id == table_id && column.column_id == column_id {
+            column.end_snapshot = Some(state.snapshot_id());
+        }
+    }
 
     Ok(())
 }
 
-pub(crate) async fn add_table_column_tag<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn add_table_column_tag<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     column_ref: &ColumnRef,
     tag: &crate::Tag,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(column_ref.table_ref);
     let column_id = state.column_id(*column_ref);
-
-    // Delete any existing tag with the same key
-    set_end_snapshot!(
-        ducklake_column_tag, state, tx,
-        conditions: { TableId => table_id, ColumnId => column_id, Key => &tag.key }
-    );
-
-    // Create the new tag
-    let ducklake_column_tag = DucklakeColumnTag {
-        table_id,
-        column_id,
-        begin_snapshot: state.snapshot_id(),
-        end_snapshot: None,
-        key: tag.key.clone(),
-        value: tag.value.clone(),
-    };
-    tx.insert_entity(ducklake_column_tag).await?;
+    changes
+        .column_tags
+        .entry((table_id, column_id))
+        .or_default()
+        .push(TagChange {
+            key: tag.key.clone(),
+            value: Some(tag.value.clone()),
+        });
 
     Ok(())
 }
 
-pub(crate) async fn remove_table_column_tag<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn remove_table_column_tag<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     column_ref: &ColumnRef,
-    key: &String,
+    key: &str,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(column_ref.table_ref);
     let column_id = state.column_id(*column_ref);
-    set_end_snapshot!(
-        ducklake_column_tag, state, tx,
-        conditions: { TableId => table_id, ColumnId => column_id, Key => key }
-    );
+    changes
+        .column_tags
+        .entry((table_id, column_id))
+        .or_default()
+        .push(TagChange {
+            key: key.to_owned(),
+            value: None,
+        });
+
     Ok(())
 }
 
