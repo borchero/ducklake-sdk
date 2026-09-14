@@ -1,5 +1,7 @@
 mod arrow;
 mod dialects;
+#[cfg(feature = "postgres")]
+mod postgres_copy;
 pub(crate) mod sea_query_ext;
 mod types;
 
