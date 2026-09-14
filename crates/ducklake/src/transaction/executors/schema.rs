@@ -1,12 +1,10 @@
-use sea_query::{ExprTrait, Query};
-
 use crate::catalog::SchemaRef;
 use crate::spec::*;
-use crate::transaction::CommitState;
+use crate::transaction::{CommitState, TransactionChanges};
 use crate::{DucklakeResult, db, io};
 
-pub(crate) async fn create_schema<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn create_schema<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     schema_ref: &SchemaRef,
     name: &str,
@@ -24,20 +22,19 @@ pub(crate) async fn create_schema<'a>(
         path: path.to_string(),
         path_is_relative: path.is_relative(),
     };
-    tx.insert_entity(schema).await?;
+    changes.new_schemas.push(schema);
 
     Ok(())
 }
 
-pub(crate) async fn delete_schema<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn delete_schema<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     schema_ref: &SchemaRef,
 ) -> DucklakeResult<()> {
     let schema_id = state.schema_id(*schema_ref);
 
-    set_end_snapshot!(ducklake_schema, state, tx, conditions: { SchemaId => schema_id });
-    set_end_snapshot!(ducklake_tag, state, tx, conditions: { ObjectId => schema_id });
+    changes.dropped_schemas.insert(schema_id);
 
     Ok(())
 }

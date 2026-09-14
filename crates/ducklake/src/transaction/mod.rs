@@ -3,6 +3,7 @@ mod commit_state;
 mod executors;
 mod schema;
 mod table;
+mod transaction_changes;
 mod typedefs;
 mod view;
 
@@ -14,6 +15,7 @@ use changes::{AppliedChangeSet, Change, ChangeSet};
 use commit_state::CommitState;
 use sea_query::{Asterisk, ExprTrait, Query};
 pub use table::TransactionTable;
+use transaction_changes::TransactionChanges;
 pub(crate) use typedefs::TransferDataFile;
 use typedefs::*;
 pub use view::TransactionView;
@@ -275,10 +277,10 @@ impl<'a> Transaction<'a> {
         change_set: &ChangeSet,
         author_info: &AuthorInfo,
     ) -> DucklakeResult<SnapshotInfo> {
-        let mut tx = pool.begin().await?;
+        let mut changes = TransactionChanges::default();
 
         // First, we apply all the changes from the changeset
-        change_set.apply(&mut tx, state).await?;
+        change_set.apply(&mut changes, state).await?;
         let applied_changes = change_set.applied_change_set(state);
 
         // Then, we extract information from the applied changes to finalize the commit
@@ -297,6 +299,9 @@ impl<'a> Transaction<'a> {
                 "Cannot currently write inline data to a table that has schema changes within the same transaction"
             );
         }
+
+        let mut tx = pool.begin().await?;
+        changes.persist(&mut tx, state).await?;
 
         // Write the remaining tables for this commit
         let snapshot_info = Self::finalize_commit(
