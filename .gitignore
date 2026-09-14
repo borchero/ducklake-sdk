@@ -264,3 +264,6 @@ debug/
 # Coverage
 *.lcov
 *.profraw
+
+# Agents
+sbxenv.yaml

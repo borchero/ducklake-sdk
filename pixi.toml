@@ -55,6 +55,7 @@ mysqlclient = "*"
 postgresql = "*"
 psycopg2 = "*"
 pytest = ">=9"
+pytest-codspeed = ">=5,<6"
 pytest-cov = "*"
 sqlalchemy = ">=2"
 sqlalchemy-utils = ">=0.42"
@@ -62,6 +63,7 @@ sqlite = "*"
 
 [feature.test-py.tasks]
 test-py = "pytest"
+test-py-benchmark = "pytest tests/test_benchmark.py -m benchmark --codspeed --codspeed-mode=walltime"
 test-py-coverage = "pytest --cov=ducklake --cov-report=xml --cov-report=term-missing"
 test-py-make-snapshot = "bash tests/_snapshots/make_snapshot.sh"
 
