@@ -280,3 +280,103 @@ def test_batched_renames_preserve_table_metadata(
             assert reopened.table(f"{name}_renamed").schema.columns == [
                 dl.Column("x", dl.Int64(), field_id=1)
             ]
+
+
+@pytest.fixture()
+def column_stats_update_log(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, catalog: str
+) -> None:
+    table = ducklake.create_table("table", {"x": dl.Float64(), "y": dl.Float64()})
+    table.write_data_files(
+        [
+            dl.WriteDataFile(
+                "seed.parquet",
+                statistics=dl.DataFileStatistics(
+                    num_rows=10,
+                    column_stats={
+                        column_id: dl.ColumnStats(
+                            min_value=0.0, max_value=10.0, null_count=0, contains_nan=False
+                        )
+                        for column_id in [1, 2]
+                    },
+                ),
+            )
+        ]
+    )
+    with catalog_engine.begin() as connection:
+        connection.execute(sa.text("CREATE TABLE column_stats_updates (column_id BIGINT)"))
+        if catalog == "postgres":
+            connection.execute(
+                sa.text(
+                    "CREATE FUNCTION log_column_stats_update() RETURNS trigger LANGUAGE plpgsql AS $$ "
+                    "BEGIN INSERT INTO column_stats_updates VALUES (NEW.column_id); RETURN NEW; END $$"
+                )
+            )
+            trigger_body = "EXECUTE FUNCTION log_column_stats_update()"
+        elif catalog == "mysql":
+            trigger_body = "INSERT INTO column_stats_updates VALUES (NEW.column_id)"
+        else:
+            trigger_body = "BEGIN INSERT INTO column_stats_updates VALUES (NEW.column_id); END"
+        connection.execute(
+            sa.text(
+                "CREATE TRIGGER log_column_stats_update AFTER UPDATE ON ducklake_table_column_stats "
+                f"FOR EACH ROW {trigger_body}"
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("min_value", "max_value", "null_count", "contains_nan", "changed"),
+    [
+        (1.0, 9.0, 0, False, False),
+        (-1.0, 9.0, 0, False, True),
+        (1.0, 11.0, 0, False, True),
+        (1.0, 9.0, 1, False, True),
+        (1.0, 9.0, 0, True, True),
+        (None, None, None, None, True),
+    ],
+    ids=["unchanged", "minimum", "maximum", "nulls", "nans", "unknown"],
+)
+def test_only_changed_column_statistics_are_updated(
+    ducklake: dl.Ducklake,
+    catalog_engine: sa.Engine,
+    column_stats_update_log: None,
+    min_value: float | None,
+    max_value: float | None,
+    null_count: int | None,
+    contains_nan: bool | None,
+    changed: bool,
+) -> None:
+    # Arrange
+    statistics = dl.DataFileStatistics(
+        num_rows=10,
+        column_stats={
+            1: dl.ColumnStats(
+                min_value=min_value,
+                max_value=max_value,
+                null_count=null_count,
+                contains_nan=contains_nan,
+            ),
+            2: dl.ColumnStats(min_value=1.0, max_value=9.0, null_count=0, contains_nan=False),
+        },
+    )
+
+    # Act
+    with ducklake.transaction() as tx:
+        tx.table("table").write_data_files(
+            [dl.WriteDataFile("first.parquet", statistics=statistics)]
+        )
+        tx.table("table").write_data_files(
+            [dl.WriteDataFile("second.parquet", statistics=statistics)]
+        )
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        updates = (
+            connection.execute(sa.text("SELECT column_id FROM column_stats_updates"))
+            .scalars()
+            .all()
+        )
+        row_count = connection.scalar(sa.text("SELECT record_count FROM ducklake_table_stats"))
+    assert updates == ([1] if changed else [])
+    assert row_count == 30
