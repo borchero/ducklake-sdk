@@ -248,7 +248,7 @@ jobs:
       id-token: write
     services:
       postgres:
-        image: postgres:17
+        image: postgres:latest
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
