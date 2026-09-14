@@ -7,7 +7,6 @@ use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Schema as Arr
 use crate::DucklakeResult;
 use crate::catalog::TableRef;
 use crate::spec::*;
-use crate::transaction::transaction_changes::FileChanges;
 use crate::transaction::{CommitDataFile, CommitInlineData, CommitState, TransactionChanges};
 
 /* ------------------------------------------- FILES ------------------------------------------- */
@@ -20,18 +19,8 @@ pub(crate) async fn write_table_data(
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
 
-    // First, we iterate over all data files:
-    //  - Collect the data files entries to add to the catalog
-    //  - Collect the associated column stats entries to add to the catalog
-    //  - Collect the partition values for each data file (if any)
-    //  - Update the table and column stats stored in memory (added to the catalog database later).
-    // NOTE: We also collect all column IDs to know which ones to sync to the catalog database
-    //  later.
-    let mut ducklake_data_files = Vec::with_capacity(data_files.len());
-    let mut ducklake_partition_values = Vec::new();
-    let mut ducklake_file_column_stats = Vec::with_capacity(data_files.len()); // surely too small
-    let mut ducklake_delete_files = Vec::new();
-    let mut ducklake_inlined_deletes = Vec::new();
+    // Accumulate metadata by catalog relation across every table write in the commit.
+    let files = &mut changes.files;
     let mut all_column_ids = HashSet::new();
     for data_file in data_files {
         let file_id = state.file_id();
@@ -61,10 +50,10 @@ pub(crate) async fn write_table_data(
             mapping_id: None,
             partial_max: None,
         };
-        ducklake_data_files.push(ducklake_data_file);
+        files.data_files.push(ducklake_data_file);
 
         for delete_file in &data_file.delete_files {
-            ducklake_delete_files.push(DucklakeDeleteFile {
+            files.delete_files.push(DucklakeDeleteFile {
                 delete_file_id: state.file_id(),
                 table_id,
                 begin_snapshot: state.snapshot_id(),
@@ -81,13 +70,18 @@ pub(crate) async fn write_table_data(
             });
         }
 
-        ducklake_inlined_deletes.extend(data_file.inline_deletes.iter().map(|row_id| {
-            DucklakeInlinedDelete {
-                file_id,
-                row_id: *row_id,
-                begin_snapshot: state.snapshot_id(),
-            }
-        }));
+        if !data_file.inline_deletes.is_empty() {
+            files.inline_deletes.entry(table_id).or_default().extend(
+                data_file
+                    .inline_deletes
+                    .iter()
+                    .map(|row_id| DucklakeInlinedDelete {
+                        file_id,
+                        row_id: *row_id,
+                        begin_snapshot: state.snapshot_id(),
+                    }),
+            );
+        }
 
         if let Some(partition_values) = &data_file.partition_values {
             for (idx, value) in partition_values.iter().enumerate() {
@@ -97,7 +91,7 @@ pub(crate) async fn write_table_data(
                     partition_key_index: idx as i64,
                     partition_value: value.clone(),
                 };
-                ducklake_partition_values.push(ducklake_partition_value);
+                files.partition_values.push(ducklake_partition_value);
             }
         }
 
@@ -116,23 +110,9 @@ pub(crate) async fn write_table_data(
                 contains_nan: stats.contains_nan,
                 extra_stats: None, // TODO: Support extra stats
             };
-            ducklake_file_column_stats.push(ducklake_column_stat);
+            files.column_stats.push(ducklake_column_stat);
         }
     }
-    let mut files = FileChanges {
-        data_files: ducklake_data_files,
-        partition_values: ducklake_partition_values,
-        column_stats: ducklake_file_column_stats,
-        delete_files: ducklake_delete_files,
-        ..Default::default()
-    };
-    if !ducklake_inlined_deletes.is_empty() {
-        files
-            .inline_deletes
-            .insert(table_id, ducklake_inlined_deletes);
-    }
-    changes.file_writes.push(files);
-
     // Record which table and column statistics need to be persisted.
     changes
         .written_columns
