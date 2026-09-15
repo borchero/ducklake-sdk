@@ -34,6 +34,7 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
         InvalidView { .. } => PyValueError::new_err(error.to_string()),
         InvalidPartitionTransform { .. } => PyValueError::new_err(error.to_string()),
         InvalidTimeZone(_) => PyValueError::new_err(error.to_string()),
+        InvalidCacheCapacity(_) => PyValueError::new_err(error.to_string()),
         ReadOnlyMetadata { .. } => PyValueError::new_err(error.to_string()),
         InvalidCast { .. } => InvalidCastError::new_err(error.to_string()),
         InvalidNullValue { .. } => InvalidNullValueError::new_err(error.to_string()),

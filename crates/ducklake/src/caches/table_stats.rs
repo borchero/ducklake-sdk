@@ -1,11 +1,13 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Weak};
 
 use sea_query::{Asterisk, Expr, ExprTrait, JoinType, Query, SelectStatement, all};
 
 use crate::catalog::Catalog;
 use crate::spec::*;
 use crate::{DucklakeResult, db};
+
+type TableStatsMap = HashMap<i64, TableStats>;
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                             CACHE                                             */
@@ -14,7 +16,7 @@ use crate::{DucklakeResult, db};
 #[derive(Clone)]
 pub(super) struct TableStatsCache {
     pool: db::Pool,
-    table_stats: Arc<RwLock<HashMap<i64, SnapshotTableStats>>>,
+    table_stats: Arc<RwLock<HashMap<i64, Weak<TableStatsMap>>>>,
 }
 
 impl TableStatsCache {
@@ -30,19 +32,27 @@ impl TableStatsCache {
         snapshot_id: i64,
         next_file_id: i64,
         catalog: &Catalog,
-    ) -> DucklakeResult<Arc<HashMap<i64, TableStats>>> {
-        if let Some(stats) = self.table_stats.read().unwrap().get(&next_file_id) {
-            Ok(stats.0.clone())
-        } else {
-            let stats = SnapshotTableStats::load(&self.pool, catalog, snapshot_id)
-                .await?
-                .0;
-            self.table_stats
-                .write()
-                .unwrap()
-                .insert(next_file_id, SnapshotTableStats(stats.clone()));
-            Ok(stats)
+    ) -> DucklakeResult<Arc<TableStatsMap>> {
+        if let Some(stats) = self
+            .table_stats
+            .read()
+            .unwrap()
+            .get(&next_file_id)
+            .and_then(Weak::upgrade)
+        {
+            return Ok(stats);
         }
+
+        let loaded = SnapshotTableStats::load(&self.pool, catalog, snapshot_id)
+            .await?
+            .0;
+        let mut table_stats = self.table_stats.write().unwrap();
+        table_stats.retain(|_, stats| stats.strong_count() > 0);
+        if let Some(stats) = table_stats.get(&next_file_id).and_then(Weak::upgrade) {
+            return Ok(stats);
+        }
+        table_stats.insert(next_file_id, Arc::downgrade(&loaded));
+        Ok(loaded)
     }
 }
 
@@ -51,7 +61,7 @@ impl TableStatsCache {
 /* --------------------------------------------------------------------------------------------- */
 
 #[repr(transparent)]
-struct SnapshotTableStats(Arc<HashMap<i64, TableStats>>);
+struct SnapshotTableStats(Arc<TableStatsMap>);
 
 #[derive(Debug, Clone)]
 pub(crate) struct TableStats {
