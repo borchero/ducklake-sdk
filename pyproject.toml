@@ -51,7 +51,7 @@ exclude = ["docs/"]
 allowed-unresolved-imports = ["duckdb.**", "pyarrow.**", "sqlalchemy_utils.**"]
 
 [tool.pytest.ini_options]
-addopts = "--import-mode=importlib --strict-markers"
+addopts = "--import-mode=importlib --strict-markers -m 'not benchmark'"
 filterwarnings = [
   # By default, all warnings should yield errors
   "error",
