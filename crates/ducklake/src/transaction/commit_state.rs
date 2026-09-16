@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::caches::{SnapshotInfo, TableStats};
 use crate::catalog::{Catalog, ColumnRef, SchemaRef, TableRef, ViewRef};
@@ -14,6 +15,7 @@ pub(crate) struct CommitState<'a> {
     catalog: Cow<'a, Catalog>,
     // Map from table ID to table stats. Populated only if provided in input.
     table_stats: Option<HashMap<i64, TableStats>>,
+    original_table_stats: Option<Arc<HashMap<i64, TableStats>>>,
 }
 
 impl<'a> CommitState<'a> {
@@ -21,7 +23,7 @@ impl<'a> CommitState<'a> {
         snapshot_info: &SnapshotInfo,
         catalog: Cow<'a, Catalog>,
         schema_changed: bool,
-        table_stats: Option<HashMap<i64, TableStats>>,
+        table_stats: Option<Arc<HashMap<i64, TableStats>>>,
     ) -> Self {
         Self {
             snapshot_id: snapshot_info.id + 1,
@@ -29,7 +31,8 @@ impl<'a> CommitState<'a> {
             next_catalog_id: snapshot_info.next_catalog_id,
             next_file_id: snapshot_info.next_file_id,
             catalog,
-            table_stats,
+            table_stats: table_stats.as_deref().cloned(),
+            original_table_stats: table_stats,
         }
     }
 }
@@ -91,6 +94,20 @@ impl<'a> CommitState<'a> {
         let Ok(mut table) = self.catalog.to_mut().table_mut(table_ref);
         table.resolve_partition_id(id);
         id
+    }
+
+    pub(crate) fn column_stats_changed(&self, table_id: i64, column_id: i64) -> bool {
+        let current = self
+            .table_stats
+            .as_ref()
+            .and_then(|tables| tables.get(&table_id))
+            .and_then(|table| table.column_stats(column_id));
+        let original = self
+            .original_table_stats
+            .as_ref()
+            .and_then(|tables| tables.get(&table_id))
+            .and_then(|table| table.column_stats(column_id));
+        current != original
     }
 
     /// Obtain the table stats for the specified table ID. If the table stats have not been

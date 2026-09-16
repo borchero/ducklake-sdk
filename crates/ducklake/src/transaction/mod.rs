@@ -203,7 +203,7 @@ impl<'a> Transaction<'a> {
         let mut latest_snapshot = self.snapshot.clone();
         for i in 0..(max_retry_count + 1) {
             let table_stats = if change_set.requires_table_stats() {
-                Some((**latest_snapshot.table_stats().await?).clone())
+                Some(latest_snapshot.table_stats().await?.clone())
             } else {
                 None
             };
