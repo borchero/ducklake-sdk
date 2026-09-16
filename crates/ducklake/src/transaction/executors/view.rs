@@ -1,13 +1,11 @@
-use sea_query::{ExprTrait, Query};
-
 use crate::catalog::{SchemaRef, ViewRef};
 use crate::spec::*;
-use crate::transaction::CommitState;
+use crate::transaction::{CommitState, TransactionChanges};
 use crate::{DucklakeResult, db};
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn create_view<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn create_view<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     schema_ref: &SchemaRef,
     view_ref: &ViewRef,
@@ -33,34 +31,34 @@ pub(crate) async fn create_view<'a>(
             column_aliases.as_deref().unwrap_or_default(),
         )),
     };
-    tx.insert_entity(view).await?;
+    changes.new_views.push(view);
 
     // 2/2) Optionally add tags to the view
     if let Some(tags) = tags
         && !tags.is_empty()
     {
+        let snapshot_id = state.snapshot_id();
         let ducklake_tags = tags.iter().map(|t| DucklakeTag {
             object_id: view_id,
-            begin_snapshot: state.snapshot_id(),
+            begin_snapshot: snapshot_id,
             end_snapshot: None,
             key: t.key.clone(),
             value: t.value.clone(),
         });
-        tx.insert_entities(ducklake_tags).await?;
+        changes.new_tags.extend(ducklake_tags);
     }
 
     Ok(())
 }
 
-pub(crate) async fn delete_view<'a>(
-    tx: &mut db::Transaction,
+pub(crate) fn delete_view<'a>(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     view_ref: &ViewRef,
 ) -> DucklakeResult<()> {
     let view_id = state.view_id(*view_ref);
 
-    set_end_snapshot!(ducklake_view, state, tx, conditions: { ViewId => view_id });
-    set_end_snapshot!(ducklake_tag, state, tx, conditions: { ObjectId => view_id });
+    changes.dropped_views.insert(view_id);
 
     Ok(())
 }

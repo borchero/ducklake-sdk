@@ -3,18 +3,17 @@ use std::sync::Arc;
 
 use arrow_array::RecordBatch;
 use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
-use sea_query::{ColumnDef, ExprTrait, Query, Table};
 
+use crate::DucklakeResult;
 use crate::catalog::TableRef;
-use crate::db::sea_query_ext::CreateTable;
 use crate::spec::*;
-use crate::transaction::{CommitDataFile, CommitInlineData, CommitState};
-use crate::{DucklakeResult, db};
+use crate::transaction::transaction_changes::FileChanges;
+use crate::transaction::{CommitDataFile, CommitInlineData, CommitState, TransactionChanges};
 
 /* ------------------------------------------- FILES ------------------------------------------- */
 
 pub(crate) async fn write_table_data(
-    tx: &mut db::Transaction,
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'_>,
     table_ref: &TableRef,
     data_files: &Vec<CommitDataFile>,
@@ -120,116 +119,51 @@ pub(crate) async fn write_table_data(
             ducklake_file_column_stats.push(ducklake_column_stat);
         }
     }
-    tx.insert_entities(ducklake_data_files).await?;
-    tx.insert_entities(ducklake_partition_values).await?;
-    tx.insert_entities(ducklake_file_column_stats).await?;
-    tx.insert_entities(ducklake_delete_files).await?;
+    let mut files = FileChanges {
+        data_files: ducklake_data_files,
+        partition_values: ducklake_partition_values,
+        column_stats: ducklake_file_column_stats,
+        delete_files: ducklake_delete_files,
+        ..Default::default()
+    };
     if !ducklake_inlined_deletes.is_empty() {
-        let table_name = DucklakeInlinedDelete::table_name(table_id);
-        let mut create_table = Table::create_entity::<DucklakeInlinedDelete>(tx.dialect());
-        create_table.table(table_name.clone()).if_not_exists();
-        tx.execute(&create_table).await?;
-        tx.insert_entities_into(&table_name, ducklake_inlined_deletes)
-            .await?;
+        files
+            .inline_deletes
+            .insert(table_id, ducklake_inlined_deletes);
     }
+    changes.file_writes.push(files);
 
-    // After all data files have been added, we insert/update table and column stats
-    persist_table_stats(tx, state, table_id).await?;
-    persist_column_stats(tx, state, table_id, all_column_ids).await?;
+    // Record which table and column statistics need to be persisted.
+    changes
+        .written_columns
+        .entry(table_id)
+        .or_default()
+        .extend(all_column_ids);
 
     Ok(())
 }
 
 /* ---------------------------------------- INLINE DATA ---------------------------------------- */
 
-pub(crate) async fn create_inlined_data_table(
-    tx: &mut db::Transaction,
+pub(crate) fn create_inlined_data_table(
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'_>,
     table_ref: &TableRef,
-) -> DucklakeResult<()> {
-    // Data inlining is not supported for MySQL, so we simply skip in that case
-    #[cfg(feature = "mysql")]
-    if matches!(tx.dialect(), db::Dialect::MySql) {
-        return Ok(());
-    }
-
+) {
     let table_id = state.table_id(*table_ref);
-    let schema = state.table_schema(*table_ref);
-    let inlined_table_name = DucklakeInlinedData::table_name(table_id, state.schema_version());
-
-    // Create the new table
-    let query = {
-        let dialect = tx.dialect();
-        let mut table = Table::create();
-        table
-            .table(inlined_table_name.clone())
-            .col(ColumnDef::new_with_type(
-                ducklake_inlined_data::Column::RowId,
-                dialect.column_type_i64(),
-            ))
-            .col(ColumnDef::new_with_type(
-                ducklake_inlined_data::Column::BeginSnapshot,
-                dialect.column_type_i64(),
-            ))
-            .col(ColumnDef::new_with_type(
-                ducklake_inlined_data::Column::EndSnapshot,
-                dialect.column_type_i64(),
-            ));
-        for (name, column) in &schema.columns {
-            table.col(ColumnDef::new_with_type(
-                name.clone(),
-                tx.dialect().column_type_for_data_inlining(&column.dtype),
-            ));
-        }
-        table.to_owned()
-    };
-    tx.execute(&query).await?;
-
-    // Append the new table to the list of inlined data tables tracked for this table
-    let inlined_data_table = DucklakeInlinedDataTables {
-        table_id,
-        table_name: inlined_table_name,
-        schema_version: state.schema_version(),
-    };
-    tx.insert_entity(inlined_data_table).await?;
-
-    Ok(())
+    changes
+        .inline_tables
+        .insert(table_id, state.table_schema(*table_ref));
 }
 
 pub(crate) async fn write_table_inline_data(
-    tx: &mut db::Transaction,
+    changes: &mut TransactionChanges,
     state: &mut CommitState<'_>,
     table_ref: &TableRef,
     inline_data: &Vec<CommitInlineData>,
 ) -> DucklakeResult<()> {
-    #[cfg(feature = "mysql")]
-    if matches!(tx.dialect(), db::Dialect::MySql) {
-        unimplemented!("data inlining is not yet implemented for MySQL");
-    }
-
     let table_id = state.table_id(*table_ref);
-
-    // First, we need to fetch the name of the table that we need to insert into. The table is
-    // guaranteed to exist and is simply the one with the latest schema version for this table ID.
-    let query = Query::select()
-        .column(ducklake_inlined_data_tables::Column::TableName)
-        .from(ducklake_inlined_data_tables::Table)
-        .and_where(
-            ducklake_inlined_data_tables::Column::TableId
-                .col()
-                .eq(table_id),
-        )
-        .order_by(
-            ducklake_inlined_data_tables::Column::SchemaVersion,
-            sea_query::Order::Desc,
-        )
-        .limit(1)
-        .to_owned();
-    let (inlined_table_name,): (String,) = tx.fetch_one(&query).await?;
-
-    // Then, we insert the data into the inlined table. As the input is Arrow, we want to insert
-    // Arrow here. For this to work, we need to manually add `row_id`, `begin_snapshot`, and
-    // `end_snapshot` columns.
+    // Assign row IDs while collecting; persistence can then group writes by table.
     let snapshot_id = state.snapshot_id();
     let mut all_column_ids = HashSet::new();
     for data in inline_data {
@@ -267,8 +201,11 @@ pub(crate) async fn write_table_inline_data(
         columns.push(Arc::new(arrow_array::Int64Array::from_iter(end_snapshot)));
 
         let record_batch = RecordBatch::try_new(new_schema, columns)?;
-        tx.insert_all_arrow(&inlined_table_name, record_batch)
-            .await?;
+        changes
+            .inline_data
+            .entry(table_id)
+            .or_default()
+            .push(record_batch);
 
         // Make sure we collect column IDs with stats for update later
         all_column_ids.extend(
@@ -278,9 +215,12 @@ pub(crate) async fn write_table_inline_data(
         );
     }
 
-    // After we've inserted all data, we need to update the stats
-    persist_table_stats(tx, state, table_id).await?;
-    persist_column_stats(tx, state, table_id, all_column_ids).await?;
+    // Record which table and column statistics need to be persisted.
+    changes
+        .written_columns
+        .entry(table_id)
+        .or_default()
+        .extend(all_column_ids);
 
     Ok(())
 }
@@ -336,106 +276,6 @@ async fn update_table_stats_from_inline_data(
         stats.update_contains_nan(column_stats.contains_nan);
         stats.update_min_value(column_stats.min_value.as_ref());
         stats.update_max_value(column_stats.max_value.as_ref());
-    }
-    Ok(())
-}
-
-/* ------------------------------------ TABLE STATS - WRITE ------------------------------------ */
-
-async fn persist_table_stats(
-    tx: &mut db::Transaction,
-    state: &mut CommitState<'_>,
-    table_id: i64,
-) -> DucklakeResult<()> {
-    let table_stats = state.table_stats(table_id).await?;
-    if table_stats.is_persisted() {
-        let query = Query::update()
-            .table(ducklake_table_stats::Table)
-            .values([
-                (
-                    ducklake_table_stats::Column::RecordCount,
-                    table_stats.record_count().into(),
-                ),
-                (
-                    ducklake_table_stats::Column::NextRowId,
-                    table_stats.next_row_id().into(),
-                ),
-                (
-                    ducklake_table_stats::Column::FileSizeBytes,
-                    table_stats.file_size_bytes().into(),
-                ),
-            ])
-            .and_where(ducklake_table_stats::Column::TableId.col().eq(table_id))
-            .to_owned();
-        tx.execute(&query).await?;
-    } else {
-        let entity = DucklakeTableStats {
-            table_id,
-            record_count: table_stats.record_count(),
-            next_row_id: table_stats.next_row_id(),
-            file_size_bytes: table_stats.file_size_bytes(),
-        };
-        tx.insert_entity(entity).await?;
-        table_stats.set_persisted();
-    }
-    Ok(())
-}
-
-async fn persist_column_stats(
-    tx: &mut db::Transaction,
-    state: &mut CommitState<'_>,
-    table_id: i64,
-    all_column_ids: impl IntoIterator<Item = i64>,
-) -> DucklakeResult<()> {
-    let table_stats = state.table_stats(table_id).await?;
-    for column_id in all_column_ids {
-        let column_stats = table_stats.column_stats_mut(column_id);
-        if column_stats.is_persisted() {
-            let query = Query::update()
-                .table(ducklake_table_column_stats::Table)
-                .values([
-                    (
-                        ducklake_table_column_stats::Column::ContainsNull,
-                        column_stats.contains_null().into(),
-                    ),
-                    (
-                        ducklake_table_column_stats::Column::ContainsNan,
-                        column_stats.contains_nan().into(),
-                    ),
-                    (
-                        ducklake_table_column_stats::Column::MinValue,
-                        column_stats.min_value().map(|v| v.to_string()).into(),
-                    ),
-                    (
-                        ducklake_table_column_stats::Column::MaxValue,
-                        column_stats.max_value().map(|v| v.to_string()).into(),
-                    ),
-                ])
-                .and_where(
-                    ducklake_table_column_stats::Column::TableId
-                        .col()
-                        .eq(table_id),
-                )
-                .and_where(
-                    ducklake_table_column_stats::Column::ColumnId
-                        .col()
-                        .eq(column_id),
-                )
-                .to_owned();
-            tx.execute(&query).await?;
-        } else {
-            let entity = DucklakeTableColumnStats {
-                table_id,
-                column_id,
-                contains_null: column_stats.contains_null(),
-                contains_nan: column_stats.contains_nan(),
-                min_value: column_stats.min_value().map(|v| v.to_string()),
-                max_value: column_stats.max_value().map(|v| v.to_string()),
-                extra_stats: None, // TODO: Support extra stats
-            };
-            tx.insert_entity(entity).await?;
-            column_stats.set_persisted();
-        }
     }
     Ok(())
 }

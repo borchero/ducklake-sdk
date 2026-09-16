@@ -4,8 +4,14 @@ use itertools::Itertools;
 
 use super::{AppliedChange, AppliedChangeSet};
 use crate::catalog::{ColumnRef, SchemaRef, TableRef, ViewRef};
-use crate::transaction::{CommitDataFile, CommitInlineData, CommitState, executors};
-use crate::{DucklakeResult, db, io};
+use crate::transaction::{
+    CommitDataFile,
+    CommitInlineData,
+    CommitState,
+    TransactionChanges,
+    executors,
+};
+use crate::{DucklakeResult, io};
 
 /* ----------------------------------------- CHANGE SET ---------------------------------------- */
 
@@ -136,55 +142,22 @@ impl ChangeSet {
         AppliedChangeSet::new(applied_changes)
     }
 
-    /// Apply the changes in this change set within the provided transaction.
+    /// Collect the catalog mutations for this change set.
     ///
     /// The state is used to obtain IDs for newly created objects as well as other metadata such
     /// as the current snapshot ID.
     pub(crate) async fn apply(
         &self,
-        tx: &mut db::Transaction,
+        changes: &mut TransactionChanges,
         state: &mut CommitState<'_>,
     ) -> DucklakeResult<()> {
-        let created_tables = self
-            .changes
-            .iter()
-            .filter_map(|change| match change {
-                Change::CreateTable { table_ref, .. } => Some(*table_ref),
-                _ => None,
-            })
-            .collect::<HashSet<_>>();
-
-        // First, execute all changes except inline writes to newly created tables. Those writes
-        // have to wait until their backing catalog tables have been created below.
         for change in &self.changes {
-            if matches!(
-                change,
-                Change::WriteTableInlineData { table_ref, .. }
-                    if created_tables.contains(table_ref)
-            ) {
-                continue;
-            }
-            change.apply(tx, state).await?;
+            change.apply(changes, state).await?;
         }
 
-        // Then, we need to make sure to create inlined data tables for all tables for which
-        // the schema was changed. Note that this also includes newly created tables.
+        // The writer creates these tables before inserting any inline data.
         for table_ref in self.table_refs_with_schema_changes() {
-            executors::create_inlined_data_table(tx, state, &table_ref).await?;
-        }
-
-        // TODO: Ideally, all inline writes would happen here. This requires rewriting inline data
-        //  to match the changed schema; until then, inline writes to existing tables with schema
-        //  changes are rejected. Newly created tables already have their final schema, so their
-        //  inline writes can safely be applied here.
-        for change in &self.changes {
-            if matches!(
-                change,
-                Change::WriteTableInlineData { table_ref, .. }
-                    if created_tables.contains(table_ref)
-            ) {
-                change.apply(tx, state).await?;
-            }
+            executors::create_inlined_data_table(changes, state, &table_ref);
         }
 
         // Finally, we need to check whether we wrote inline data without writing any data files.
@@ -410,7 +383,7 @@ impl Change {
 
     async fn apply<'a>(
         &self,
-        tx: &mut db::Transaction,
+        changes: &mut TransactionChanges,
         state: &mut CommitState<'a>,
     ) -> DucklakeResult<()> {
         use Change::*;
@@ -420,8 +393,8 @@ impl Change {
                 schema_ref,
                 name,
                 path,
-            } => executors::create_schema(tx, state, schema_ref, name, path).await,
-            DeleteSchema { schema_ref } => executors::delete_schema(tx, state, schema_ref).await,
+            } => executors::create_schema(changes, state, schema_ref, name, path),
+            DeleteSchema { schema_ref } => executors::delete_schema(changes, state, schema_ref),
             // --- TABLE CHANGES ---
             CreateTable {
                 schema_ref,
@@ -434,56 +407,50 @@ impl Change {
                 partition_columns,
                 path,
                 tags,
-            } => {
-                executors::create_table(
-                    tx,
-                    state,
-                    schema_ref,
-                    table_ref,
-                    column_refs,
-                    partition_column_refs,
-                    name,
-                    columns,
-                    retired_columns,
-                    partition_columns,
-                    path,
-                    tags,
-                )
-                .await
-            }
+            } => executors::create_table(
+                changes,
+                state,
+                schema_ref,
+                table_ref,
+                column_refs,
+                partition_column_refs,
+                name,
+                columns,
+                retired_columns,
+                partition_columns,
+                path,
+                tags,
+            ),
             WriteTableDataFiles {
                 table_ref,
                 data_files,
-            } => executors::write_table_data(tx, state, table_ref, data_files).await,
+            } => executors::write_table_data(changes, state, table_ref, data_files).await,
             WriteTableInlineData { table_ref, data } => {
-                executors::write_table_inline_data(tx, state, table_ref, data).await
+                executors::write_table_inline_data(changes, state, table_ref, data).await
             }
             RenameTable { table_ref, name } => {
-                executors::rename_table(tx, state, table_ref, name).await
+                executors::rename_table(changes, state, table_ref, name)
             }
             UpdateTablePartitioning {
                 table_ref,
                 partition_column_refs,
                 partition_columns,
-            } => {
-                executors::update_table_partitioning(
-                    tx,
-                    state,
-                    table_ref,
-                    partition_column_refs,
-                    partition_columns,
-                )
-                .await
-            }
+            } => executors::update_table_partitioning(
+                changes,
+                state,
+                table_ref,
+                partition_column_refs,
+                partition_columns,
+            ),
             DeleteTable {
                 table_ref,
                 detach_files,
-            } => executors::delete_table(tx, state, table_ref, *detach_files).await,
+            } => executors::delete_table(changes, state, table_ref, *detach_files),
             AddTableTag { table_ref, tag } => {
-                executors::add_table_tag(tx, state, table_ref, tag).await
+                executors::add_table_tag(changes, state, table_ref, tag)
             }
             RemoveTableTag { table_ref, key } => {
-                executors::remove_table_tag(tx, state, table_ref, key).await
+                executors::remove_table_tag(changes, state, table_ref, key)
             }
             // --- VIEW CHANGES ---
             CreateView {
@@ -494,46 +461,45 @@ impl Change {
                 dialect,
                 column_aliases,
                 tags,
-            } => {
-                executors::create_view(
-                    tx,
-                    state,
-                    schema_ref,
-                    view_ref,
-                    name,
-                    sql,
-                    dialect,
-                    column_aliases,
-                    tags,
-                )
-                .await
-            }
-            DeleteView { view_ref } => executors::delete_view(tx, state, view_ref).await,
+            } => executors::create_view(
+                changes,
+                state,
+                schema_ref,
+                view_ref,
+                name,
+                sql,
+                dialect,
+                column_aliases,
+                tags,
+            ),
+            DeleteView { view_ref } => executors::delete_view(changes, state, view_ref),
             // --- COLUMN CHANGES ---
             AddTableColumn {
                 parent_column_ref,
                 column_refs,
                 column,
             } => {
-                executors::add_table_column(tx, state, parent_column_ref, column_refs, column)
-                    .await
+                executors::add_table_column(changes, state, parent_column_ref, column_refs, column)
             }
             UpdateTableColumn {
                 parent_column_ref,
                 column_ref,
                 column,
-            } => {
-                executors::update_table_column(tx, state, parent_column_ref, column_ref, column)
-                    .await
-            }
+            } => executors::update_table_column(
+                changes,
+                state,
+                parent_column_ref,
+                column_ref,
+                column,
+            ),
             RemoveTableColumn { column_ref } => {
-                executors::remove_table_column(tx, state, column_ref).await
+                executors::remove_table_column(changes, state, column_ref)
             }
             AddTableColumnTag { column_ref, tag } => {
-                executors::add_table_column_tag(tx, state, column_ref, tag).await
+                executors::add_table_column_tag(changes, state, column_ref, tag)
             }
             RemoveTableColumnTag { column_ref, key } => {
-                executors::remove_table_column_tag(tx, state, column_ref, key).await
+                executors::remove_table_column_tag(changes, state, column_ref, key)
             }
         }
     }
