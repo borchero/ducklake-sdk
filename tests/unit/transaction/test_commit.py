@@ -382,7 +382,7 @@ def test_only_changed_column_statistics_are_updated(
     assert row_count == 30
 
 
-@pytest.mark.parametrize("files_per_write", [2, 150])
+@pytest.mark.parametrize("files_per_write", [2, 300])
 def test_file_metadata_across_multiple_writes(
     ducklake: dl.Ducklake, catalog_engine: sa.Engine, files_per_write: int
 ) -> None:
@@ -435,3 +435,135 @@ def test_file_metadata_across_multiple_writes(
         for table_id in table_ids
         for column_id in range(1, 65)
     ]
+
+
+@pytest.mark.parametrize("file_count", [4095, 4096, 8192])
+def test_large_metadata_insert_preserves_strings_and_nulls(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, file_count: int
+) -> None:
+    # Arrange
+    table = ducklake.create_table("table", {"x": dl.Varchar()})
+    values = [None, "", "\\N", "\\.", "tab\tline\nreturn\rslash\\雪'\""]
+    files = [
+        dl.WriteDataFile(
+            f"{index}.parquet",
+            statistics=dl.DataFileStatistics(
+                num_rows=10,
+                column_stats={
+                    1: dl.ColumnStats(
+                        min_value=values[index % len(values)],
+                        max_value=values[index % len(values)],
+                        null_count=None if index % 2 else 0,
+                    )
+                },
+            ),
+        )
+        for index in range(file_count)
+    ]
+
+    # Act
+    table.write_data_files(files)
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        statistics = connection.execute(
+            sa.text(
+                "SELECT min_value, max_value, null_count FROM ducklake_file_column_stats ORDER BY data_file_id"
+            )
+        ).all()
+        file_metadata = connection.execute(
+            sa.text(
+                "SELECT record_count, file_size_bytes, path_is_relative FROM ducklake_data_file"
+            )
+        ).all()
+    assert statistics == [
+        (values[index % len(values)], values[index % len(values)], None if index % 2 else 0)
+        for index in range(file_count)
+    ]
+    assert file_metadata == [(10, None, True)] * file_count
+
+
+@pytest.mark.parametrize(
+    "schema_count",
+    [
+        1024,
+        pytest.param(
+            9363,
+            marks=pytest.mark.skip_config(
+                catalog="mysql", reason="Snapshot changes exceed MySQL's TEXT column limit."
+            ),
+        ),
+    ],
+)
+def test_large_schema_insert_preserves_uuids(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, schema_count: int
+) -> None:
+    # Arrange
+    names = {f"schema_{index}" for index in range(schema_count)}
+
+    # Act
+    with ducklake.transaction() as tx:
+        for name in sorted(names):
+            tx.create_schema(name)
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        schemas = connection.execute(
+            sa.text(
+                "SELECT schema_name, schema_uuid FROM ducklake_schema WHERE schema_name <> 'main'"
+            )
+        ).all()
+    assert {name for name, _ in schemas} == names
+    assert len({identifier for _, identifier in schemas}) == len(names)
+    assert all(identifier is not None for _, identifier in schemas)
+
+
+@pytest.mark.skip_config(catalog="sqlite", reason="Exercises PostgreSQL COPY rollback.")
+@pytest.mark.skip_config(catalog="mysql", reason="Exercises PostgreSQL COPY rollback.")
+def test_failed_copy_rolls_back_entire_commit(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine
+) -> None:
+    # Arrange
+    table = ducklake.create_table("table", {"x": dl.Varchar()})
+    with catalog_engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "ALTER TABLE ducklake_file_column_stats ADD CONSTRAINT reject_value CHECK (min_value <> 'reject')"
+            )
+        )
+    files = [
+        dl.WriteDataFile(
+            f"{index}.parquet",
+            statistics=dl.DataFileStatistics(
+                num_rows=1,
+                column_stats={1: dl.ColumnStats(min_value="reject" if index == 8191 else "ok")},
+            ),
+        )
+        for index in range(8192)
+    ]
+    with catalog_engine.connect() as connection:
+        snapshot_count = connection.scalar(sa.text("SELECT COUNT(*) FROM ducklake_snapshot"))
+
+    # Act
+    with pytest.raises(RuntimeError, match="reject_value"):
+        with ducklake.transaction() as tx:
+            tx.create_schema("rolled_back")
+            tx.table("table").write_data_files(files)
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT COUNT(*) FROM ducklake_data_file")) == 0
+        assert connection.scalar(sa.text("SELECT COUNT(*) FROM ducklake_file_column_stats")) == 0
+        assert connection.scalar(sa.text("SELECT COUNT(*) FROM ducklake_table_stats")) == 0
+        assert (
+            connection.scalar(sa.text("SELECT COUNT(*) FROM ducklake_snapshot")) == snapshot_count
+        )
+        assert (
+            connection.scalar(
+                sa.text("SELECT COUNT(*) FROM ducklake_schema WHERE schema_name = 'rolled_back'")
+            )
+            == 0
+        )
+    table.write_data_files([files[0]])
+    with catalog_engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT COUNT(*) FROM ducklake_data_file")) == 1
