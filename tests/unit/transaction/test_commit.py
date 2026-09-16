@@ -380,3 +380,58 @@ def test_only_changed_column_statistics_are_updated(
         row_count = connection.scalar(sa.text("SELECT record_count FROM ducklake_table_stats"))
     assert updates == ([1] if changed else [])
     assert row_count == 30
+
+
+@pytest.mark.parametrize("files_per_write", [2, 150])
+def test_file_metadata_across_multiple_writes(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, files_per_write: int
+) -> None:
+    # Arrange
+    names = ["first", "second"]
+    with ducklake.transaction() as tx:
+        for name in names:
+            tx.create_table(name, {f"column_{index}": dl.Int64() for index in range(64)})
+    statistics = dl.DataFileStatistics(
+        num_rows=10,
+        file_size_bytes=100,
+        column_stats={
+            column_id: dl.ColumnStats(min_value=column_id, max_value=column_id + 10, null_count=0)
+            for column_id in range(1, 65)
+        },
+    )
+
+    # Act
+    with ducklake.transaction() as tx:
+        for write_index in range(2):
+            for name in names:
+                tx.table(name).write_data_files(
+                    [
+                        dl.WriteDataFile(f"{write_index}_{index}.parquet", statistics=statistics)
+                        for index in range(files_per_write)
+                    ]
+                )
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        files = connection.execute(
+            sa.text(
+                "SELECT table_id, data_file_id, row_id_start FROM ducklake_data_file ORDER BY table_id, row_id_start"
+            )
+        ).all()
+        column_stats = connection.execute(
+            sa.text(
+                "SELECT f.table_id, f.column_id, f.min_value, f.max_value, COUNT(*) "
+                "FROM ducklake_file_column_stats f JOIN ducklake_data_file d "
+                "ON f.data_file_id = d.data_file_id AND f.table_id = d.table_id "
+                "GROUP BY f.table_id, f.column_id, f.min_value, f.max_value ORDER BY f.table_id, f.column_id"
+            )
+        ).all()
+    table_ids = sorted({row.table_id for row in files})
+    assert len(table_ids) == 2
+    assert len({row.data_file_id for row in files}) == 4 * files_per_write
+    assert [row.row_id_start for row in files] == list(range(0, 20 * files_per_write, 10)) * 2
+    assert column_stats == [
+        (table_id, column_id, str(column_id), str(column_id + 10), 2 * files_per_write)
+        for table_id in table_ids
+        for column_id in range(1, 65)
+    ]

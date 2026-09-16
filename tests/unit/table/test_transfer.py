@@ -4,6 +4,7 @@ from typing import cast
 
 import polars as pl
 import pytest
+import sqlalchemy as sa
 from _testutils import make_catalog_url, make_storage_path
 from polars.testing import assert_frame_equal
 
@@ -298,3 +299,48 @@ def test_transfer_reserves_dropped_column_ids(
         # Assert
         assert table.schema.columns[-1].field_id == retired_id + 1
         assert_frame_equal(table.read_polars().sort("renamed"), expected)
+
+
+@pytest.fixture()
+def source_with_inline_deletes(ducklake: dl.Ducklake, catalog_url: str) -> dl.Table:
+    source = ducklake.create_table("source", {"x": dl.Int64()})
+    source.set_metadata(data_inlining_row_limit=0)
+    source.write_polars(pl.DataFrame({"x": [1, 2, 3]}))
+    engine = sa.create_engine(catalog_url)
+    try:
+        with engine.begin() as connection:
+            table_id, file_id, snapshot_id = connection.execute(
+                sa.text("SELECT table_id, data_file_id, begin_snapshot FROM ducklake_data_file")
+            ).one()
+            deletes = sa.Table(
+                f"ducklake_inlined_delete_{table_id}",
+                sa.MetaData(),
+                sa.Column("file_id", sa.BigInteger),
+                sa.Column("row_id", sa.BigInteger),
+                sa.Column("begin_snapshot", sa.BigInteger),
+            )
+            deletes.create(connection)
+            connection.execute(
+                deletes.insert().values(file_id=file_id, row_id=1, begin_snapshot=snapshot_id)
+            )
+    finally:
+        engine.dispose()
+    return source
+
+
+@pytest.mark.parametrize("operation", ["copy_tables", "move_tables"])
+def test_transfer_preserves_inline_deletes(
+    ducklake: dl.Ducklake,
+    transfer_target: dl.Ducklake,
+    source_with_inline_deletes: dl.Table,
+    operation: str,
+) -> None:
+    # Arrange
+    source = source_with_inline_deletes
+
+    # Act
+    transferred = getattr(ducklake, operation)([source], transfer_target)[0]
+
+    # Assert
+    assert any(file.inline_deletes is not None for file in transferred.scan().data_files)
+    assert_frame_equal(transferred.read_polars().sort("x"), pl.DataFrame({"x": [1, 3]}))
