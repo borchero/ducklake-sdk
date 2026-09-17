@@ -375,6 +375,49 @@ def test_only_changed_column_statistics_are_updated(
     assert updates == [1]
 
 
+@pytest.fixture()
+def file_metadata_tables(ducklake: dl.Ducklake) -> list[str]:
+    names = ["first", "second"]
+    with ducklake.transaction() as tx:
+        for name in names:
+            tx.create_table(name, {"x": dl.Int64(), "y": dl.Int64()})
+    return names
+
+
+def test_file_column_statistics_across_multiple_writes(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, file_metadata_tables: list[str]
+) -> None:
+    # Arrange
+    names = file_metadata_tables
+
+    # Act
+    _write_files(ducklake, names, [1, 2])
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        rows = connection.execute(
+            sa.text(
+                "SELECT t.table_name, d.path, f.column_id, f.min_value, f.max_value "
+                "FROM ducklake_file_column_stats f JOIN ducklake_data_file d "
+                "ON f.data_file_id = d.data_file_id AND f.table_id = d.table_id "
+                "JOIN ducklake_table t ON f.table_id = t.table_id "
+                "ORDER BY t.table_name, d.path, f.column_id"
+            )
+        ).all()
+    assert rows == [
+        (
+            name,
+            f"file_{write}.parquet",
+            column_id,
+            str(-(2 if write == 1 else 1) - table_index * 10 - column_id),
+            str(write + table_index * 10 + column_id),
+        )
+        for table_index, name in enumerate(names)
+        for write in [1, 2]
+        for column_id in [1, 2]
+    ]
+
+
 # -------------------------------------------- UTILS -------------------------------------------- #
 
 

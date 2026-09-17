@@ -29,7 +29,7 @@ pub(super) struct TransactionChanges {
     pub retired_columns: HashSet<(i64, i64)>,
     pub table_tags: HashMap<i64, Vec<TagChange>>,
     pub column_tags: HashMap<(i64, i64), Vec<TagChange>>,
-    pub file_writes: Vec<FileChanges>,
+    pub files: FileChanges,
     pub inline_tables: HashMap<i64, crate::Schema>,
     pub inline_data: HashMap<i64, Vec<RecordBatch>>,
     pub written_columns: HashMap<i64, HashSet<i64>>,
@@ -188,9 +188,7 @@ impl TransactionChanges {
         )
         .await?;
 
-        for files in self.file_writes {
-            persist_files(tx, files).await?;
-        }
+        persist_files(tx, self.files).await?;
         persist_inline_data(
             tx,
             self.inline_tables,
