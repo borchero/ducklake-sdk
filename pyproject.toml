@@ -14,6 +14,8 @@ ignore = [
 select = [
   # flake8-annotations
   "ANN",
+  # flake8-print
+  "T201",
   # flake8-type-checking
   "TC",
   # pyflakes
