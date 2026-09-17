@@ -202,6 +202,8 @@ impl TransactionChanges {
     }
 }
 
+/* ------------------------------------------ DELETION ----------------------------------------- */
+
 async fn retire_rows<C: IntoIden + Copy, const K: usize>(
     tx: &mut db::Transaction,
     snapshot_id: i64,
@@ -219,6 +221,8 @@ async fn retire_rows<C: IntoIden + Copy, const K: usize>(
     )
     .await
 }
+
+/* ---------------------------------------- PERSISTENCE ---------------------------------------- */
 
 async fn persist_table_renames(
     tx: &mut db::Transaction,

@@ -155,7 +155,6 @@ impl ChangeSet {
             change.apply(changes, state).await?;
         }
 
-        // The writer creates these tables before inserting any inline data.
         for table_ref in self.table_refs_with_schema_changes() {
             executors::create_inlined_data_table(changes, state, &table_ref);
         }

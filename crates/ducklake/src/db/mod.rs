@@ -317,7 +317,7 @@ impl Transaction {
 
     /// Insert the given entities into their backing table.
     ///
-    /// Uses the same batching as raw rows to respect the database's bind parameter limit.
+    /// Uses the same batching to respect the database's bind parameter limit.
     pub(crate) async fn insert_entities<E>(
         &mut self,
         entities: impl IntoIterator<Item = E>,
