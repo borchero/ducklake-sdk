@@ -3,11 +3,10 @@ use std::sync::{Arc, RwLock};
 
 use sea_query::{Asterisk, ExprTrait, Query};
 
-use super::catalog::CatalogCache;
-use super::table_stats::TableStatsCache;
+use super::catalog::{CatalogCache, LazyCatalog};
+use super::table_stats::{LazyTableStats, TableStatsCache};
 use crate::caches::TableStats;
 use crate::catalog::Catalog;
-use crate::primitives::AsyncLazy;
 use crate::spec::*;
 use crate::{DucklakeResult, db};
 
@@ -206,8 +205,8 @@ impl SnapshotCacheState {
 
 pub(crate) struct Snapshot {
     info: SnapshotInfo,
-    catalog: AsyncLazy<Arc<Catalog>>,
-    table_stats: AsyncLazy<Arc<HashMap<i64, TableStats>>, Arc<Catalog>>,
+    catalog: Arc<LazyCatalog>,
+    table_stats: Arc<LazyTableStats>,
 }
 
 impl Snapshot {
@@ -216,18 +215,14 @@ impl Snapshot {
         catalog_cache: CatalogCache,
         table_stats_cache: TableStatsCache,
     ) -> Self {
-        let lazy_catalog = AsyncLazy::new(move |_| {
-            let cache = catalog_cache.clone();
-            async move { cache.get(info.id, info.schema_version).await }
-        });
-        let lazy_table_stats = AsyncLazy::new(move |catalog: Arc<Catalog>| {
-            let cache = table_stats_cache.clone();
-            async move { cache.get(info.id, info.next_file_id, &catalog).await }
-        });
+        // Acquire shared lazy values before the previous snapshot can be evicted, preserving
+        // unchanged metadata without retaining the snapshot itself or loading anything eagerly.
+        let catalog = catalog_cache.get(info.id, info.schema_version);
+        let table_stats = table_stats_cache.get(info.id, info.schema_version, info.next_file_id);
         Self {
             info,
-            catalog: lazy_catalog,
-            table_stats: lazy_table_stats,
+            catalog,
+            table_stats,
         }
     }
 
@@ -491,8 +486,17 @@ mod tests {
         assert!(pinned_weak.upgrade().is_none());
     }
 
+    #[rstest::rstest]
+    #[case(false, false)]
+    #[case(false, true)]
+    #[case(true, false)]
+    #[case(true, true)]
     #[tokio::test]
-    async fn catalog_and_table_stats_are_released_with_evicted_snapshot() {
+    async fn metadata_is_reused_only_while_its_version_is_retained(
+        #[case] schema_changed: bool,
+        #[case] files_changed: bool,
+    ) {
+        // Arrange
         let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
         crate::spec::init_catalog(
             &pool,
@@ -504,18 +508,42 @@ mod tests {
         .unwrap();
         let cache = SnapshotCache::new(pool, None, 1).await.unwrap();
         let snapshot = cache.get_current();
-        let catalog = {
-            let catalog = snapshot.catalog().await.unwrap().clone();
-            Arc::downgrade(&catalog)
-        };
-        let table_stats = {
-            let table_stats = snapshot.table_stats().await.unwrap().clone();
-            Arc::downgrade(&table_stats)
-        };
+        let catalog = Arc::downgrade(snapshot.catalog().await.unwrap());
+        let table_stats = Arc::downgrade(snapshot.table_stats().await.unwrap());
+        let old_snapshot = Arc::downgrade(&snapshot);
+        let mut next_info = snapshot.info().clone();
+        next_info.schema_version += i64::from(schema_changed);
+        next_info.next_file_id += i64::from(files_changed);
 
-        cache.insert_snapshot(snapshot_info(1));
+        // Act
         drop(snapshot);
+        // Advance twice without reading metadata in the intermediate snapshot.
+        for _ in 0..2 {
+            next_info.id += 1;
+            cache.insert_snapshot(next_info.clone());
+        }
+        let current = cache.get_current();
 
+        // Assert
+        assert!(old_snapshot.upgrade().is_none());
+        assert_eq!(catalog.upgrade().is_some(), !schema_changed);
+        assert_eq!(
+            table_stats.upgrade().is_some(),
+            !schema_changed && !files_changed
+        );
+        assert_eq!(
+            std::sync::Weak::ptr_eq(&catalog, &Arc::downgrade(current.catalog().await.unwrap())),
+            !schema_changed,
+        );
+        assert_eq!(
+            std::sync::Weak::ptr_eq(
+                &table_stats,
+                &Arc::downgrade(current.table_stats().await.unwrap())
+            ),
+            !schema_changed && !files_changed,
+        );
+        drop(current);
+        drop(cache);
         assert!(catalog.upgrade().is_none());
         assert!(table_stats.upgrade().is_none());
     }
