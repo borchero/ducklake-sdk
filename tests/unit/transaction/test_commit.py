@@ -418,6 +418,39 @@ def test_file_column_statistics_across_multiple_writes(
     ]
 
 
+@pytest.mark.skip_config(catalog="sqlite", reason="Exercises PostgreSQL COPY.")
+@pytest.mark.skip_config(catalog="mysql", reason="Exercises PostgreSQL COPY.")
+def test_postgres_copy_preserves_metadata(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine
+) -> None:
+    # Arrange: ten columns per statistics row require COPY above 6,553 rows.
+    table = ducklake.create_table("table", {"x": dl.Varchar()})
+    values = [None, "", "\\N", "tab\tline\nreturn\rslash\\雪'\""]
+    values = [values[index % len(values)] for index in range(6554)]
+    files = [
+        dl.WriteDataFile(
+            f"{index}.parquet",
+            statistics=dl.DataFileStatistics(
+                num_rows=1,
+                column_stats={1: dl.ColumnStats(min_value=value, max_value=value)},
+            ),
+        )
+        for index, value in enumerate(values)
+    ]
+
+    # Act
+    table.write_data_files(files)
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        rows = connection.execute(
+            sa.text(
+                "SELECT min_value, max_value FROM ducklake_file_column_stats ORDER BY data_file_id"
+            )
+        ).all()
+    assert rows == [(value, value) for value in values]
+
+
 # -------------------------------------------- UTILS -------------------------------------------- #
 
 

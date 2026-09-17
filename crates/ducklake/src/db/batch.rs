@@ -12,6 +12,8 @@ use sea_query::{
 use sea_query_sqlx::SqlxValues;
 use strum::IntoEnumIterator;
 
+#[cfg(feature = "postgres")]
+use super::postgres_copy;
 use super::{AnyTransaction, Dialect, RowType, SqlConvertible, Transaction, log_sql};
 use crate::DucklakeResult;
 
@@ -157,7 +159,8 @@ impl Transaction {
         .await
     }
 
-    /// Insert buffered catalog rows in parameter-limited batches.
+    /// Insert buffered catalog rows, using COPY for large PostgreSQL batches and parameter-limited
+    /// INSERT statements otherwise.
     pub(crate) async fn insert_rows(
         &mut self,
         table: &str,
@@ -168,6 +171,16 @@ impl Transaction {
             return Ok(());
         }
         let chunk_size = self.dialect().max_bind_params() / columns.len();
+        // COPY has startup overhead; use it when it replaces multiple INSERT statements.
+        #[cfg(feature = "postgres")]
+        match &mut self.0 {
+            AnyTransaction::Postgres(tx)
+                if rows.len() > chunk_size && postgres_copy::supports(&rows) =>
+            {
+                return postgres_copy::insert(tx, table, columns, rows).await;
+            }
+            _ => {}
+        }
         let mut rows = rows.into_iter();
         loop {
             let chunk: Vec<_> = rows.by_ref().take(chunk_size).collect();
