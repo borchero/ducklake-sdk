@@ -241,7 +241,7 @@ jobs:
 
   benchmark-py:
     name: Benchmark (Python)
-    runs-on: ubuntu-latest
+    runs-on: codspeed-macro-arm64-graviton-ubuntu-22-04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -273,5 +273,5 @@ jobs:
       - name: Run CodSpeed benchmarks
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
-          mode: simulation
-          run: pixi run test-py-benchmark --catalog=postgres
+          mode: walltime
+          run: pixi run test-py-benchmark --catalog=postgres -v
