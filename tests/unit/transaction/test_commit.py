@@ -12,15 +12,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
-@pytest.fixture()
-def catalog_engine(catalog_url: str) -> Iterator[sa.Engine]:
-    engine = sa.create_engine(catalog_url)
-    try:
-        yield engine
-    finally:
-        engine.dispose()
-
-
 @pytest.mark.parametrize("rename", [False, True])
 def test_create_and_alter_in_one_commit(
     ducklake: dl.Ducklake, catalog_url: str, rename: bool

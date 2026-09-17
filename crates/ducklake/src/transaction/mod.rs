@@ -300,10 +300,9 @@ impl<'a> Transaction<'a> {
             );
         }
 
+        // Only at this point, we start the database transaction and persist changes
         let mut tx = pool.begin().await?;
         changes.persist(&mut tx, state).await?;
-
-        // Write the remaining tables for this commit
         let snapshot_info = Self::finalize_commit(
             &mut tx,
             state,
@@ -312,9 +311,8 @@ impl<'a> Transaction<'a> {
             author_info,
         )
         .await?;
-
-        // Finally, commit the transaction
         tx.commit().await?;
+
         Ok(snapshot_info)
     }
 

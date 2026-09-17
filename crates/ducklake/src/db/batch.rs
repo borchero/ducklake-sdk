@@ -24,7 +24,7 @@ impl Transaction {
         rows: &[[Value; K]],
     ) -> DucklakeResult<()> {
         let table = table.into_table_ref();
-        self.execute_batches(rows, self.key_batch_size::<K>(), |rows| {
+        self.execute_batches(rows, self.dialect().max_rows_per_key_batch(K), |rows| {
             Query::delete()
                 .from_table(table.clone())
                 .cond_where(matching_rows(&keys, rows.iter()))
@@ -42,13 +42,18 @@ impl Transaction {
     ) -> DucklakeResult<Vec<O>> {
         let table = table.into_table_ref();
         let mut result = Vec::new();
-        for query in batch_queries(self.dialect(), rows, self.key_batch_size::<K>(), |rows| {
-            Query::select()
-                .column(Asterisk)
-                .from(table.clone())
-                .cond_where(matching_rows(&keys, rows.iter()))
-                .to_owned()
-        }) {
+        for query in batch_queries(
+            self.dialect(),
+            rows,
+            self.dialect().max_rows_per_key_batch(K),
+            |rows| {
+                Query::select()
+                    .column(Asterisk)
+                    .from(table.clone())
+                    .cond_where(matching_rows(&keys, rows.iter()))
+                    .to_owned()
+            },
+        ) {
             let (sql, values) = query?;
             log_sql(sql.as_str(), Some(&values));
             result.extend(dispatch_tx!(self, tx => {
@@ -72,7 +77,7 @@ impl Transaction {
         filter: Condition,
     ) -> DucklakeResult<()> {
         let table = table.into_table_ref();
-        self.execute_batches(rows, self.key_batch_size::<K>(), |rows| {
+        self.execute_batches(rows, self.dialect().max_rows_per_key_batch(K), |rows| {
             Query::update()
                 .table(table.clone())
                 .values(
@@ -96,7 +101,7 @@ impl Transaction {
         rows: Vec<([Value; K], [Value; V])>,
     ) -> DucklakeResult<()> {
         let table = table.into_table_ref();
-        self.execute_batches(&rows, self.key_batch_size::<K>(), |rows| {
+        self.execute_batches(&rows, self.dialect().max_rows_per_key_batch(K), |rows| {
             let mut query = Query::update();
             query.table(table.clone());
             for (index, column) in columns.iter().enumerate() {
@@ -127,7 +132,7 @@ impl Transaction {
     ) -> DucklakeResult<()> {
         let table = table.into_table_ref();
         let all_columns: Vec<_> = C::iter().collect();
-        self.execute_batches(&rows, self.key_batch_size::<K>(), |rows| {
+        self.execute_batches(&rows, self.dialect().max_rows_per_key_batch(K), |rows| {
             let select = Query::select()
                 .exprs(all_columns.iter().map(|column| {
                     if let Some((_, value)) = fixed.iter().find(|(key, _)| key == column) {
@@ -179,16 +184,6 @@ impl Transaction {
             self.execute(&query).await?;
         }
         Ok(())
-    }
-
-    fn key_batch_size<const K: usize>(&self) -> usize {
-        assert!(K > 0, "row matching requires at least one key");
-        #[cfg(feature = "sqlite")]
-        if K > 1 && matches!(self.dialect(), Dialect::Sqlite) {
-            // Compound keys generate OR chains; leave room below SQLite's expression limit.
-            return 256;
-        }
-        self.dialect().max_bind_params()
     }
 
     async fn execute_batches<T, Q: SqlConvertible>(
