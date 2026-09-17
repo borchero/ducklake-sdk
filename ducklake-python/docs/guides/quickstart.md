@@ -122,6 +122,14 @@ utc_df = table.read_polars(time_zone="UTC")
 `ducklake` automatically applies any pending deletion files and inline deletions, so you always see a consistent view
 of the table.
 
+## Deleting Rows
+
+Use {meth}`~ducklake.Ducklake.execute_sql` to delete rows with DuckDB SQL. This requires `duckdb` to be installed:
+
+```python
+ducklake.execute_sql("DELETE FROM houses WHERE price < 100000")
+```
+
 ## Time Travel
 
 DuckLake snapshots are first-class citizens. To read the table as it looked at a previous point in time, time-travel
