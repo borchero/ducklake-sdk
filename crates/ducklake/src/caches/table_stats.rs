@@ -65,7 +65,7 @@ pub(crate) struct TableStats {
     is_persisted: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ColumnStats {
     contains_null: Option<bool>,
     contains_nan: Option<bool>,

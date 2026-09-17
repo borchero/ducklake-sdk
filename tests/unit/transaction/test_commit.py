@@ -320,6 +320,61 @@ def test_inline_write_uses_latest_schema_registration(
         assert connection.execute(sa.select(latest)).all() == [(1, 2)]
 
 
+@pytest.fixture()
+def column_stats_update_log(ducklake: dl.Ducklake, catalog_engine: sa.Engine) -> None:
+    table = ducklake.create_table("table", {"x": dl.Float64(), "y": dl.Float64()})
+    statistics = dl.DataFileStatistics(
+        num_rows=10,
+        column_stats={
+            column_id: dl.ColumnStats(
+                min_value=0.0, max_value=10.0, null_count=0, contains_nan=False
+            )
+            for column_id in [1, 2]
+        },
+    )
+    table.write_data_files([dl.WriteDataFile("seed.parquet", statistics=statistics)])
+    with catalog_engine.begin() as connection:
+        connection.execute(sa.text("CREATE TABLE column_stats_updates (column_id BIGINT)"))
+        connection.execute(
+            sa.text(
+                "CREATE TRIGGER log_column_stats_update AFTER UPDATE ON ducklake_table_column_stats "
+                "FOR EACH ROW BEGIN INSERT INTO column_stats_updates VALUES (NEW.column_id); END"
+            )
+        )
+
+
+@pytest.mark.usefixtures("column_stats_update_log")
+@pytest.mark.skip_config(
+    catalog="postgres", reason="Backend-independent filtering tested on SQLite."
+)
+@pytest.mark.skip_config(catalog="mysql", reason="Backend-independent filtering tested on SQLite.")
+def test_only_changed_column_statistics_are_updated(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine
+) -> None:
+    # Arrange
+    statistics = dl.DataFileStatistics(
+        num_rows=10,
+        column_stats={
+            1: dl.ColumnStats(min_value=-1.0, max_value=9.0, null_count=0, contains_nan=False),
+            2: dl.ColumnStats(min_value=1.0, max_value=9.0, null_count=0, contains_nan=False),
+        },
+    )
+
+    # Act
+    with ducklake.transaction() as tx:
+        for name in ["first.parquet", "second.parquet"]:
+            tx.table("table").write_data_files([dl.WriteDataFile(name, statistics=statistics)])
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        updates = (
+            connection.execute(sa.text("SELECT column_id FROM column_stats_updates"))
+            .scalars()
+            .all()
+        )
+    assert updates == [1]
+
+
 # -------------------------------------------- UTILS -------------------------------------------- #
 
 

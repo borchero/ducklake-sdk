@@ -394,6 +394,10 @@ async fn persist_statistics(
     let mut new_columns = Vec::new();
     let mut updated_columns = Vec::new();
     for (table_id, column_ids) in written_columns {
+        let column_ids: Vec<_> = column_ids
+            .into_iter()
+            .filter(|&column_id| state.column_stats_changed(table_id, column_id))
+            .collect();
         let stats = state.table_stats(table_id).await?;
         let entity = DucklakeTableStats {
             table_id,
