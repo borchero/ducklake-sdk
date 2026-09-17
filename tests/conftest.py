@@ -3,7 +3,6 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-import sqlalchemy as sa
 
 import ducklake as dl
 
@@ -59,15 +58,6 @@ def catalog_url(catalog: str, tmp_path: Path) -> Iterator[str]:
 
     with make_catalog_url(catalog, tmp_path) as url:
         yield url
-
-
-@pytest.fixture()
-def catalog_engine(catalog_url: str) -> Iterator[sa.Engine]:
-    engine = sa.create_engine(catalog_url)
-    try:
-        yield engine
-    finally:
-        engine.dispose()
 
 
 # ------------------------------------------- STORAGE ------------------------------------------- #

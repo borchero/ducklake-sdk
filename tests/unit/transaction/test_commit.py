@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import polars as pl
 import pytest
 import sqlalchemy as sa
 
 import ducklake as dl
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@pytest.fixture()
+def catalog_engine(catalog_url: str) -> Iterator[sa.Engine]:
+    engine = sa.create_engine(catalog_url)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("rename", [False, True])
