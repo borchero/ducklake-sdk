@@ -241,7 +241,7 @@ jobs:
 
   benchmark-py:
     name: Benchmark (Python)
-    runs-on: codspeed-macro-arm64-graviton-ubuntu-22-04
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
