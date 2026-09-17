@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import warnings
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from .table import Table
 from .transaction import Transaction
@@ -127,13 +127,19 @@ class Ducklake:
 
     # ------------------------------------------- SQL ------------------------------------------- #
 
-    def execute_sql(self, query: str | sa.ReturnsRows) -> None:
-        """Execute an arbitrary SQL query against the catalog database.
+    def execute_sql(self, query: str | sa.ClauseElement) -> None:
+        """Execute a SQL statement against the DuckLake through DuckDB.
+
+
+        Supports statements such as `DELETE`, `INSERT`, `UPDATE`, and `CREATE TABLE`.
+        Query results are discarded. Read-only and time-traveled connections reject writes.
 
         Args:
             query: The SQL query to execute. This may either be a raw string or a `sqlalchemy`
                 query. If a raw string is provided, it must use the DuckDB SQL dialect. If a
-                `sqlalchemy` query is provided, :mod:`duckdb-engine` must be installed.
+                `sqlalchemy` query is provided, :mod:`duckdb-engine` must be installed. To pass
+                bound parameters, use a SQLAlchemy statement with values bound on the statement
+                itself, for example with `sqlalchemy.text(...).bindparams(...)`.
 
         Note:
             This requires :mod:`duckdb` to be installed.
@@ -143,12 +149,19 @@ class Ducklake:
             query_params = None
         else:
             import duckdb_engine
+            from sqlalchemy.sql.compiler import SQLCompiler
 
-            compiler = query.compile(dialect=duckdb_engine.Dialect(paramstyle="qmark"))
+            compiler = query.compile(
+                dialect=duckdb_engine.Dialect(paramstyle="qmark"),
+                compile_kwargs={"render_postcompile": True},
+            )
             query_str = compiler.string
-            query_params = list(compiler.params.values())
-
-            print(query_str, query_params)
+            compiled_params = compiler.params
+            query_params = (
+                [compiled_params[name] for name in cast(SQLCompiler, compiler).positiontup or ()]
+                if compiled_params
+                else None
+            )
 
         self._duckdb_connection.execute(query_str, query_params)
 
