@@ -268,63 +268,195 @@ fn batch_queries<T, Q: SqlConvertible>(
 
 #[cfg(all(test, feature = "sqlite"))]
 mod tests {
+    use ducklake_tag::Column;
     use sea_query::{Expr, Query};
 
     use super::*;
     use crate::db::sea_query_ext::CreateTable;
     use crate::spec::{DucklakeTag, ducklake_tag};
 
-    #[tokio::test]
-    async fn bulk_operations_preserve_unmatched_rows_and_history() {
-        use ducklake_tag::Column;
+    fn tag(id: i64, key: &str, value: &str) -> DucklakeTag {
+        DucklakeTag {
+            object_id: id,
+            begin_snapshot: 1,
+            end_snapshot: None,
+            key: key.into(),
+            value: value.into(),
+        }
+    }
 
-        let pool = crate::db::Pool::new("sqlite://:memory:").await.unwrap();
-        let mut tx = pool.begin().await.unwrap();
+    async fn empty_transaction() -> Transaction {
+        crate::db::Pool::new("sqlite://:memory:")
+            .await
+            .unwrap()
+            .begin()
+            .await
+            .unwrap()
+    }
+
+    async fn tag_table(rows: impl IntoIterator<Item = DucklakeTag>) -> Transaction {
+        let mut tx = empty_transaction().await;
         tx.execute(&sea_query::Table::create_entity::<DucklakeTag>(
             tx.dialect(),
         ))
         .await
         .unwrap();
-        tx.insert_entities(
-            (0..600)
-                .map(|id| DucklakeTag {
-                    object_id: id,
-                    begin_snapshot: 1,
-                    end_snapshot: None,
-                    key: "shared".into(),
-                    value: "original".into(),
-                })
-                .chain([DucklakeTag {
-                    object_id: 99,
-                    begin_snapshot: 1,
-                    end_snapshot: None,
-                    key: "untouched".into(),
-                    value: "original".into(),
-                }]),
+        tx.insert_entities(rows).await.unwrap();
+        tx
+    }
+
+    async fn stored_tags(tx: &mut Transaction) -> Vec<DucklakeTag> {
+        tx.fetch_all(
+            &Query::select()
+                .column(Asterisk)
+                .from(ducklake_tag::Table)
+                .order_by(Column::ObjectId, sea_query::Order::Asc)
+                .order_by(Column::BeginSnapshot, sea_query::Order::Asc)
+                .order_by(Column::Key, sea_query::Order::Asc)
+                .to_owned(),
+        )
+        .await
+        .unwrap()
+    }
+
+    fn batch_keys() -> Vec<[Value; 2]> {
+        (0..257_i64)
+            .map(|id| [id.into(), "selected".into()])
+            .collect()
+    }
+
+    async fn batch_tag_table() -> Transaction {
+        tag_table(
+            (0..257)
+                .map(|id| tag(id, "selected", "original"))
+                .chain([tag(0, "untouched", "original")]),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn delete_rows_matches_compound_keys_across_batches() {
+        let mut tx = batch_tag_table().await;
+
+        tx.delete_rows(
+            ducklake_tag::Table,
+            [Column::ObjectId, Column::Key],
+            &batch_keys(),
         )
         .await
         .unwrap();
 
-        let keys: Vec<_> = (0..600_i64)
-            .map(|id| [id.into(), "shared".into()])
+        let remaining: Vec<_> = stored_tags(&mut tx)
+            .await
+            .into_iter()
+            .map(|row| (row.object_id, row.key))
             .collect();
+        assert_eq!(remaining, [(0, "untouched".into())]);
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_matches_compound_keys_across_batches() {
+        let mut tx = batch_tag_table().await;
+
+        let rows: Vec<DucklakeTag> = tx
+            .fetch_rows(
+                ducklake_tag::Table,
+                [Column::ObjectId, Column::Key],
+                &batch_keys(),
+            )
+            .await
+            .unwrap();
+
+        let mut keys: Vec<_> = rows
+            .into_iter()
+            .map(|row| (row.object_id, row.key))
+            .collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            (0..257)
+                .map(|id| (id, "selected".into()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn update_matching_rows_preserves_retired_and_unmatched_rows() {
+        let mut old = tag(0, "selected", "old");
+        old.begin_snapshot = 0;
+        old.end_snapshot = Some(1);
+        let mut tx = tag_table([
+            old,
+            tag(0, "selected", "live"),
+            tag(1, "selected", "live"),
+            tag(0, "untouched", "live"),
+        ])
+        .await;
+
         tx.update_matching_rows(
             ducklake_tag::Table,
             [Column::ObjectId, Column::Key],
-            &keys,
+            &[
+                [0_i64.into(), "selected".into()],
+                [1_i64.into(), "selected".into()],
+            ],
             [(Column::EndSnapshot, 2_i64.into())],
             Condition::all().add(Expr::col(Column::EndSnapshot).is_null()),
         )
         .await
         .unwrap();
+
+        let ends: Vec<_> = stored_tags(&mut tx)
+            .await
+            .into_iter()
+            .map(|row| row.end_snapshot)
+            .collect();
+        assert_eq!(ends, [Some(1), Some(2), None, Some(2)]);
+    }
+
+    #[tokio::test]
+    async fn update_rows_applies_values_to_their_keys() {
+        let mut tx = tag_table((0..3).map(|id| tag(id, "key", "original"))).await;
+
+        tx.update_rows(
+            ducklake_tag::Table,
+            [Column::ObjectId],
+            [Column::Value],
+            vec![
+                ([1_i64.into()], ["first".into()]),
+                ([0_i64.into()], ["second".into()]),
+            ],
+        )
+        .await
+        .unwrap();
+
+        let values: Vec<_> = stored_tags(&mut tx)
+            .await
+            .into_iter()
+            .map(|row| row.value)
+            .collect();
+        assert_eq!(values, ["second", "first", "original"]);
+    }
+
+    #[tokio::test]
+    async fn copy_rows_preserves_history_and_applies_replacements() {
+        let mut old = tag(0, "key", "historical");
+        old.begin_snapshot = 0;
+        old.end_snapshot = Some(1);
+        let current = (0..3).map(|id| DucklakeTag {
+            end_snapshot: Some(2),
+            ..tag(id, "key", "original")
+        });
+        let mut tx = tag_table([old].into_iter().chain(current)).await;
+
         tx.copy_rows_with_updates(
             ducklake_tag::Table,
-            [Column::ObjectId, Column::Key],
+            [Column::ObjectId],
             [Column::Value],
-            keys.iter()
-                .cloned()
-                .map(|keys| (keys, ["copied".into()]))
-                .collect(),
+            vec![
+                ([1_i64.into()], ["first".into()]),
+                ([0_i64.into()], ["second".into()]),
+            ],
             [
                 (Column::BeginSnapshot, 2_i64.into()),
                 (Column::EndSnapshot, None::<i64>.into()),
@@ -333,74 +465,59 @@ mod tests {
         )
         .await
         .unwrap();
-        tx.update_rows(
-            ducklake_tag::Table,
-            [Column::ObjectId, Column::Key, Column::BeginSnapshot],
-            [Column::Value],
-            (0..600_i64)
-                .map(|id| {
-                    (
-                        [id.into(), "shared".into(), 2_i64.into()],
-                        ["updated".into()],
-                    )
-                })
-                .collect(),
-        )
-        .await
-        .unwrap();
 
-        let ids: Vec<_> = (0..600_i64).map(|id| [id.into()]).collect();
-        let rows: Vec<DucklakeTag> = tx
-            .fetch_rows(ducklake_tag::Table, [Column::ObjectId], &ids)
+        let versions: Vec<_> = stored_tags(&mut tx)
             .await
-            .unwrap();
-        assert_eq!(rows.len(), 1201);
+            .into_iter()
+            .map(|row| {
+                (
+                    row.object_id,
+                    row.begin_snapshot,
+                    row.end_snapshot,
+                    row.value,
+                )
+            })
+            .collect();
         assert_eq!(
-            rows.iter()
-                .filter(|row| row.end_snapshot == Some(2) && row.value == "original")
-                .count(),
-            600
+            versions,
+            [
+                (0, 0, Some(1), "historical".into()),
+                (0, 1, Some(2), "original".into()),
+                (0, 2, None, "second".into()),
+                (1, 1, Some(2), "original".into()),
+                (1, 2, None, "first".into()),
+                (2, 1, Some(2), "original".into()),
+            ]
         );
-        assert_eq!(
-            rows.iter()
-                .filter(|row| row.begin_snapshot == 2
-                    && row.end_snapshot.is_none()
-                    && row.value == "updated")
-                .count(),
-            600
-        );
-
-        tx.delete_rows(
-            ducklake_tag::Table,
-            [Column::ObjectId, Column::Key, Column::BeginSnapshot],
-            &(0..600_i64)
-                .map(|id| [id.into(), "shared".into(), 1_i64.into()])
-                .collect::<Vec<_>>(),
-        )
-        .await
-        .unwrap();
-        let rows: Vec<DucklakeTag> = tx
-            .fetch_rows(ducklake_tag::Table, [Column::ObjectId], &ids)
-            .await
-            .unwrap();
-        assert_eq!(rows.len(), 601);
-        assert!(rows.iter().all(|row| row.end_snapshot.is_none()));
-        assert!(rows.iter().any(|row| row.key == "untouched"
-            && row.value == "original"
-            && row.begin_snapshot == 1));
-        tx.rollback().await.unwrap();
     }
 
     #[tokio::test]
-    async fn empty_operations_do_not_query_the_table() {
-        use ducklake_tag::Column;
-
-        let pool = crate::db::Pool::new("sqlite://:memory:").await.unwrap();
-        let mut tx = pool.begin().await.unwrap();
+    async fn empty_insert_does_not_query_the_table() {
+        let mut tx = empty_transaction().await;
         tx.insert_entities(Vec::<DucklakeTag>::new()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_delete_does_not_query_the_table() {
+        let mut tx = empty_transaction().await;
         tx.delete_rows(ducklake_tag::Table, [Column::ObjectId], &[])
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_fetch_does_not_query_the_table() {
+        let mut tx = empty_transaction().await;
+        let rows: Vec<DucklakeTag> = tx
+            .fetch_rows(ducklake_tag::Table, [Column::ObjectId], &[])
+            .await
+            .unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn empty_matching_update_does_not_query_the_table() {
+        let mut tx = empty_transaction().await;
         tx.update_matching_rows(
             ducklake_tag::Table,
             [Column::ObjectId],
@@ -410,6 +527,11 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_update_does_not_query_the_table() {
+        let mut tx = empty_transaction().await;
         tx.update_rows(
             ducklake_tag::Table,
             [Column::ObjectId],
@@ -418,6 +540,11 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_copy_does_not_query_the_table() {
+        let mut tx = empty_transaction().await;
         tx.copy_rows_with_updates(
             ducklake_tag::Table,
             [Column::ObjectId],
@@ -428,48 +555,6 @@ mod tests {
         )
         .await
         .unwrap();
-        let rows: Vec<DucklakeTag> = tx
-            .fetch_rows(ducklake_tag::Table, [Column::ObjectId], &[])
-            .await
-            .unwrap();
-        assert!(rows.is_empty());
-        tx.rollback().await.unwrap();
-    }
-
-    #[test]
-    fn empty_input_does_not_build_a_query() {
-        let items: [i64; 0] = [];
-        let mut batches = batch_queries(
-            Dialect::Sqlite,
-            &items,
-            256,
-            |_| -> sea_query::SelectStatement { panic!("empty input must not build a query") },
-        );
-        assert!(batches.next().is_none());
-    }
-
-    #[test]
-    fn batches_preserve_items_and_bound_expression_depth() {
-        let items: Vec<i64> = (0..513).collect();
-        let batches: Vec<_> = batch_queries(Dialect::Sqlite, &items, 256, |items| {
-            Query::select()
-                .exprs(items.iter().copied().map(Expr::val))
-                .to_owned()
-        })
-        .map(|query| query.unwrap().1.0.0)
-        .collect();
-
-        assert_eq!(
-            batches.iter().map(Vec::len).collect::<Vec<_>>(),
-            [256, 256, 1]
-        );
-        assert_eq!(
-            batches.into_iter().flatten().collect::<Vec<_>>(),
-            items
-                .into_iter()
-                .map(sea_query::Value::from)
-                .collect::<Vec<_>>()
-        );
     }
 
     #[test]

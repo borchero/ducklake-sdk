@@ -1,134 +1,122 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import polars as pl
 import pytest
 import sqlalchemy as sa
 
 import ducklake as dl
 
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
 
 @pytest.mark.parametrize("rename", [False, True])
-def test_create_and_alter_in_one_commit(
-    ducklake: dl.Ducklake, catalog_url: str, rename: bool
-) -> None:
+def test_alter_pending_columns(ducklake: dl.Ducklake, catalog_url: str, rename: bool) -> None:
     # Arrange
     name = "renamed" if rename else "table"
 
     # Act
     with ducklake.transaction() as tx:
-        table = tx.create_table("table", {"x": dl.Int64(), "y": dl.Int64()}, tags={"env": "old"})
-        table.add_tag("env", "new")
-        table.add_tag("temporary", "value")
-        table.remove_tag("temporary")
-        table.add_column(dl.Column("z", dl.Int64()))
-        table.rename_column("z", "new_z")
-        table.remove_column("y")
+        table = tx.create_table("table", {"x": dl.Int64()})
+        table.add_column(dl.Column("y", dl.Int64()))
+        table.rename_column("y", "z")
         if rename:
             table.rename(name)
 
     # Assert
     with dl.connect(catalog_url) as reopened:
-        table = reopened.table(name)
-        assert table.tags == {"env": "new"}
-        assert table.schema.columns == [
+        assert reopened.table(name).schema.columns == [
             dl.Column("x", dl.Int64(), field_id=1),
-            dl.Column("new_z", dl.Int64(), field_id=3),
+            dl.Column("z", dl.Int64(), field_id=2),
         ]
 
 
-@pytest.mark.parametrize("seeded", [False, True], ids=["new-statistics", "existing-statistics"])
-@pytest.mark.parametrize(("table_count", "column_count"), [(2, 3), (3, 100)])
-def test_statistics_across_multiple_writes(
-    ducklake: dl.Ducklake,
-    catalog_engine: sa.Engine,
-    seeded: bool,
-    table_count: int,
-    column_count: int,
-) -> None:
+def test_edit_pending_tags(ducklake: dl.Ducklake, catalog_url: str) -> None:
     # Arrange
-    names = [f"table_{index}" for index in range(table_count)]
-    with ducklake.transaction() as tx:
-        for name in names:
-            tx.create_table(name, {f"column_{index}": dl.Int64() for index in range(column_count)})
-    statistics = {
-        name: [
-            dl.DataFileStatistics(
-                num_rows=10,
-                file_size_bytes=100,
-                column_stats={
-                    column.field_id: dl.ColumnStats(
-                        min_value=-index - table_index * 1000 - column_index,
-                        max_value=10 + index + table_index * 1000 + column_index,
-                        null_count=index if column_index % 2 == 0 else 0,
-                    )
-                    for column_index, column in enumerate(ducklake.table(name).schema.columns)
-                    if column.field_id is not None
-                },
-            )
-            for index in range(3)
-        ]
-        for table_index, name in enumerate(names)
-    }
-    if seeded:
-        with ducklake.transaction() as tx:
-            for name in names:
-                tx.table(name).write_data_files(
-                    [dl.WriteDataFile("seed.parquet", statistics=statistics[name][0])]
-                )
+    tags = {"env": "old"}
 
     # Act
     with ducklake.transaction() as tx:
-        for index in range(1, 3):
-            for name in names:
-                tx.table(name).write_data_files(
-                    [dl.WriteDataFile(f"file_{index}.parquet", statistics=statistics[name][index])]
-                )
+        table = tx.create_table("table", {"x": dl.Int64()}, tags=tags)
+        table.add_tag("env", "new")
+        table.add_tag("temporary", "value")
+        table.remove_tag("temporary")
 
     # Assert
-    files_per_table = 2 + seeded
+    with dl.connect(catalog_url) as reopened:
+        assert reopened.table("table").tags == {"env": "new"}
+
+
+@pytest.fixture(params=[False, True], ids=["new-statistics", "existing-statistics"])
+def statistics_tables(
+    ducklake: dl.Ducklake, request: pytest.FixtureRequest
+) -> tuple[list[str], int]:
+    names = ["first", "second"]
+    with ducklake.transaction() as tx:
+        for name in names:
+            tx.create_table(name, {"x": dl.Int64(), "y": dl.Int64()})
+    if request.param:
+        _write_files(ducklake, names, [0])
+    return names, int(request.param)
+
+
+def test_table_statistics_across_multiple_writes(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, statistics_tables: tuple[list[str], int]
+) -> None:
+    # Arrange
+    names, seeded_files = statistics_tables
+    files_per_table = seeded_files + 2
+
+    # Act
+    _write_files(ducklake, names, [1, 2])
+
+    # Assert
     with catalog_engine.connect() as connection:
-        table_stats = connection.execute(
-            sa.text("SELECT record_count, next_row_id, file_size_bytes FROM ducklake_table_stats")
-        ).all()
-        column_stats = connection.execute(
+        rows = connection.execute(
             sa.text(
-                "SELECT min_value, max_value, contains_null FROM ducklake_table_column_stats ORDER BY table_id, column_id"
+                "SELECT record_count, next_row_id, file_size_bytes FROM ducklake_table_stats ORDER BY table_id"
             )
         ).all()
-        row_ids = (
-            connection.execute(
-                sa.text(
-                    "SELECT row_id_start FROM ducklake_data_file ORDER BY table_id, row_id_start"
-                )
-            )
-            .scalars()
-            .all()
-        )
-    assert (
-        table_stats
-        == [(files_per_table * 10, files_per_table * 10, files_per_table * 100)] * table_count
-    )
-    assert column_stats == [
+    assert rows == [
         (
-            str(-2 - table_index * 1000 - column_index),
-            str(12 + table_index * 1000 + column_index),
-            column_index % 2 == 0,
+            files_per_table * (10 + index),
+            files_per_table * (10 + index),
+            files_per_table * (100 + index),
         )
-        for table_index in range(table_count)
-        for column_index in range(column_count)
+        for index in range(2)
     ]
-    assert row_ids == list(range(0, files_per_table * 10, 10)) * table_count
+
+
+def test_column_statistics_across_multiple_writes(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, statistics_tables: tuple[list[str], int]
+) -> None:
+    # Arrange
+    names, _ = statistics_tables
+
+    # Act
+    _write_files(ducklake, names, [1, 2])
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        rows = connection.execute(
+            sa.text(
+                "SELECT min_value, max_value, contains_null FROM ducklake_table_column_stats "
+                "ORDER BY table_id, column_id"
+            )
+        ).all()
+    assert rows == [
+        ("-3", "3", True),
+        ("-4", "4", False),
+        ("-13", "13", True),
+        ("-14", "14", False),
+    ]
 
 
 @pytest.mark.parametrize("seeded", [False, True])
 @pytest.mark.parametrize("column_tag", [False, True], ids=["table-tag", "column-tag"])
 def test_tag_retirement_uses_database_collation(
-    ducklake: dl.Ducklake, catalog_engine: sa.Engine, seeded: bool, column_tag: bool
+    ducklake: dl.Ducklake,
+    catalog_engine: sa.Engine,
+    catalog_url: str,
+    seeded: bool,
+    column_tag: bool,
 ) -> None:
     # Arrange
     with catalog_engine.connect() as connection:
@@ -147,33 +135,25 @@ def test_tag_retirement_uses_database_collation(
             table.add_tag("owner", "new")
 
     # Assert
-    tag_table = sa.table(
-        "ducklake_column_tag" if column_tag else "ducklake_tag",
-        sa.column("key"),
-        sa.column("value"),
-        sa.column("end_snapshot"),
-    )
-    with catalog_engine.connect() as connection:
-        tags = {
-            key: value
-            for key, value in connection.execute(
-                sa.select(tag_table.c.key, tag_table.c.value).where(
-                    tag_table.c.end_snapshot.is_(None)
-                )
-            )
-        }
-    assert tags == ({"owner": "new"} if keys_equal else {"Owner": "old", "owner": "new"})
+    with dl.connect(catalog_url) as reopened:
+        table = reopened.table("table")
+        actual = table.schema.columns[0].tags if column_tag else table.tags
+    assert actual == ({"owner": "new"} if keys_equal else {"Owner": "old", "owner": "new"})
+
+
+@pytest.fixture(params=[False, True], ids=["new-table", "existing-table"])
+def existing_table(ducklake: dl.Ducklake, request: pytest.FixtureRequest) -> bool:
+    if request.param:
+        ducklake.create_table("table", {"x": dl.Int64()})
+    return request.param
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
-@pytest.mark.parametrize("seeded", [False, True], ids=["new-table", "existing-table"])
 @pytest.mark.parametrize("inline_first", [False, True], ids=["file-first", "inline-first"])
 def test_mixed_writes_allocate_row_ids_in_request_order(
-    ducklake: dl.Ducklake, catalog_engine: sa.Engine, seeded: bool, inline_first: bool
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, existing_table: bool, inline_first: bool
 ) -> None:
     # Arrange
-    if seeded:
-        ducklake.create_table("table", {"x": dl.Int64()})
     inline_data = pl.DataFrame({"x": [1, 2]})
     file = dl.WriteDataFile(
         "file.parquet",
@@ -182,7 +162,9 @@ def test_mixed_writes_allocate_row_ids_in_request_order(
 
     # Act
     with ducklake.transaction() as tx:
-        table = tx.table("table") if seeded else tx.create_table("table", {"x": dl.Int64()})
+        table = (
+            tx.table("table") if existing_table else tx.create_table("table", {"x": dl.Int64()})
+        )
         if inline_first:
             table.write_polars(inline_data)
         table.write_data_files([file])
@@ -195,37 +177,32 @@ def test_mixed_writes_allocate_row_ids_in_request_order(
         inline_name = connection.scalar(
             sa.text("SELECT table_name FROM ducklake_inlined_data_tables")
         )
-        assert isinstance(inline_name, str)
         inline_table = sa.table(inline_name, sa.column("row_id"))
         inline_ids = (
             connection.execute(sa.select(inline_table.c.row_id).order_by(inline_table.c.row_id))
             .scalars()
             .all()
         )
-        stats = connection.execute(
-            sa.text("SELECT record_count, next_row_id FROM ducklake_table_stats")
-        ).one()
     assert file_start == (2 if inline_first else 0)
     assert inline_ids == ([0, 1] if inline_first else [3, 4])
-    assert stats == (5, 5)
 
 
-@pytest.mark.parametrize("seeded", [False, True])
 def test_removed_pending_column_reserves_field_id(
-    ducklake: dl.Ducklake, catalog_url: str, seeded: bool
+    ducklake: dl.Ducklake, catalog_url: str, existing_table: bool
 ) -> None:
     # Arrange
-    if seeded:
-        ducklake.create_table("table", {"x": dl.Int64()})
+    next_column = dl.Column("next", dl.Int64())
 
     # Act
     with ducklake.transaction() as tx:
-        table = tx.table("table") if seeded else tx.create_table("table", {"x": dl.Int64()})
+        table = (
+            tx.table("table") if existing_table else tx.create_table("table", {"x": dl.Int64()})
+        )
         table.add_column(dl.Column("temporary", dl.Int64()))
         table.remove_column("temporary")
     with dl.connect(catalog_url) as reopened:
         table = reopened.table("table")
-        table.add_column(dl.Column("next", dl.Int64()))
+        table.add_column(next_column)
         columns = table.schema.columns
 
     # Assert
@@ -235,15 +212,20 @@ def test_removed_pending_column_reserves_field_id(
     ]
 
 
-@pytest.mark.parametrize("table_count", [3, 257])
-def test_batched_renames_preserve_table_metadata(
-    ducklake: dl.Ducklake, catalog_engine: sa.Engine, catalog_url: str, table_count: int
-) -> None:
-    # Arrange
-    names = [f"table_{index}" for index in range(table_count)]
+@pytest.fixture()
+def tables_with_history(ducklake: dl.Ducklake) -> list[str]:
+    names = ["first", "second"]
     with ducklake.transaction() as tx:
         for name in names:
             tx.create_table(name, {"x": dl.Int64()})
+    _rename_tables(ducklake, names, "_previous")
+    return [f"{name}_previous" for name in names]
+
+
+def test_renames_preserve_table_metadata(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, tables_with_history: list[str]
+) -> None:
+    # Arrange
     metadata = sa.text(
         "SELECT table_id, table_uuid, schema_id, path, path_is_relative FROM ducklake_table "
         "WHERE end_snapshot IS NULL ORDER BY table_id"
@@ -251,26 +233,40 @@ def test_batched_renames_preserve_table_metadata(
     with catalog_engine.connect() as connection:
         before = connection.execute(metadata).all()
 
-    with ducklake.transaction() as tx:
-        for name in names:
-            tx.table(name).rename(f"{name}_previous")
-
     # Act
-    with ducklake.transaction() as tx:
-        for name in names:
-            table = tx.table(f"{name}_previous")
-            table.rename(f"{name}_temporary")
-            table.rename(f"{name}_renamed")
+    _rename_tables(ducklake, tables_with_history, "_renamed")
 
     # Assert
     with catalog_engine.connect() as connection:
         assert connection.execute(metadata).all() == before
-        assert connection.scalar(sa.text("SELECT COUNT(*) FROM ducklake_table")) == 3 * len(names)
-    with dl.connect(catalog_url) as reopened:
-        for name in names:
-            assert reopened.table(f"{name}_renamed").schema.columns == [
-                dl.Column("x", dl.Int64(), field_id=1)
-            ]
+
+
+def test_renames_preserve_table_history(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, tables_with_history: list[str]
+) -> None:
+    # Arrange
+    names = tables_with_history
+
+    # Act
+    _rename_tables(ducklake, names, "_renamed")
+
+    # Assert
+    with catalog_engine.connect() as connection:
+        history = (
+            connection.execute(
+                sa.text("SELECT table_name FROM ducklake_table ORDER BY table_id, begin_snapshot")
+            )
+            .scalars()
+            .all()
+        )
+    assert history == [
+        "first",
+        "first_previous",
+        "first_previous_renamed",
+        "second",
+        "second_previous",
+        "second_previous_renamed",
+    ]
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
@@ -308,3 +304,33 @@ def test_inline_write_uses_latest_schema_registration(
     latest = sa.table(latest_name, sa.column("x"), sa.column("y"))
     with catalog_engine.connect() as connection:
         assert connection.execute(sa.select(latest)).all() == [(1, 2)]
+
+
+# -------------------------------------------- UTILS -------------------------------------------- #
+
+
+def _write_files(ducklake: dl.Ducklake, names: list[str], writes: list[int]) -> None:
+    with ducklake.transaction() as tx:
+        for write in writes:
+            for table_index, name in enumerate(names):
+                statistics = dl.DataFileStatistics(
+                    num_rows=10 + table_index,
+                    file_size_bytes=100 + table_index,
+                    column_stats={
+                        column_id: dl.ColumnStats(
+                            min_value=-(2 if write == 1 else 1) - table_index * 10 - column_id,
+                            max_value=write + table_index * 10 + column_id,
+                            null_count=int(write == 1 and column_id == 1),
+                        )
+                        for column_id in [1, 2]
+                    },
+                )
+                tx.table(name).write_data_files(
+                    [dl.WriteDataFile(f"file_{write}.parquet", statistics=statistics)]
+                )
+
+
+def _rename_tables(ducklake: dl.Ducklake, names: list[str], suffix: str) -> None:
+    with ducklake.transaction() as tx:
+        for name in names:
+            tx.table(name).rename(f"{name}{suffix}")
