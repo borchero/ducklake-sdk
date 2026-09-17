@@ -130,7 +130,6 @@ class Ducklake:
     def execute_sql(self, query: str | sa.ClauseElement) -> None:
         """Execute a SQL statement against the DuckLake through DuckDB.
 
-
         Supports statements such as `DELETE`, `INSERT`, `UPDATE`, and `CREATE TABLE`.
         Query results are discarded. Read-only and time-traveled connections reject writes.
 
