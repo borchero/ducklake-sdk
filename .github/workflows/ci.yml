@@ -274,4 +274,4 @@ jobs:
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
           mode: walltime
-          run: pixi run test-py-benchmark --catalog=postgres
+          run: pixi run test-py-benchmark --catalog=postgres -v

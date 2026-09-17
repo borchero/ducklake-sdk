@@ -32,7 +32,10 @@ fn ducklake_table_blocks(ast: &mut syn::DeriveInput) -> proc_macro2::TokenStream
 
     let column_snake_names: Vec<_> = fields.iter().map(|f| f.snake_name).collect();
     let column_camel_names: Vec<_> = fields.iter().map(|f| &f.camel_name).collect();
-    let num_columns = column_camel_names.len();
+    let column_names: Vec<_> = column_snake_names
+        .iter()
+        .map(|name| name.to_string().trim_start_matches("r#").to_owned())
+        .collect();
 
     quote! {
         #visibility mod #snake_name {
@@ -62,27 +65,11 @@ fn ducklake_table_blocks(ast: &mut syn::DeriveInput) -> proc_macro2::TokenStream
         }
 
         impl sea_query_ext::InsertableEntity for #camel_name {
-            const NUM_COLUMNS: usize = #num_columns;
+            const TABLE: &'static str = #snake_name_str;
+            const COLUMNS: &'static [&'static str] = &[#(#column_names,)*];
 
-            fn insert_into_table(&self) -> sea_query::InsertStatement {
-                sea_query::Query::insert()
-                    .into_table(#snake_name::Table)
-                    .columns([#(#snake_name::Column::#column_camel_names,)*])
-                    .values_panic([#(self.#column_snake_names.clone().into(),)*])
-                    .to_owned()
-            }
-
-            fn insert_all_into_table(
-                entities: impl IntoIterator<Item = Self>,
-            ) -> sea_query::InsertStatement {
-                let mut query = sea_query::Query::insert();
-                query
-                    .into_table(#snake_name::Table)
-                    .columns([#(#snake_name::Column::#column_camel_names,)*]);
-                for entity in entities {
-                    query.values_panic([#(entity.#column_snake_names.clone().into(),)*]);
-                }
-                query.to_owned()
+            fn into_values(self) -> Vec<sea_query::Value> {
+                vec![#(self.#column_snake_names.into(),)*]
             }
         }
     }

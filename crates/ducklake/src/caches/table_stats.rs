@@ -75,7 +75,7 @@ pub(crate) struct TableStats {
     is_persisted: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ColumnStats {
     contains_null: Option<bool>,
     contains_nan: Option<bool>,
@@ -295,10 +295,6 @@ impl TableStats {
         };
     }
 
-    pub(crate) fn set_persisted(&mut self) {
-        self.is_persisted = true;
-    }
-
     pub(crate) fn column_stats_mut(&mut self, column_id: i64) -> &mut ColumnStats {
         self.column_stats.entry(column_id).or_default()
     }
@@ -337,9 +333,5 @@ impl ColumnStats {
                 .map(|ord| if ord.is_lt() { new.clone() } else { old }),
             (old, new) => old.or(new.cloned()),
         };
-    }
-
-    pub(crate) fn set_persisted(&mut self) {
-        self.is_persisted = true;
     }
 }
