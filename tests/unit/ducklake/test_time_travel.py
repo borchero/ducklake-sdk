@@ -24,33 +24,28 @@ def test_time_travel_by_snapshot_id(shared_ducklake: dl.Ducklake, random_table_n
     assert_frame_equal(lf, time_traveled_table.scan_polars())
 
 
-def test_time_travel_remains_functional_after_shared_cache_eviction(
-    catalog_url: str, storage_path: str, random_table_name: str
+def test_time_travel_remains_functional_after_advancing_head(
+    ducklake: dl.Ducklake, random_table_name: str
 ) -> None:
     # Arrange
-    with dl.create(
-        catalog_url,
-        data_path=storage_path,
-        snapshot_cache_capacity=1,
-    ) as ducklake:
-        table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
-        table.sink_polars(pl.LazyFrame({"x": [1]}))
-        historical_id = ducklake.get_latest_snapshot().id
-        historical = ducklake.at(historical_id)
+    table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    table.sink_polars(pl.LazyFrame({"x": [1]}))
+    historical_id = ducklake.get_latest_snapshot().id
+    historical = ducklake.at(historical_id)
 
-        # Act
-        table.sink_polars(pl.LazyFrame({"x": [2]}))
-        current_id = ducklake.get_latest_snapshot().id
-        historical_rows = historical.table(random_table_name).read_polars()["x"].to_list()
-        del historical
-        reloaded_rows = (
-            ducklake.at(historical_id).table(random_table_name).read_polars()["x"].to_list()
-        )
+    # Act
+    table.sink_polars(pl.LazyFrame({"x": [2]}))
+    current_id = ducklake.get_latest_snapshot().id
+    historical_rows = historical.table(random_table_name).read_polars()["x"].to_list()
+    del historical
+    reloaded_rows = (
+        ducklake.at(historical_id).table(random_table_name).read_polars()["x"].to_list()
+    )
 
-        # Assert
-        assert current_id > historical_id
-        assert historical_rows == [1]
-        assert reloaded_rows == [1]
+    # Assert
+    assert current_id > historical_id
+    assert historical_rows == [1]
+    assert reloaded_rows == [1]
 
 
 @pytest.mark.skip_config(
@@ -149,7 +144,7 @@ def test_time_travel_connect_at(
         table.sink_polars(pl.LazyFrame({"x": [4, 5, 6]}))
 
     # Act
-    with dl.connect(catalog_url, at=snapshot_id, snapshot_cache_capacity=1) as ducklake:
+    with dl.connect(catalog_url, at=snapshot_id) as ducklake:
         traveled_table = ducklake.table(random_table_name)
 
         # Assert

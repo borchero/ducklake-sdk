@@ -20,7 +20,6 @@ def create(
     data_path: str,
     storage_options: dict[str, str] | None = None,
     time_zone: str = "UTC",
-    snapshot_cache_capacity: int = 1,
 ) -> Ducklake:
     """Create a new DuckLake by initializing a new catalog database.
 
@@ -38,8 +37,6 @@ def create(
             environment variables.
         time_zone: IANA time zone used to represent timezone-aware timestamps when reading data.
             This setting is local to this connection.
-        snapshot_cache_capacity: Maximum number of snapshots retained by the shared in-memory
-            cache. The current snapshot is always retained. Defaults to 1.
 
     Returns:
         A `Ducklake` instance that can be used to interact with the DuckLake.
@@ -48,7 +45,6 @@ def create(
         AlreadyInitializedError: If the catalog database is already initialized. In this case, call
             :meth:`connect` instead.
     """
-    _validate_snapshot_cache_capacity(snapshot_cache_capacity)
     connection_args = _sanitize_url(catalog_url)
     storage_option_set = StorageOptionSet(storage_options)
     pyducklake = native.create(
@@ -56,7 +52,6 @@ def create(
         data_path,
         list(storage_option_set.to_dict().items()),
         time_zone,
-        snapshot_cache_capacity,
     )
     return Ducklake._from_pyducklake(pyducklake, connection_args, storage_option_set)
 
@@ -69,7 +64,6 @@ def connect(
     migrate: bool = False,
     storage_options: dict[str, str] | None = None,
     time_zone: str = "UTC",
-    snapshot_cache_capacity: int = 1,
 ) -> Ducklake:
     """Connect to an existing DuckLake by connecting to its catalog database.
 
@@ -93,8 +87,6 @@ def connect(
             environment variables.
         time_zone: IANA time zone used to represent timezone-aware timestamps when reading data.
             This setting is local to this connection.
-        snapshot_cache_capacity: Maximum number of snapshots retained by the shared in-memory
-            cache. The current snapshot is always retained. Defaults to 1.
 
     Returns:
         A `Ducklake` instance that can be used to interact with the DuckLake.
@@ -103,7 +95,6 @@ def connect(
         NotInitializedError: If the catalog database is not yet initialized. In this case, call
             :meth:`create` first.
     """
-    _validate_snapshot_cache_capacity(snapshot_cache_capacity)
     connection_args = _sanitize_url(catalog_url)
     storage_option_set = StorageOptionSet(storage_options)
     pyducklake = native.connect(
@@ -114,17 +105,11 @@ def connect(
         readonly=readonly,
         storage_options=list(storage_option_set.to_dict().items()),
         time_zone=time_zone,
-        snapshot_cache_capacity=snapshot_cache_capacity,
     )
     return Ducklake._from_pyducklake(pyducklake, connection_args, storage_option_set)
 
 
 # ------------------------------------------- PARSING ------------------------------------------- #
-
-
-def _validate_snapshot_cache_capacity(capacity: int) -> None:
-    if capacity <= 0:
-        raise ValueError("snapshot_cache_capacity must be greater than zero")
 
 
 def _sanitize_url(url: str | sa.URL) -> ConnectionArgs:

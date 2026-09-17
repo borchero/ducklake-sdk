@@ -108,10 +108,6 @@ impl Ducklake {
 
             snapshot_id_lookup_table.drop(&mut tx).await?;
             tx.commit().await?;
-
-            // Once we've done that, we clean up our local caches to prevent accessing
-            // expired snapshots
-            self.conn.snapshot_cache().remove_snapshots(&snapshot_ids);
         } else {
             // If we performed a dry-run, we simply rollback the transaction
             tx.rollback().await?;

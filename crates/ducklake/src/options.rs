@@ -6,7 +6,6 @@ pub struct CreateOptions {
     pub(crate) data_path: String,
     pub(crate) storage_options: Vec<(String, String)>,
     pub(crate) time_zone: chrono_tz::Tz,
-    pub(crate) snapshot_cache_capacity: usize,
 }
 
 impl CreateOptions {
@@ -17,7 +16,6 @@ impl CreateOptions {
             data_path: data_path.to_string(),
             storage_options: Vec::new(),
             time_zone: chrono_tz::UTC,
-            snapshot_cache_capacity: 1,
         }
     }
 
@@ -49,22 +47,6 @@ impl CreateOptions {
         self.storage_options.extend(options);
         self
     }
-
-    /// Set the maximum number of snapshots retained strongly by the shared cache.
-    ///
-    /// The current snapshot is always retained. Historical snapshots that are actively used by a
-    /// time-travel connection remain valid independently of this limit.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`crate::DucklakeError::InvalidCacheCapacity`] if `capacity` is zero.
-    pub fn with_snapshot_cache_capacity(mut self, capacity: usize) -> crate::DucklakeResult<Self> {
-        if capacity == 0 {
-            return Err(crate::DucklakeError::InvalidCacheCapacity(capacity));
-        }
-        self.snapshot_cache_capacity = capacity;
-        Ok(self)
-    }
 }
 
 /* ------------------------------------------ CONNECT ------------------------------------------ */
@@ -83,7 +65,6 @@ pub struct ConnectOptions {
     pub(crate) storage_options: Vec<(String, String)>,
     pub(crate) connection_type: ConnectionType,
     pub(crate) time_zone: chrono_tz::Tz,
-    pub(crate) snapshot_cache_capacity: usize,
 }
 
 impl ConnectOptions {
@@ -96,7 +77,6 @@ impl ConnectOptions {
             storage_options: Vec::new(),
             connection_type: ConnectionType::Latest,
             time_zone: chrono_tz::UTC,
-            snapshot_cache_capacity: 1,
         }
     }
 
@@ -142,22 +122,6 @@ impl ConnectOptions {
         self
     }
 
-    /// Set the maximum number of snapshots retained strongly by the shared cache.
-    ///
-    /// The current snapshot is always retained. Historical snapshots that are actively used by a
-    /// time-travel connection remain valid independently of this limit.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`crate::DucklakeError::InvalidCacheCapacity`] if `capacity` is zero.
-    pub fn with_snapshot_cache_capacity(mut self, capacity: usize) -> crate::DucklakeResult<Self> {
-        if capacity == 0 {
-            return Err(crate::DucklakeError::InvalidCacheCapacity(capacity));
-        }
-        self.snapshot_cache_capacity = capacity;
-        Ok(self)
-    }
-
     /// Connect to the latest state of the catalog (default).
     pub fn with_latest_snapshot(mut self) -> Self {
         self.connection_type = ConnectionType::Latest;
@@ -174,45 +138,5 @@ impl ConnectOptions {
     pub fn with_snapshot_timestamp(mut self, timestamp: chrono::DateTime<chrono::Utc>) -> Self {
         self.connection_type = ConnectionType::SnapshotTimestamp(timestamp);
         self
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{ConnectOptions, CreateOptions};
-    use crate::DucklakeError;
-
-    #[test]
-    fn snapshot_cache_capacity_defaults_to_one() {
-        assert_eq!(CreateOptions::new("url", "path").snapshot_cache_capacity, 1);
-        assert_eq!(ConnectOptions::new("url").snapshot_cache_capacity, 1);
-    }
-
-    #[test]
-    fn snapshot_cache_capacity_is_configurable() {
-        let create = CreateOptions::new("url", "path")
-            .with_snapshot_cache_capacity(3)
-            .unwrap();
-        let connect = ConnectOptions::new("url")
-            .with_snapshot_cache_capacity(3)
-            .unwrap();
-
-        assert_eq!(create.snapshot_cache_capacity, 3);
-        assert_eq!(connect.snapshot_cache_capacity, 3);
-    }
-
-    #[test]
-    fn zero_snapshot_cache_capacity_is_rejected() {
-        let create = CreateOptions::new("url", "path").with_snapshot_cache_capacity(0);
-        let connect = ConnectOptions::new("url").with_snapshot_cache_capacity(0);
-
-        assert!(matches!(
-            create,
-            Err(DucklakeError::InvalidCacheCapacity(0))
-        ));
-        assert!(matches!(
-            connect,
-            Err(DucklakeError::InvalidCacheCapacity(0))
-        ));
     }
 }

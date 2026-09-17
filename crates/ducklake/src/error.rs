@@ -31,8 +31,6 @@ pub enum DucklakeError {
     InvalidPartitions(String),
     #[error("invalid time zone '{0}'")]
     InvalidTimeZone(String),
-    #[error("snapshot cache capacity must be greater than zero (received {0})")]
-    InvalidCacheCapacity(usize),
     #[error("invalid partition transform: {0}")]
     InvalidPartitionTransform(String),
     #[error("invalid schema name '{name}': {reason}")]
