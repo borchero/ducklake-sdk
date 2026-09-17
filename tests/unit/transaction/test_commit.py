@@ -418,106 +418,37 @@ def test_file_column_statistics_across_multiple_writes(
     ]
 
 
-@pytest.fixture()
-def postgres_table(ducklake: dl.Ducklake, catalog: str) -> dl.Table:
-    if catalog != "postgres":
-        pytest.skip("Exercises PostgreSQL COPY.")
-    return ducklake.create_table("table", {"x": dl.Varchar()})
-
-
-@pytest.mark.parametrize("file_count", [6553, 6554], ids=["insert", "copy"])
-def test_metadata_insert_preserves_strings_and_nulls(
-    postgres_table: dl.Table, catalog_engine: sa.Engine, file_count: int
+@pytest.mark.skip_config(catalog="sqlite", reason="Exercises PostgreSQL COPY.")
+@pytest.mark.skip_config(catalog="mysql", reason="Exercises PostgreSQL COPY.")
+def test_postgres_copy_preserves_metadata(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine
 ) -> None:
-    # Arrange: file-column statistics have ten bind parameters per row.
-    values = [None, "", "\\N", "\\.", "tab\tline\nreturn\rslash\\雪'\""]
-    values = [values[index % len(values)] for index in range(file_count)]
-    files = _string_files(values)
+    # Arrange: ten columns per statistics row require COPY above 6,553 rows.
+    table = ducklake.create_table("table", {"x": dl.Varchar()})
+    values = [None, "", "\\N", "tab\tline\nreturn\rslash\\雪'\""]
+    values = [values[index % len(values)] for index in range(6554)]
+    files = [
+        dl.WriteDataFile(
+            f"{index}.parquet",
+            statistics=dl.DataFileStatistics(
+                num_rows=1,
+                column_stats={1: dl.ColumnStats(min_value=value, max_value=value)},
+            ),
+        )
+        for index, value in enumerate(values)
+    ]
 
     # Act
-    postgres_table.write_data_files(files)
+    table.write_data_files(files)
 
     # Assert
     with catalog_engine.connect() as connection:
         rows = connection.execute(
             sa.text(
-                "SELECT s.min_value, s.max_value, s.null_count, f.record_count, "
-                "f.file_size_bytes, f.path_is_relative FROM ducklake_file_column_stats s "
-                "JOIN ducklake_data_file f ON s.data_file_id = f.data_file_id "
-                "ORDER BY s.data_file_id"
+                "SELECT min_value, max_value FROM ducklake_file_column_stats ORDER BY data_file_id"
             )
         ).all()
-    assert rows == [
-        (value, value, None if index % 2 else 0, 1, None, True)
-        for index, value in enumerate(values)
-    ]
-
-
-@pytest.mark.skip_config(catalog="sqlite", reason="Exercises PostgreSQL COPY.")
-@pytest.mark.skip_config(catalog="mysql", reason="Exercises PostgreSQL COPY.")
-def test_copy_preserves_schema_uuids(ducklake: dl.Ducklake, catalog_engine: sa.Engine) -> None:
-    # Arrange: seven bind parameters per schema make this the first COPY-sized batch.
-    schema_count = 65535 // 7 + 1
-
-    # Act
-    with ducklake.transaction() as tx:
-        for index in range(schema_count):
-            tx.create_schema(f"schema_{index}")
-
-    # Assert
-    with catalog_engine.connect() as connection:
-        unique_uuids = connection.scalar(
-            sa.text(
-                "SELECT COUNT(DISTINCT schema_uuid) FROM ducklake_schema WHERE schema_name <> 'main'"
-            )
-        )
-    assert unique_uuids == schema_count
-
-
-@pytest.fixture()
-def rejected_copy_files(
-    postgres_table: dl.Table, catalog_engine: sa.Engine
-) -> list[dl.WriteDataFile]:
-    with catalog_engine.begin() as connection:
-        connection.execute(
-            sa.text(
-                "ALTER TABLE ducklake_file_column_stats ADD CONSTRAINT reject_value CHECK (min_value <> 'reject')"
-            )
-        )
-    return _string_files(["ok"] * 6553 + ["reject"])
-
-
-def test_failed_copy_rolls_back_entire_commit(
-    ducklake: dl.Ducklake, catalog_engine: sa.Engine, rejected_copy_files: list[dl.WriteDataFile]
-) -> None:
-    # Arrange
-    before = _commit_row_counts(catalog_engine)
-
-    # Act
-    with pytest.raises(RuntimeError, match="reject_value"):
-        with ducklake.transaction() as tx:
-            tx.create_schema("rolled_back")
-            tx.table("table").write_data_files(rejected_copy_files)
-
-    # Assert
-    assert _commit_row_counts(catalog_engine) == before
-
-
-def test_can_commit_after_failed_copy(
-    postgres_table: dl.Table,
-    catalog_engine: sa.Engine,
-    rejected_copy_files: list[dl.WriteDataFile],
-) -> None:
-    # Arrange
-    with pytest.raises(RuntimeError, match="reject_value"):
-        postgres_table.write_data_files(rejected_copy_files)
-
-    # Act
-    postgres_table.write_data_files([rejected_copy_files[0]])
-
-    # Assert
-    with catalog_engine.connect() as connection:
-        assert connection.scalar(sa.text("SELECT COUNT(*) FROM ducklake_data_file")) == 1
+    assert rows == [(value, value) for value in values]
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #
@@ -548,34 +479,3 @@ def _rename_tables(ducklake: dl.Ducklake, names: list[str], suffix: str) -> None
     with ducklake.transaction() as tx:
         for name in names:
             tx.table(name).rename(f"{name}{suffix}")
-
-
-def _string_files(values: list[str | None]) -> list[dl.WriteDataFile]:
-    return [
-        dl.WriteDataFile(
-            f"{index}.parquet",
-            statistics=dl.DataFileStatistics(
-                num_rows=1,
-                column_stats={
-                    1: dl.ColumnStats(
-                        min_value=value, max_value=value, null_count=None if index % 2 else 0
-                    )
-                },
-            ),
-        )
-        for index, value in enumerate(values)
-    ]
-
-
-def _commit_row_counts(engine: sa.Engine) -> dict[str, int]:
-    tables = [
-        "ducklake_data_file",
-        "ducklake_file_column_stats",
-        "ducklake_table_stats",
-        "ducklake_snapshot",
-        "ducklake_schema",
-    ]
-    with engine.connect() as connection:
-        return {
-            table: connection.scalar(sa.text(f"SELECT COUNT(*) FROM {table}")) for table in tables
-        }

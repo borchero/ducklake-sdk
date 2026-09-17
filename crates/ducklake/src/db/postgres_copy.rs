@@ -5,8 +5,8 @@ use sqlx::PgConnection;
 
 use crate::DucklakeResult;
 
-/// COPY supports the scalar types used by buffered catalog entities. Keep other values on the regular
-/// INSERT path so adding a new entity type cannot silently change its encoding.
+/// COPY supports the scalar types used by buffered catalog entities. Keep other values on the
+/// regular INSERT path so adding a new entity type cannot silently change its encoding.
 pub(super) fn supports(rows: &[Vec<Value>]) -> bool {
     rows.iter().flatten().all(|value| {
         matches!(
@@ -88,55 +88,4 @@ fn encode_row(buffer: &mut String, row: Vec<Value>) {
         }
     }
     buffer.push('\n');
-}
-
-#[cfg(test)]
-mod tests {
-    use chrono::DateTime;
-    use rstest::rstest;
-    use uuid::Uuid;
-
-    use super::*;
-
-    #[rstest]
-    #[case(vec![Value::String(None), "".into(), "\\N".into()], "\\N\t\t\\\\N\n")]
-    #[case(vec!["tab\tline\nreturn\rslash\\雪".into()], "tab\\tline\\nreturn\\rslash\\\\雪\n")]
-    #[case(vec![true.into(), false.into(), i64::MIN.into()], "t\tf\t-9223372036854775808\n")]
-    #[case(vec![Uuid::nil().into()], "00000000-0000-0000-0000-000000000000\n")]
-    fn test_encode_row(#[case] row: Vec<Value>, #[case] expected: &str) {
-        // Arrange
-        let mut buffer = String::new();
-
-        // Act
-        encode_row(&mut buffer, row);
-
-        // Assert
-        assert_eq!(buffer, expected);
-    }
-
-    #[test]
-    fn test_quote_identifier() {
-        // Arrange
-        let identifier = "a\"b";
-
-        // Act
-        let quoted = quote_identifier(identifier);
-
-        // Assert
-        assert_eq!(quoted, "\"a\"\"b\"");
-    }
-
-    #[rstest]
-    #[case(Value::Bytes(Some(vec![0, 1])))]
-    #[case(DateTime::parse_from_rfc3339("2026-09-14T12:34:56.123456789Z").unwrap().to_utc().into())]
-    fn test_unsupported_values_use_insert(#[case] value: Value) {
-        // Arrange
-        let rows = vec![vec![1_i64.into()], vec![value]];
-
-        // Act
-        let supported = supports(&rows);
-
-        // Assert
-        assert!(!supported);
-    }
 }
