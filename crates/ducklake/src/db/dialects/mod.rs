@@ -64,6 +64,17 @@ impl Dialect {
             Dialect::Sqlite => 32766,
         }
     }
+
+    /// Maximum rows per key-matching batch, before checking the statement's actual bind count.
+    pub(in crate::db) fn max_rows_per_key_batch(&self, key_columns: usize) -> usize {
+        assert!(key_columns > 0, "row matching requires at least one key");
+        #[cfg(feature = "sqlite")]
+        if key_columns > 1 && matches!(self, Dialect::Sqlite) {
+            // Compound keys generate OR chains; leave room below SQLite's expression limit.
+            return 256;
+        }
+        self.max_bind_params()
+    }
 }
 
 /* ---------------------------------- DUCKDB TYPE EQUIVALENCE ---------------------------------- */
