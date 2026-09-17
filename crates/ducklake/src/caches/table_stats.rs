@@ -1,15 +1,14 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::Arc;
 
 use sea_query::{Asterisk, Expr, ExprTrait, JoinType, Query, SelectStatement, all};
 
 use crate::catalog::Catalog;
-use crate::primitives::AsyncLazy;
+use crate::primitives::{AsyncLazy, WeakCache};
 use crate::spec::*;
 use crate::{DucklakeResult, db};
 
 type TableStatsMap = HashMap<i64, TableStats>;
-type TableStatsVersion = (i64, i64);
 pub(super) type LazyTableStats = AsyncLazy<Arc<TableStatsMap>, Arc<Catalog>>;
 
 /* --------------------------------------------------------------------------------------------- */
@@ -19,14 +18,14 @@ pub(super) type LazyTableStats = AsyncLazy<Arc<TableStatsMap>, Arc<Catalog>>;
 #[derive(Clone)]
 pub(super) struct TableStatsCache {
     pool: db::Pool,
-    table_stats: Arc<RwLock<HashMap<TableStatsVersion, Weak<LazyTableStats>>>>,
+    table_stats: Arc<WeakCache<(i64, i64), LazyTableStats>>,
 }
 
 impl TableStatsCache {
     pub(super) fn new(pool: db::Pool) -> Self {
         Self {
             pool,
-            table_stats: Arc::new(RwLock::new(HashMap::new())),
+            table_stats: Arc::new(WeakCache::new()),
         }
     }
 
@@ -38,22 +37,17 @@ impl TableStatsCache {
     ) -> Arc<LazyTableStats> {
         // Loading statistics filters tables and columns through the snapshot's schema.
         let key = (schema_version, next_file_id);
-        let mut table_stats = self.table_stats.write().unwrap();
-        if let Some(stats) = table_stats.get(&key).and_then(Weak::upgrade) {
-            return stats;
-        }
-        table_stats.retain(|_, stats| stats.strong_count() > 0);
-        let pool = self.pool.clone();
-        let stats = Arc::new(AsyncLazy::new(move |catalog: Arc<Catalog>| {
-            let pool = pool.clone();
-            async move {
-                SnapshotTableStats::load(&pool, &catalog, snapshot_id)
-                    .await
-                    .map(|stats| stats.0)
-            }
-        }));
-        table_stats.insert(key, Arc::downgrade(&stats));
-        stats
+        self.table_stats.get_or_insert_with(key, || {
+            let pool = self.pool.clone();
+            AsyncLazy::new(move |catalog: Arc<Catalog>| {
+                let pool = pool.clone();
+                async move {
+                    SnapshotTableStats::load(&pool, &catalog, snapshot_id)
+                        .await
+                        .map(|stats| stats.0)
+                }
+            })
+        })
     }
 }
 
