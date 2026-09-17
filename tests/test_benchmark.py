@@ -67,4 +67,4 @@ def test_commit(
         return (tx,), {}
 
     # Act
-    benchmark.pedantic(dl.Transaction.commit, setup=setup, rounds=10)
+    benchmark.pedantic(dl.Transaction.commit, setup=setup)
