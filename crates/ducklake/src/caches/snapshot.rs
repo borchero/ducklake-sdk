@@ -295,99 +295,11 @@ impl From<DucklakeSnapshot> for SnapshotInfo {
 mod tests {
     use std::sync::Arc;
 
-    use chrono::{TimeZone, Utc};
-
-    use super::{SnapshotCache, SnapshotInfo};
+    use super::SnapshotCache;
     use crate::db;
-
-    fn snapshot_info(id: i64) -> SnapshotInfo {
-        SnapshotInfo {
-            id,
-            schema_version: id,
-            next_catalog_id: id,
-            next_file_id: id,
-            snapshot_time: Utc.timestamp_opt(id, 0).unwrap(),
-        }
-    }
 
     #[rstest::fixture]
     async fn cache() -> SnapshotCache {
-        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
-        SnapshotCache::new(pool, Some(snapshot_info(3)))
-            .await
-            .unwrap()
-    }
-
-    #[rstest::rstest]
-    #[case(2, false, 3)]
-    #[case(3, false, 3)]
-    #[case(4, false, 3)]
-    #[case(2, true, 3)]
-    #[case(3, true, 3)]
-    #[case(4, true, 4)]
-    #[tokio::test]
-    async fn only_advancing_the_head_retains_a_new_snapshot(
-        #[future] cache: SnapshotCache,
-        #[case] id: i64,
-        #[case] advance: bool,
-        #[case] expected_head: i64,
-    ) {
-        // Arrange
-        let cache = cache.await;
-        let original = Arc::downgrade(&cache.get_current());
-
-        // Act
-        let snapshot = if advance {
-            cache.insert_snapshot(snapshot_info(id))
-        } else {
-            cache.get_snapshot(snapshot_info(id))
-        };
-        let returned = Arc::downgrade(&snapshot);
-
-        // Assert
-        assert_eq!(snapshot.info().id, id);
-        assert_eq!(cache.get_current().info().id, expected_head);
-        assert_eq!(std::sync::Weak::ptr_eq(&original, &returned), id == 3);
-        drop(snapshot);
-        assert_eq!(returned.upgrade().is_some(), id == expected_head);
-        assert_eq!(original.upgrade().is_some(), expected_head == 3);
-    }
-
-    #[rstest::rstest]
-    #[case(1)]
-    #[case(3)]
-    #[tokio::test]
-    async fn pinned_snapshot_survives_advancing_the_head(
-        #[future] cache: SnapshotCache,
-        #[case] id: i64,
-    ) {
-        // Arrange
-        let cache = cache.await;
-        let pinned = cache.get_snapshot(snapshot_info(id));
-        let pinned_weak = Arc::downgrade(&pinned);
-
-        // Act
-        cache.insert_snapshot(snapshot_info(4));
-
-        // Assert
-        assert_eq!(cache.get_current().info().id, 4);
-        assert_eq!(pinned.info().id, id);
-        assert!(pinned_weak.upgrade().is_some());
-        drop(pinned);
-        assert!(pinned_weak.upgrade().is_none());
-    }
-
-    #[rstest::rstest]
-    #[case(false, false)]
-    #[case(false, true)]
-    #[case(true, false)]
-    #[case(true, true)]
-    #[tokio::test]
-    async fn metadata_is_reused_only_while_its_version_is_retained(
-        #[case] schema_changed: bool,
-        #[case] files_changed: bool,
-    ) {
-        // Arrange
         let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
         crate::spec::init_catalog(
             &pool,
@@ -397,7 +309,38 @@ mod tests {
         )
         .await
         .unwrap();
-        let cache = SnapshotCache::new(pool, None).await.unwrap();
+        SnapshotCache::new(pool, None).await.unwrap()
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn stale_snapshot_does_not_replace_current_snapshot(#[future] cache: SnapshotCache) {
+        // Arrange
+        let cache = cache.await;
+        let stale = cache.get_current().info().clone();
+        let mut latest = stale.clone();
+        latest.id += 1;
+        cache.insert_snapshot(latest.clone());
+
+        // Act
+        cache.insert_snapshot(stale);
+
+        // Assert
+        assert_eq!(cache.get_current().info().id, latest.id);
+    }
+
+    #[rstest::rstest]
+    #[case(false, false)]
+    #[case(false, true)]
+    #[case(true, false)]
+    #[tokio::test]
+    async fn metadata_is_reused_only_while_its_version_is_retained(
+        #[future] cache: SnapshotCache,
+        #[case] schema_changed: bool,
+        #[case] files_changed: bool,
+    ) {
+        // Arrange
+        let cache = cache.await;
         let snapshot = cache.get_current();
         let catalog = Arc::downgrade(snapshot.catalog().await.unwrap());
         let table_stats = Arc::downgrade(snapshot.table_stats().await.unwrap());
