@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import tempfile
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -108,7 +109,11 @@ def scan_ducklake(
                 else None
                 for file in scan_result.data_files
             ],
-            dtype=target_schema[col.name],
+            dtype=(
+                pl.String
+                if isinstance(target_schema[col.name], pl.Enum)
+                else target_schema[col.name]
+            ),
         )
         for col in schema.columns
         if col.field_id is not None
@@ -121,11 +126,20 @@ def scan_ducklake(
                 else None
                 for file in scan_result.data_files
             ],
-            dtype=target_schema[col.name],
+            dtype=(
+                pl.String
+                if isinstance(target_schema[col.name], pl.Enum)
+                else target_schema[col.name]
+            ),
         )
         for col in schema.columns
         if col.field_id is not None
     }
+    for name, dtype in target_schema.items():
+        if isinstance(dtype, pl.Enum) and f"{name}_min" in stat_min:
+            stat_min[f"{name}_min"], stat_max[f"{name}_max"] = _enum_statistics(
+                stat_min[f"{name}_min"], stat_max[f"{name}_max"], dtype
+            )
     stat_null_count = {
         f"{col.name}_nc": pl.Series(
             [
@@ -249,6 +263,39 @@ def read_view(view: View) -> pl.DataFrame:
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #
+
+
+def _enum_statistics(
+    minimum: pl.Series, maximum: pl.Series, dtype: pl.Enum
+) -> tuple[pl.Series, pl.Series]:
+    # DuckLake/Parquet bounds use lexical string order, whereas Polars enums use category
+    # order. Every category in the lexical interval may occur in the file, including ones
+    # whose enum codes fall outside the codes of the two endpoints. Keep the persisted
+    # statistics lexical for other readers; only convert the bounds passed to Polars.
+    # Polars can still reject equality with a nonmember string when evaluating its ordered
+    # skip predicate, as it does for ordinary Enum statistics.
+    categories = dtype.categories.to_list()
+    enum_order = {category: index for index, category in enumerate(categories)}
+    lexical_categories = sorted(categories)
+
+    def bounds(lower: str | None, upper: str | None) -> tuple[str | None, str | None]:
+        if lower is None or upper is None:
+            return None, None
+        start = bisect_left(lexical_categories, lower)
+        stop = bisect_right(lexical_categories, upper)
+        candidates = lexical_categories[start:stop]
+        if not candidates:
+            return None, None
+        return (
+            min(candidates, key=enum_order.__getitem__),
+            max(candidates, key=enum_order.__getitem__),
+        )
+
+    converted = [bounds(lower, upper) for lower, upper in zip(minimum, maximum, strict=True)]
+    return (
+        pl.Series(minimum.name, [lower for lower, _ in converted], dtype=dtype),
+        pl.Series(maximum.name, [upper for _, upper in converted], dtype=dtype),
+    )
 
 
 def _convert_datetime_time_zone(
