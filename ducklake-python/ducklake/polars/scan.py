@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import tempfile
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -16,7 +17,7 @@ from ducklake.table import Table
 from ducklake.view import View
 
 if TYPE_CHECKING:
-    from ducklake.typedefs import Column, Schema
+    from ducklake.typedefs import Column, ScanDataFile, Schema
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
@@ -100,46 +101,17 @@ def scan_ducklake(
     stat_len = pl.Series(
         [file.statistics.num_rows for file in scan_result.data_files], dtype=pl.get_index_type()
     )
-    stat_min = {
-        f"{col.name}_min": pl.Series(
-            [
-                col_stats.min_value
-                if (col_stats := file.statistics.column_stats.get(col.field_id)) is not None
-                else None
-                for file in scan_result.data_files
-            ],
-            dtype=target_schema[col.name],
+    statistics = {"len": stat_len}
+    for column in schema.columns:
+        if column.field_id is None:
+            continue
+        minimum, maximum, null_count = _column_statistics(
+            column, target_schema[column.name], scan_result.data_files
         )
-        for col in schema.columns
-        if col.field_id is not None
-    }
-    stat_max = {
-        f"{col.name}_max": pl.Series(
-            [
-                col_stats.max_value
-                if (col_stats := file.statistics.column_stats.get(col.field_id)) is not None
-                else None
-                for file in scan_result.data_files
-            ],
-            dtype=target_schema[col.name],
-        )
-        for col in schema.columns
-        if col.field_id is not None
-    }
-    stat_null_count = {
-        f"{col.name}_nc": pl.Series(
-            [
-                col_stats.null_count
-                if (col_stats := file.statistics.column_stats.get(col.field_id)) is not None
-                else None
-                for file in scan_result.data_files
-            ],
-            dtype=pl.get_index_type(),
-        )
-        for col in schema.columns
-        if col.field_id is not None
-    }
-    table_statistics = pl.DataFrame({"len": stat_len, **stat_min, **stat_max, **stat_null_count})
+        statistics[f"{column.name}_min"] = minimum
+        statistics[f"{column.name}_max"] = maximum
+        statistics[f"{column.name}_nc"] = null_count
+    table_statistics = pl.DataFrame(statistics)
 
     # 3) Then, we create the lazy frame by scanning all data files
     result = pl.scan_parquet(
@@ -249,6 +221,71 @@ def read_view(view: View) -> pl.DataFrame:
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #
+
+
+def _column_statistics(
+    column: Column, dtype: pl.DataType | pld.DataTypeClass, files: list[ScanDataFile]
+) -> tuple[pl.Series, pl.Series, pl.Series]:
+    if isinstance(column.data_type, typedefs.Struct):
+        # Catalog statistics are keyed by leaf field ID. Polars expects min/max and null
+        # counts to follow the struct's field paths, with each enum leaf normalized first.
+        field_dtypes = cast(pl.Struct, dtype).to_schema()
+        children = {
+            field.name: _column_statistics(field, field_dtypes[field.name], files)
+            for field in column.data_type.fields
+        }
+        minimum, maximum, null_count = (
+            pl.DataFrame({name: stats[index] for name, stats in children.items()}).to_struct()
+            for index in range(3)
+        )
+        return minimum, maximum, null_count
+
+    stats = [
+        file.statistics.column_stats.get(column.field_id) if column.field_id is not None else None
+        for file in files
+    ]
+    bounds_dtype = pl.String if isinstance(dtype, pl.Enum) else dtype
+    minimum = pl.Series([stat.min_value if stat else None for stat in stats], dtype=bounds_dtype)
+    maximum = pl.Series([stat.max_value if stat else None for stat in stats], dtype=bounds_dtype)
+    if isinstance(dtype, pl.Enum):
+        minimum, maximum = _enum_statistics(minimum, maximum, dtype)
+    null_count = pl.Series(
+        [stat.null_count if stat else None for stat in stats], dtype=pl.get_index_type()
+    )
+    return minimum, maximum, null_count
+
+
+def _enum_statistics(
+    minimum: pl.Series, maximum: pl.Series, dtype: pl.Enum
+) -> tuple[pl.Series, pl.Series]:
+    # DuckLake/Parquet bounds use lexical string order, whereas Polars enums use category
+    # order. Every category in the lexical interval may occur in the file, including ones
+    # whose enum codes fall outside the codes of the two endpoints. Keep the persisted
+    # statistics lexical for other readers; only convert the bounds passed to Polars.
+    # Polars can still reject equality with a nonmember string when evaluating its ordered
+    # skip predicate, as it does for ordinary Enum statistics.
+    categories = dtype.categories.to_list()
+    enum_order = {category: index for index, category in enumerate(categories)}
+    lexical_categories = sorted(categories)
+
+    def bounds(lower: str | None, upper: str | None) -> tuple[str | None, str | None]:
+        if lower is None or upper is None:
+            return None, None
+        start = bisect_left(lexical_categories, lower)
+        stop = bisect_right(lexical_categories, upper)
+        candidates = lexical_categories[start:stop]
+        if not candidates:
+            return None, None
+        return (
+            min(candidates, key=enum_order.__getitem__),
+            max(candidates, key=enum_order.__getitem__),
+        )
+
+    converted = [bounds(lower, upper) for lower, upper in zip(minimum, maximum, strict=True)]
+    return (
+        pl.Series(minimum.name, [lower for lower, _ in converted], dtype=dtype),
+        pl.Series(maximum.name, [upper for _, upper in converted], dtype=dtype),
+    )
 
 
 def _convert_datetime_time_zone(

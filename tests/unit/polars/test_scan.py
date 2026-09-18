@@ -5,6 +5,7 @@ import pytest
 from polars.testing import assert_frame_equal
 
 import ducklake as dl
+from ducklake.polars.scan import _enum_statistics
 
 
 def test_scan_single_file(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
@@ -129,6 +130,8 @@ def test_scan_multi_file_and_inline(shared_ducklake: dl.Ducklake, random_table_n
 
 # --------------------------------------- ENUM / CATEGORICAL ------------------------------------ #
 
+_ENUM_DTYPE = pl.Enum(["banana", "pear", "apple", "zebra"])
+
 
 def test_scan_enum(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
@@ -143,6 +146,125 @@ def test_scan_enum(shared_ducklake: dl.Ducklake, random_table_name: str) -> None
     # Assert
     assert scanned.collect_schema()["x"] == pl.Enum(["a", "b", "c"])
     assert_frame_equal(lf, scanned)
+
+
+@pytest.fixture()
+def enum_table(
+    shared_ducklake: dl.Ducklake, random_table_name: str, request: pytest.FixtureRequest
+) -> tuple[dl.Table, pl.DataFrame]:
+    data = pl.DataFrame({"x": ["apple", "banana", "pear", None]}, schema={"x": _ENUM_DTYPE})
+    for _ in range(getattr(request, "param", 0)):
+        data = data.select(pl.struct(pl.all()).alias("record"))
+    table = shared_ducklake.create_table(random_table_name, dl.Schema(data.schema))
+    return table, data
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pl.col("x") == "banana",
+        pl.col("x") == pl.lit("pear", dtype=_ENUM_DTYPE),
+        pl.col("x") != "pear",
+        pl.col("x") < "apple",
+        pl.col("x") > "banana",
+        pl.col("x").is_in(["banana", "pear"]),
+    ],
+)
+def test_scan_enum_filter(enum_table: tuple[dl.Table, pl.DataFrame], predicate: pl.Expr) -> None:
+    # Arrange
+    table, data = enum_table
+    table.sink_polars(data.lazy())
+    expected = data.filter(predicate)
+
+    # Act
+    actual = table.scan_polars().filter(predicate).collect()
+
+    # Assert
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "enum_table", [0, 1, 2], indirect=True, ids=["scalar", "struct", "nested-struct"]
+)
+def test_scan_enum_prunes_files(enum_table: tuple[dl.Table, pl.DataFrame]) -> None:
+    # Arrange
+    table, data = enum_table
+    column = table.schema.columns[0]
+    expression = pl.col(column.name)
+    while isinstance(column.data_type, dl.Struct):
+        column = column.data_type.fields[0]
+        expression = expression.struct.field(column.name)
+    assert column.field_id is not None
+    _, generator = table._get_write_info()
+    data.write_parquet(
+        f"{generator.base_path}data.parquet",
+        arrow_schema=table.schema,
+        storage_options=table._storage_options.to_dict(),
+        mkdir=True,
+    )
+    # Register tighter lexical bounds than Polars' dictionary-wide statistics. The second
+    # file deliberately does not exist: collecting succeeds only if it is pruned.
+    table.write_data_files(
+        [
+            dl.WriteDataFile(
+                "data.parquet",
+                statistics=dl.DataFileStatistics(
+                    num_rows=4,
+                    column_stats={
+                        column.field_id: dl.ColumnStats(
+                            min_value="apple", max_value="pear", null_count=1
+                        )
+                    },
+                ),
+            ),
+            dl.WriteDataFile(
+                "irrelevant.parquet",
+                statistics=dl.DataFileStatistics(
+                    num_rows=1,
+                    column_stats={
+                        column.field_id: dl.ColumnStats(
+                            min_value="zebra", max_value="zebra", null_count=0
+                        )
+                    },
+                ),
+            ),
+        ]
+    )
+    predicate = expression == "banana"
+    expected = data.filter(predicate)
+
+    # Act
+    actual = table.scan_polars().filter(predicate).collect()
+
+    # Assert
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    ("lower", "upper", "expected"),
+    [
+        ("apple", "pear", ("banana", "apple")),
+        ("apple", "zebra", ("banana", "zebra")),
+        ("pear", "pear", ("pear", "pear")),
+        ("ap", "pe", ("banana", "apple")),
+        (None, "pear", (None, None)),
+        ("apple", None, (None, None)),
+        ("unknown", "unknown", (None, None)),
+    ],
+)
+def test_enum_statistics_bounds(
+    lower: str | None, upper: str | None, expected: tuple[str | None, str | None]
+) -> None:
+    # Arrange
+    minimum = pl.Series("x_min", [lower], dtype=pl.String)
+    maximum = pl.Series("x_max", [upper], dtype=pl.String)
+
+    # Act
+    converted_min, converted_max = _enum_statistics(minimum, maximum, _ENUM_DTYPE)
+
+    # Assert
+    assert (converted_min.item(), converted_max.item()) == expected
+    assert converted_min.dtype == converted_max.dtype == _ENUM_DTYPE
 
 
 def test_scan_categorical(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
