@@ -24,6 +24,30 @@ def test_time_travel_by_snapshot_id(shared_ducklake: dl.Ducklake, random_table_n
     assert_frame_equal(lf, time_traveled_table.scan_polars())
 
 
+def test_time_travel_remains_functional_after_advancing_head(
+    ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    table.sink_polars(pl.LazyFrame({"x": [1]}))
+    historical_id = ducklake.get_latest_snapshot().id
+    historical = ducklake.at(historical_id)
+
+    # Act
+    table.sink_polars(pl.LazyFrame({"x": [2]}))
+    current_id = ducklake.get_latest_snapshot().id
+    historical_rows = historical.table(random_table_name).read_polars()["x"].to_list()
+    del historical
+    reloaded_rows = (
+        ducklake.at(historical_id).table(random_table_name).read_polars()["x"].to_list()
+    )
+
+    # Assert
+    assert current_id > historical_id
+    assert historical_rows == [1]
+    assert reloaded_rows == [1]
+
+
 @pytest.mark.skip_config(
     catalog="mysql", reason="MySQL uses second-level precision for timestamps."
 )

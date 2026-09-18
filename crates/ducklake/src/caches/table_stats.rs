@@ -1,11 +1,15 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use sea_query::{Asterisk, Expr, ExprTrait, JoinType, Query, SelectStatement, all};
 
 use crate::catalog::Catalog;
+use crate::primitives::{AsyncLazy, WeakCache};
 use crate::spec::*;
 use crate::{DucklakeResult, db};
+
+type TableStatsMap = HashMap<i64, TableStats>;
+pub(super) type LazyTableStats = AsyncLazy<Arc<TableStatsMap>, Arc<Catalog>>;
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                             CACHE                                             */
@@ -14,35 +18,36 @@ use crate::{DucklakeResult, db};
 #[derive(Clone)]
 pub(super) struct TableStatsCache {
     pool: db::Pool,
-    table_stats: Arc<RwLock<HashMap<i64, SnapshotTableStats>>>,
+    table_stats: Arc<WeakCache<(i64, i64), LazyTableStats>>,
 }
 
 impl TableStatsCache {
     pub(super) fn new(pool: db::Pool) -> Self {
         Self {
             pool,
-            table_stats: Arc::new(RwLock::new(HashMap::new())),
+            table_stats: Arc::new(WeakCache::new()),
         }
     }
 
-    pub(super) async fn get(
+    pub(super) fn get(
         &self,
         snapshot_id: i64,
+        schema_version: i64,
         next_file_id: i64,
-        catalog: &Catalog,
-    ) -> DucklakeResult<Arc<HashMap<i64, TableStats>>> {
-        if let Some(stats) = self.table_stats.read().unwrap().get(&next_file_id) {
-            Ok(stats.0.clone())
-        } else {
-            let stats = SnapshotTableStats::load(&self.pool, catalog, snapshot_id)
-                .await?
-                .0;
-            self.table_stats
-                .write()
-                .unwrap()
-                .insert(next_file_id, SnapshotTableStats(stats.clone()));
-            Ok(stats)
-        }
+    ) -> Arc<LazyTableStats> {
+        // Loading statistics filters tables and columns through the snapshot's schema.
+        let key = (schema_version, next_file_id);
+        self.table_stats.get_or_insert_with(key, || {
+            let pool = self.pool.clone();
+            AsyncLazy::new(move |catalog: Arc<Catalog>| {
+                let pool = pool.clone();
+                async move {
+                    SnapshotTableStats::load(&pool, &catalog, snapshot_id)
+                        .await
+                        .map(|stats| stats.0)
+                }
+            })
+        })
     }
 }
 
@@ -51,7 +56,7 @@ impl TableStatsCache {
 /* --------------------------------------------------------------------------------------------- */
 
 #[repr(transparent)]
-struct SnapshotTableStats(Arc<HashMap<i64, TableStats>>);
+struct SnapshotTableStats(Arc<TableStatsMap>);
 
 #[derive(Debug, Clone)]
 pub(crate) struct TableStats {

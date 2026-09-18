@@ -234,7 +234,7 @@ impl Ducklake {
     }
 
     fn at_snapshot(&self, snapshot_info: SnapshotInfo) -> DucklakeResult<Self> {
-        let travel_snapshot = self.conn.0.snapshot_cache.insert_snapshot(snapshot_info);
+        let travel_snapshot = self.conn.0.snapshot_cache.get_snapshot(snapshot_info);
         Ok(self.with_mode(ConnectionMode::TimeTravel(travel_snapshot)))
     }
 

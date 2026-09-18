@@ -1,13 +1,12 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use sea_query::{Asterisk, ExprTrait, Query};
 
-use super::catalog::CatalogCache;
-use super::table_stats::TableStatsCache;
+use super::catalog::{CatalogCache, LazyCatalog};
+use super::table_stats::{LazyTableStats, TableStatsCache};
 use crate::caches::TableStats;
 use crate::catalog::Catalog;
-use crate::primitives::AsyncLazy;
 use crate::spec::*;
 use crate::{DucklakeResult, db};
 
@@ -16,7 +15,7 @@ pub(crate) struct SnapshotCache {
     pool: db::Pool,
     catalog_cache: CatalogCache,
     table_stats_cache: TableStatsCache,
-    snapshots: Arc<RwLock<BTreeMap<i64, Arc<Snapshot>>>>,
+    current: Arc<RwLock<Arc<Snapshot>>>,
 }
 
 impl SnapshotCache {
@@ -24,20 +23,23 @@ impl SnapshotCache {
         pool: db::Pool,
         snapshot_info: Option<SnapshotInfo>,
     ) -> DucklakeResult<Self> {
-        let cache = Self {
-            pool: pool.clone(),
-            catalog_cache: CatalogCache::new(pool.clone()),
-            table_stats_cache: TableStatsCache::new(pool),
-            snapshots: Arc::new(RwLock::new(BTreeMap::new())),
+        let catalog_cache = CatalogCache::new(pool.clone());
+        let table_stats_cache = TableStatsCache::new(pool.clone());
+        let snapshot_info = match snapshot_info {
+            Some(snapshot_info) => snapshot_info,
+            None => SnapshotInfo::load_latest(&pool).await?,
         };
-
-        // Unless a snapshot info is provided, we fetch the latest snapshot here to ensure that
-        // the cache is properly initialized and we can always fetch the "current" snapshot.
-        if let Some(snapshot_info) = snapshot_info {
-            cache.insert_snapshot(snapshot_info);
-        } else {
-            cache.get_latest().await?;
-        }
+        let current = Arc::new(Snapshot::new(
+            snapshot_info,
+            catalog_cache.clone(),
+            table_stats_cache.clone(),
+        ));
+        let cache = Self {
+            pool,
+            catalog_cache,
+            table_stats_cache,
+            current: Arc::new(RwLock::new(current)),
+        };
         Ok(cache)
     }
 
@@ -50,31 +52,23 @@ impl SnapshotCache {
     }
 
     pub(crate) fn get_current(&self) -> Arc<Snapshot> {
-        let snapshots = self.snapshots.read().unwrap();
-        let (_, snapshot) = snapshots.last_key_value().unwrap();
-        snapshot.clone()
+        self.current.read().unwrap().clone()
     }
 
     pub(crate) async fn get_for_schema_version(
         &self,
         schema_version: i64,
     ) -> DucklakeResult<Arc<Snapshot>> {
-        // First check if we already have a snapshot for the given schema version
-        if let Some(snapshot) = self
-            .snapshots
-            .read()
-            .unwrap()
-            .values()
-            .find(|s| s.info().schema_version == schema_version)
-        {
-            return Ok(snapshot.clone());
+        let snapshot = self.get_current();
+        if snapshot.info().schema_version == schema_version {
+            return Ok(snapshot);
         }
 
         // Try to find a live snapshot at this schema_version.
         if let Some(info) =
             SnapshotInfo::load_for_schema_version(&self.pool, schema_version).await?
         {
-            return Ok(self.insert_snapshot(info));
+            return Ok(self.get_snapshot(info));
         }
 
         // Fall back to ducklake_schema_versions. ducklake_expire_snapshots prunes
@@ -85,34 +79,39 @@ impl SnapshotCache {
         // that lands here, but would be wrong for any cache hit that later reaches the
         // table_stats accessor.
         let info = SnapshotInfo::synthesize_for_schema_version(&self.pool, schema_version).await?;
-        Ok(Arc::new(Snapshot::new(
-            info,
-            self.catalog_cache.clone(),
-            self.table_stats_cache.clone(),
-        )))
+        Ok(self.new_snapshot(info))
     }
 
     /* ----------------------------------------- MODIFY ---------------------------------------- */
 
     pub(crate) fn insert_snapshot(&self, snapshot_info: SnapshotInfo) -> Arc<Snapshot> {
-        let snapshot = Arc::new(Snapshot::new(
-            snapshot_info.clone(),
-            self.catalog_cache.clone(),
-            self.table_stats_cache.clone(),
-        ));
-        self.snapshots
-            .write()
-            .unwrap()
-            .entry(snapshot_info.id)
-            .or_insert(snapshot.clone());
+        let mut current = self.current.write().unwrap();
+        if current.info().id == snapshot_info.id {
+            return current.clone();
+        }
+        let snapshot = self.new_snapshot(snapshot_info);
+        // A concurrent head lookup may return an older snapshot after a newer commit.
+        if snapshot.info().id > current.info().id {
+            *current = snapshot.clone();
+        }
         snapshot
     }
 
-    pub(crate) fn remove_snapshots(&self, snapshot_ids: &[i64]) {
-        let mut snapshots = self.snapshots.write().unwrap();
-        for snapshot_id in snapshot_ids {
-            snapshots.remove(snapshot_id);
+    /// Resolve a snapshot without advancing the head or retaining historical snapshots.
+    pub(crate) fn get_snapshot(&self, snapshot_info: SnapshotInfo) -> Arc<Snapshot> {
+        let current = self.current.read().unwrap();
+        if current.info().id == snapshot_info.id {
+            return current.clone();
         }
+        self.new_snapshot(snapshot_info)
+    }
+
+    fn new_snapshot(&self, snapshot_info: SnapshotInfo) -> Arc<Snapshot> {
+        Arc::new(Snapshot::new(
+            snapshot_info,
+            self.catalog_cache.clone(),
+            self.table_stats_cache.clone(),
+        ))
     }
 }
 
@@ -122,8 +121,8 @@ impl SnapshotCache {
 
 pub(crate) struct Snapshot {
     info: SnapshotInfo,
-    catalog: AsyncLazy<Arc<Catalog>>,
-    table_stats: AsyncLazy<Arc<HashMap<i64, TableStats>>, Arc<Catalog>>,
+    catalog: Arc<LazyCatalog>,
+    table_stats: Arc<LazyTableStats>,
 }
 
 impl Snapshot {
@@ -132,18 +131,14 @@ impl Snapshot {
         catalog_cache: CatalogCache,
         table_stats_cache: TableStatsCache,
     ) -> Self {
-        let lazy_catalog = AsyncLazy::new(move |_| {
-            let cache = catalog_cache.clone();
-            async move { cache.get(info.id, info.schema_version).await }
-        });
-        let lazy_table_stats = AsyncLazy::new(move |catalog: Arc<Catalog>| {
-            let cache = table_stats_cache.clone();
-            async move { cache.get(info.id, info.next_file_id, &catalog).await }
-        });
+        // Acquire shared lazy values before the previous snapshot can be evicted, preserving
+        // unchanged metadata without retaining the snapshot itself or loading anything eagerly.
+        let catalog = catalog_cache.get(info.id, info.schema_version);
+        let table_stats = table_stats_cache.get(info.id, info.schema_version, info.next_file_id);
         Self {
             info,
-            catalog: lazy_catalog,
-            table_stats: lazy_table_stats,
+            catalog,
+            table_stats,
         }
     }
 
@@ -293,5 +288,97 @@ impl From<DucklakeSnapshot> for SnapshotInfo {
             next_file_id: snapshot.next_file_id,
             snapshot_time: snapshot.snapshot_time.0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::SnapshotCache;
+    use crate::db;
+
+    #[rstest::fixture]
+    async fn cache() -> SnapshotCache {
+        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
+        crate::spec::init_catalog(
+            &pool,
+            crate::spec::InitConfig {
+                data_path: "file:///tmp/ducklake-cache-test/".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+        SnapshotCache::new(pool, None).await.unwrap()
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn stale_snapshot_does_not_replace_current_snapshot(#[future] cache: SnapshotCache) {
+        // Arrange
+        let cache = cache.await;
+        let stale = cache.get_current().info().clone();
+        let mut latest = stale.clone();
+        latest.id += 1;
+        cache.insert_snapshot(latest.clone());
+
+        // Act
+        cache.insert_snapshot(stale);
+
+        // Assert
+        assert_eq!(cache.get_current().info().id, latest.id);
+    }
+
+    #[rstest::rstest]
+    #[case(false, false)]
+    #[case(false, true)]
+    #[case(true, false)]
+    #[tokio::test]
+    async fn metadata_is_reused_only_while_its_version_is_retained(
+        #[future] cache: SnapshotCache,
+        #[case] schema_changed: bool,
+        #[case] files_changed: bool,
+    ) {
+        // Arrange
+        let cache = cache.await;
+        let snapshot = cache.get_current();
+        let catalog = Arc::downgrade(snapshot.catalog().await.unwrap());
+        let table_stats = Arc::downgrade(snapshot.table_stats().await.unwrap());
+        let old_snapshot = Arc::downgrade(&snapshot);
+        let mut next_info = snapshot.info().clone();
+        next_info.schema_version += i64::from(schema_changed);
+        next_info.next_file_id += i64::from(files_changed);
+
+        // Act
+        drop(snapshot);
+        // Advance twice without reading metadata in the intermediate snapshot.
+        for _ in 0..2 {
+            next_info.id += 1;
+            cache.insert_snapshot(next_info.clone());
+        }
+        let current = cache.get_current();
+
+        // Assert
+        assert!(old_snapshot.upgrade().is_none());
+        assert_eq!(catalog.upgrade().is_some(), !schema_changed);
+        assert_eq!(
+            table_stats.upgrade().is_some(),
+            !schema_changed && !files_changed
+        );
+        assert_eq!(
+            std::sync::Weak::ptr_eq(&catalog, &Arc::downgrade(current.catalog().await.unwrap())),
+            !schema_changed,
+        );
+        assert_eq!(
+            std::sync::Weak::ptr_eq(
+                &table_stats,
+                &Arc::downgrade(current.table_stats().await.unwrap())
+            ),
+            !schema_changed && !files_changed,
+        );
+        drop(current);
+        drop(cache);
+        assert!(catalog.upgrade().is_none());
+        assert!(table_stats.upgrade().is_none());
     }
 }
