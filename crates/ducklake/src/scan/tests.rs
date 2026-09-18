@@ -124,13 +124,16 @@ async fn scan_exposes_buckets_and_native_filters_prune_files(#[future] bucket_ta
 async fn column_type_evolution_omits_old_file_buckets(#[future] bucket_table: Table) {
     // Arrange
     let table = bucket_table.await;
+    let before = table.scan().await.unwrap();
+    let old_snapshot = table.conn.snapshot_cache().get_current();
+    let old_catalog = old_snapshot.catalog().await.unwrap();
+
+    // Act
     table
         .update_column_dtype("value", DataType::Float64)
         .await
         .unwrap();
     write_file(&table, "new.parquet", 2).await;
-
-    // Act
     let scan = table
         .scan_with_bucket_filters(&[BucketFilter {
             field_id: 2,
@@ -141,11 +144,89 @@ async fn column_type_evolution_omits_old_file_buckets(#[future] bucket_table: Ta
         .unwrap();
 
     // Assert
+    assert!(
+        before
+            .data_files
+            .iter()
+            .all(|file| file.bucket_values.contains_key(&2))
+    );
+    assert_eq!(
+        old_catalog.table(table.id).unwrap().column_data_types()[&2],
+        DataType::Float32
+    );
+    assert_eq!(
+        table
+            .columns()
+            .await
+            .unwrap()
+            .find(|column| column.name == "value")
+            .unwrap()
+            .dtype,
+        DataType::Float64
+    );
     assert_eq!(scan.data_files.len(), 2);
     assert!(
         scan.data_files
             .iter()
             .all(|file| file.bucket_values.is_empty())
+    );
+    assert!(
+        scan.data_files
+            .iter()
+            .all(|file| !file.path.ends_with("new.parquet"))
+    );
+}
+
+#[rstest]
+#[case(None)]
+#[case(Some(PartitionTransform::Identity))]
+#[tokio::test]
+async fn historical_nonbucket_files_are_kept_after_adding_buckets(
+    #[future] bucket_table: Table,
+    #[case] transform: Option<PartitionTransform>,
+) {
+    // Arrange
+    let table = bucket_table.await;
+    table
+        .update_partitioning(transform.map(|transform| {
+            vec![PartitionColumn {
+                column: "value".into(),
+                transform,
+            }]
+        }))
+        .await
+        .unwrap();
+    write_file(&table, "nonbucket.parquet", 2).await;
+
+    // Act
+    table
+        .update_partitioning(Some(vec![PartitionColumn {
+            column: "value".into(),
+            transform: PartitionTransform::Bucket(8),
+        }]))
+        .await
+        .unwrap();
+    write_file(&table, "new.parquet", 2).await;
+    let scan = table
+        .scan_with_bucket_filters(&[BucketFilter {
+            field_id: 2,
+            num_buckets: 8,
+            values: vec![],
+        }])
+        .await
+        .unwrap();
+
+    // Assert
+    assert_eq!(scan.data_files.len(), 3);
+    assert!(
+        scan.data_files
+            .iter()
+            .all(|file| file.bucket_values.is_empty())
+    );
+    assert!(
+        scan.data_files
+            .iter()
+            .any(|file| file.path.ends_with("nonbucket.parquet"))
     );
     assert!(
         scan.data_files
@@ -319,4 +400,58 @@ async fn transfer_keeps_raw_partition_values_after_type_evolution(#[future] buck
         };
         assert_eq!(values, Some(vec![Some("east".into()), Some(bucket.into())]));
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn transferred_files_with_unknown_original_types_are_not_pruned(
+    #[future] bucket_table: Table,
+) {
+    // Arrange
+    let table = bucket_table.await;
+    table
+        .update_column_dtype("value", DataType::Float64)
+        .await
+        .unwrap();
+    let source = Ducklake {
+        conn: table.conn.clone(),
+    };
+    let target = Ducklake::create(CreateOptions::new(
+        "sqlite://:memory:",
+        std::env::current_dir().unwrap().to_str().unwrap(),
+    ))
+    .await
+    .unwrap();
+
+    // Act
+    let transferred = source
+        .move_tables([&table], &target)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    let scan = transferred
+        .scan_with_bucket_filters(&[BucketFilter {
+            field_id: 2,
+            num_buckets: 8,
+            values: vec![],
+        }])
+        .await
+        .unwrap();
+    write_file(&transferred, "new.parquet", 2).await;
+    let latest_scan = transferred.scan().await.unwrap();
+
+    // Assert
+    assert_eq!(scan.data_files.len(), 2);
+    assert!(
+        scan.data_files
+            .iter()
+            .all(|file| file.bucket_values.is_empty())
+    );
+    let new_file = latest_scan
+        .data_files
+        .iter()
+        .find(|file| file.path.ends_with("new.parquet"))
+        .unwrap();
+    assert_eq!(new_file.bucket_values, HashMap::from([(2, (8, 2))]));
 }

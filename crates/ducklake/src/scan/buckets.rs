@@ -39,9 +39,10 @@ pub(super) fn parse_bucket_values(
     columns
         .iter()
         .filter_map(|column| {
-            // A historical file may have been hashed with a different source type.
-            // Even non-type column edits conservatively disable pruning for old files.
-            if file.begin_snapshot < column.begin_snapshot {
+            // Transfers register historical files and current column definitions in the
+            // same snapshot, losing the original source type. Require an older column
+            // version; even non-type edits conservatively disable pruning for old files.
+            if file.begin_snapshot <= column.begin_snapshot {
                 return None;
             }
             let bucket = by_index
@@ -157,7 +158,7 @@ mod tests {
     #[case(None, 10, false)]
     #[case(Some(2), 10, false)]
     #[case(Some(3), 4, false)]
-    #[case(Some(3), 5, true)]
+    #[case(Some(3), 5, false)]
     #[case(Some(3), 10, true)]
     fn bucket_values_require_current_partition_and_column_version(
         mut file: DucklakeDataFile,

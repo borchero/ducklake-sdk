@@ -80,8 +80,9 @@ pub struct ScanDataFile {
     pub inline_deletes: Option<Arc<Int64Array>>,
     /// Safe bucket metadata: field ID to (number of buckets, file bucket ID).
     ///
-    /// Only current partition definitions and unchanged primitive column versions
-    /// are exposed. Missing or ambiguous metadata is omitted, not inferred.
+    /// Only current partition definitions and primitive column versions older than
+    /// the file are exposed. Equal snapshots are ambiguous for transferred files,
+    /// whose original source types are unknown. Missing metadata is not inferred.
     pub bucket_values: HashMap<i64, (u32, u32)>,
 }
 
