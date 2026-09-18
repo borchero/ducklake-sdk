@@ -150,9 +150,11 @@ def test_scan_enum(shared_ducklake: dl.Ducklake, random_table_name: str) -> None
 
 @pytest.fixture()
 def enum_table(
-    shared_ducklake: dl.Ducklake, random_table_name: str
+    shared_ducklake: dl.Ducklake, random_table_name: str, request: pytest.FixtureRequest
 ) -> tuple[dl.Table, pl.DataFrame]:
     data = pl.DataFrame({"x": ["apple", "banana", "pear", None]}, schema={"x": _ENUM_DTYPE})
+    for _ in range(getattr(request, "param", 0)):
+        data = data.select(pl.struct(pl.all()).alias("record"))
     table = shared_ducklake.create_table(random_table_name, dl.Schema(data.schema))
     return table, data
 
@@ -181,9 +183,18 @@ def test_scan_enum_filter(enum_table: tuple[dl.Table, pl.DataFrame], predicate: 
     assert_frame_equal(actual, expected)
 
 
+@pytest.mark.parametrize(
+    "enum_table", [0, 1, 2], indirect=True, ids=["scalar", "struct", "nested-struct"]
+)
 def test_scan_enum_prunes_files(enum_table: tuple[dl.Table, pl.DataFrame]) -> None:
     # Arrange
     table, data = enum_table
+    column = table.schema.columns[0]
+    expression = pl.col(column.name)
+    while isinstance(column.data_type, dl.Struct):
+        column = column.data_type.fields[0]
+        expression = expression.struct.field(column.name)
+    assert column.field_id is not None
     _, generator = table._get_write_info()
     data.write_parquet(
         f"{generator.base_path}data.parquet",
@@ -200,7 +211,9 @@ def test_scan_enum_prunes_files(enum_table: tuple[dl.Table, pl.DataFrame]) -> No
                 statistics=dl.DataFileStatistics(
                     num_rows=4,
                     column_stats={
-                        1: dl.ColumnStats(min_value="apple", max_value="pear", null_count=1)
+                        column.field_id: dl.ColumnStats(
+                            min_value="apple", max_value="pear", null_count=1
+                        )
                     },
                 ),
             ),
@@ -209,13 +222,15 @@ def test_scan_enum_prunes_files(enum_table: tuple[dl.Table, pl.DataFrame]) -> No
                 statistics=dl.DataFileStatistics(
                     num_rows=1,
                     column_stats={
-                        1: dl.ColumnStats(min_value="zebra", max_value="zebra", null_count=0)
+                        column.field_id: dl.ColumnStats(
+                            min_value="zebra", max_value="zebra", null_count=0
+                        )
                     },
                 ),
             ),
         ]
     )
-    predicate = pl.col("x") == "banana"
+    predicate = expression == "banana"
     expected = data.filter(predicate)
 
     # Act

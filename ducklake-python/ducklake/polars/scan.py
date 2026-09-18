@@ -17,7 +17,7 @@ from ducklake.table import Table
 from ducklake.view import View
 
 if TYPE_CHECKING:
-    from ducklake.typedefs import Column, Schema
+    from ducklake.typedefs import Column, ScanDataFile, Schema
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
@@ -101,59 +101,17 @@ def scan_ducklake(
     stat_len = pl.Series(
         [file.statistics.num_rows for file in scan_result.data_files], dtype=pl.get_index_type()
     )
-    stat_min = {
-        f"{col.name}_min": pl.Series(
-            [
-                col_stats.min_value
-                if (col_stats := file.statistics.column_stats.get(col.field_id)) is not None
-                else None
-                for file in scan_result.data_files
-            ],
-            dtype=(
-                pl.String
-                if isinstance(target_schema[col.name], pl.Enum)
-                else target_schema[col.name]
-            ),
+    statistics = {"len": stat_len}
+    for column in schema.columns:
+        if column.field_id is None:
+            continue
+        minimum, maximum, null_count = _column_statistics(
+            column, target_schema[column.name], scan_result.data_files
         )
-        for col in schema.columns
-        if col.field_id is not None
-    }
-    stat_max = {
-        f"{col.name}_max": pl.Series(
-            [
-                col_stats.max_value
-                if (col_stats := file.statistics.column_stats.get(col.field_id)) is not None
-                else None
-                for file in scan_result.data_files
-            ],
-            dtype=(
-                pl.String
-                if isinstance(target_schema[col.name], pl.Enum)
-                else target_schema[col.name]
-            ),
-        )
-        for col in schema.columns
-        if col.field_id is not None
-    }
-    for name, dtype in target_schema.items():
-        if isinstance(dtype, pl.Enum) and f"{name}_min" in stat_min:
-            stat_min[f"{name}_min"], stat_max[f"{name}_max"] = _enum_statistics(
-                stat_min[f"{name}_min"], stat_max[f"{name}_max"], dtype
-            )
-    stat_null_count = {
-        f"{col.name}_nc": pl.Series(
-            [
-                col_stats.null_count
-                if (col_stats := file.statistics.column_stats.get(col.field_id)) is not None
-                else None
-                for file in scan_result.data_files
-            ],
-            dtype=pl.get_index_type(),
-        )
-        for col in schema.columns
-        if col.field_id is not None
-    }
-    table_statistics = pl.DataFrame({"len": stat_len, **stat_min, **stat_max, **stat_null_count})
+        statistics[f"{column.name}_min"] = minimum
+        statistics[f"{column.name}_max"] = maximum
+        statistics[f"{column.name}_nc"] = null_count
+    table_statistics = pl.DataFrame(statistics)
 
     # 3) Then, we create the lazy frame by scanning all data files
     result = pl.scan_parquet(
@@ -263,6 +221,38 @@ def read_view(view: View) -> pl.DataFrame:
 
 
 # -------------------------------------------- UTILS -------------------------------------------- #
+
+
+def _column_statistics(
+    column: Column, dtype: pl.DataType | pld.DataTypeClass, files: list[ScanDataFile]
+) -> tuple[pl.Series, pl.Series, pl.Series]:
+    if isinstance(column.data_type, typedefs.Struct):
+        # Catalog statistics are keyed by leaf field ID. Polars expects min/max and null
+        # counts to follow the struct's field paths, with each enum leaf normalized first.
+        field_dtypes = cast(pl.Struct, dtype).to_schema()
+        children = {
+            field.name: _column_statistics(field, field_dtypes[field.name], files)
+            for field in column.data_type.fields
+        }
+        minimum, maximum, null_count = (
+            pl.DataFrame({name: stats[index] for name, stats in children.items()}).to_struct()
+            for index in range(3)
+        )
+        return minimum, maximum, null_count
+
+    stats = [
+        file.statistics.column_stats.get(column.field_id) if column.field_id is not None else None
+        for file in files
+    ]
+    bounds_dtype = pl.String if isinstance(dtype, pl.Enum) else dtype
+    minimum = pl.Series([stat.min_value if stat else None for stat in stats], dtype=bounds_dtype)
+    maximum = pl.Series([stat.max_value if stat else None for stat in stats], dtype=bounds_dtype)
+    if isinstance(dtype, pl.Enum):
+        minimum, maximum = _enum_statistics(minimum, maximum, dtype)
+    null_count = pl.Series(
+        [stat.null_count if stat else None for stat in stats], dtype=pl.get_index_type()
+    )
+    return minimum, maximum, null_count
 
 
 def _enum_statistics(
