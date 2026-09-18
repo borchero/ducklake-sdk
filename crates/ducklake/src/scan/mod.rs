@@ -1,10 +1,14 @@
+mod buckets;
 mod parsing;
 mod queries;
+#[cfg(all(test, feature = "sqlite"))]
+mod tests;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow_array::Int64Array;
+pub(crate) use buckets::BucketColumn;
 
 use crate::caches::{Snapshot, SnapshotCache};
 use crate::spec::*;
@@ -22,7 +26,7 @@ pub(crate) async fn scan_table(
     snapshot_cache: &SnapshotCache,
     data_path: &io::DucklakePath,
 ) -> DucklakeResult<crate::ScanResult> {
-    let scan = scan_table_inner(pool, table_id, snapshot, snapshot_cache, data_path).await?;
+    let scan = scan_table_inner(pool, table_id, snapshot, snapshot_cache, data_path, true).await?;
     Ok(scan.result)
 }
 
@@ -36,7 +40,7 @@ pub(crate) async fn scan_table_for_transfer(
     let current_partition_id = snapshot.catalog().await?.table(table_id)?.partition_id();
     let partition_values_query = queries::build_partition_values_query(table_id);
     let (scan, fetched_partition_values): (_, Vec<DucklakeFilePartitionValue>) = tokio::try_join!(
-        scan_table_inner(pool, table_id, snapshot, snapshot_cache, data_path),
+        scan_table_inner(pool, table_id, snapshot, snapshot_cache, data_path, false),
         pool.fetch_all(&partition_values_query),
     )?;
 
@@ -89,11 +93,18 @@ async fn scan_table_inner(
     snapshot: Arc<Snapshot>,
     snapshot_cache: &SnapshotCache,
     data_path: &io::DucklakePath,
+    include_bucket_values: bool,
 ) -> DucklakeResult<TableScan> {
     let snapshot_id = snapshot.info().id;
     let catalog = snapshot.catalog().await?;
     let table = catalog.table(table_id)?;
     let column_dtypes = table.column_data_types();
+    let current_partition_id = table.partition_id();
+    let bucket_columns = if include_bucket_values {
+        table.bucket_columns()
+    } else {
+        Vec::new()
+    };
 
     // Build all queries
     let data_files_query = queries::build_data_files_query(table_id, snapshot_id);
@@ -101,6 +112,7 @@ async fn scan_table_inner(
     let delete_files_query = queries::build_delete_files_query(table_id, snapshot_id);
     let inlined_data_query = queries::build_inlined_data_tables_query(table_id);
     let inlined_deletes_query = queries::build_inlined_deletes_query(table_id, snapshot_id);
+    let partition_values_query = queries::build_partition_values_query(table_id);
 
     // Execute all queries in parallel for the latest snapshot
     #[allow(clippy::type_complexity)]
@@ -110,12 +122,14 @@ async fn scan_table_inner(
         fetched_delete_files,
         fetched_inlined_data_tables,
         fetched_inlined_deletes,
+        fetched_partition_values,
     ): (
         Vec<DucklakeDataFile>,
         Vec<DucklakeFileColumnStats>,
         Vec<DucklakeDeleteFile>,
         Vec<DucklakeInlinedDataTables>,
         Vec<DucklakeInlinedDelete>,
+        Vec<DucklakeFilePartitionValue>,
     ) = tokio::try_join!(
         pool.fetch_all(&data_files_query),
         pool.fetch_all(&column_stats_query),
@@ -129,7 +143,14 @@ async fn scan_table_inner(
                     Err(err)
                 }
             })
-        }
+        },
+        async {
+            if bucket_columns.is_empty() {
+                Ok(Vec::new())
+            } else {
+                pool.fetch_all(&partition_values_query).await
+            }
+        },
     )?;
 
     // Fetch all the inlined data tables. For this, we first need to get all relevant schemas
@@ -188,12 +209,27 @@ async fn scan_table_inner(
                     .push(record.row_id);
                 acc
             });
+    let partition_values_by_file_id: HashMap<_, _> =
+        fetched_partition_values
+            .into_iter()
+            .fold(HashMap::new(), |mut acc, value| {
+                acc.entry(value.data_file_id)
+                    .or_insert_with(Vec::new)
+                    .push(value);
+                acc
+            });
     // Then, we can iterate over the data files
     let mut result = Vec::with_capacity(fetched_data_files.len());
     let mut file_partition_ids = Vec::with_capacity(fetched_data_files.len());
     for fetched_data_file in fetched_data_files {
         let file_id = fetched_data_file.data_file_id;
         file_partition_ids.push((file_id, fetched_data_file.partition_id));
+        let bucket_values = buckets::parse_bucket_values(
+            &fetched_data_file,
+            current_partition_id,
+            &bucket_columns,
+            partition_values_by_file_id.get(&file_id),
+        );
 
         let (data_file, statistics) = parsing::parse_data_file(
             fetched_data_file,
@@ -215,6 +251,7 @@ async fn scan_table_inner(
         result.push(crate::ScanDataFile {
             path: data_file,
             statistics,
+            bucket_values,
             delete_files,
             inline_deletes: inline_deletes_by_file_id
                 .get(&file_id)

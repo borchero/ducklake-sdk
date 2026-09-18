@@ -154,7 +154,9 @@ See the DuckLake [release calendar](https://ducklake.select/release_calendar) fo
 
 **Rust SDK** (may impact efficiency):
 
-- [ ] Tables partitioned with a non-identity transform do not benefit from file pruning yet.
+- [ ] Non-identity partition pruning is currently limited to bucket transforms. Native scans accept precomputed
+      bucket filters; Polars lazy scans automatically prune buckets for supported equality and `IN` predicates.
+      Unknown or incompatible partition specifications are retained conservatively, and row filters still apply.
 - [ ] Filters are not pushed down into the metadata query. Statistics are still loaded eagerly and used by readers to
       prune files, but the metadata query may transmit more data than necessary.
 

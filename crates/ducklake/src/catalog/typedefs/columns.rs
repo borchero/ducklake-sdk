@@ -28,6 +28,7 @@ pub(in crate::catalog) struct CatalogColumns {
 #[derive(Debug, Clone)]
 pub(in crate::catalog) struct CatalogColumn {
     pub id: i64,
+    pub begin_snapshot: Option<i64>,
     pub name: String,
     pub dtype: CatalogDataType,
     pub parent_column: Option<ArenaIdx>,
@@ -267,6 +268,7 @@ impl CatalogColumns {
                 .map(|i| ArenaIdx(first_idx + i))
                 .or(parent);
             let catalog_column = CatalogColumn {
+                begin_snapshot: None,
                 id: if preserve_column_ids {
                     // SAFETY: Transfers use catalog-derived schemas; schema_column_from_arena_index
                     // supplies a field ID for every column, including nested children.
@@ -591,6 +593,7 @@ impl CatalogColumn {
 
         Ok(Self {
             id: column_id,
+            begin_snapshot: Some(col.begin_snapshot),
             parent_column,
             name: col.column_name,
             dtype,

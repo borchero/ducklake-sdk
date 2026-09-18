@@ -159,6 +159,50 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
             .map(|p| p.into_partition(&table.columns))
     }
 
+    pub(crate) fn bucket_columns(&self) -> Vec<crate::scan::BucketColumn> {
+        let table = self.inner();
+        let Some(partition) = &table.partition else {
+            return Vec::new();
+        };
+        let mut index_counts = HashMap::new();
+        let mut field_counts = HashMap::new();
+        for column in &partition.columns {
+            *index_counts.entry(column.partition_key_index).or_insert(0) += 1;
+            *field_counts.entry(column.column).or_insert(0) += 1;
+        }
+        partition
+            .columns
+            .iter()
+            .filter_map(|column| {
+                let crate::PartitionTransform::Bucket(num_buckets) = column.transform else {
+                    return None;
+                };
+                if num_buckets == 0
+                    || column.partition_key_index < 0
+                    || index_counts[&column.partition_key_index] != 1
+                    || field_counts[&column.column] != 1
+                {
+                    return None;
+                }
+                let field = table.columns.arena.get(column.column.0)?;
+                // Nested types can evolve through child columns without versioning the parent.
+                if !matches!(
+                    field.dtype,
+                    crate::catalog::typedefs::CatalogDataType::Primitive(_)
+                ) {
+                    return None;
+                }
+                let begin_snapshot = field.begin_snapshot.filter(|snapshot| *snapshot >= 0)?;
+                Some(crate::scan::BucketColumn {
+                    partition_key_index: column.partition_key_index,
+                    field_id: field.id,
+                    num_buckets,
+                    begin_snapshot,
+                })
+            })
+            .collect()
+    }
+
     pub(crate) fn data_path(&self, root_data_path: &io::DucklakePath) -> io::DucklakePath {
         let data_path = root_data_path.join(&self.parent_schema().inner().path);
         data_path.join(&self.inner().path)

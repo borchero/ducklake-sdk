@@ -282,4 +282,18 @@ impl Table {
         )
         .await
     }
+
+    /// Scan the table and prune files using precomputed bucket filters.
+    ///
+    /// Filters are combined with AND. Callers must compute bucket IDs using the
+    /// source column's logical type and DuckLake's bucket hash, and must still apply
+    /// the original row predicate. See [`crate::ScanResult::prune_buckets`].
+    pub async fn scan_with_bucket_filters(
+        &self,
+        filters: &[crate::BucketFilter],
+    ) -> DucklakeResult<crate::ScanResult> {
+        let mut result = self.scan().await?;
+        result.prune_buckets(filters);
+        Ok(result)
+    }
 }

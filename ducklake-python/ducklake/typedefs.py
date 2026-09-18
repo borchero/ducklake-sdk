@@ -631,24 +631,31 @@ class DeleteFile:
 class ScanDataFile:
     """A data file with its associated delete files from a scan."""
 
+    bucket_values: dict[int, tuple[int, int]]
+    """Safe bucket metadata: field ID to (number of buckets, file bucket ID)."""
+
     def __init__(
         self,
         path: str,
         statistics: DataFileStatistics,
         delete_files: list[DeleteFile],
         inline_deletes: ArrowArrayExportable | None,
+        *,
+        bucket_values: dict[int, tuple[int, int]] | None = None,
     ) -> None:
         self.path = path
         self.statistics = statistics
         self.delete_files = delete_files
         self.inline_deletes = inline_deletes
+        self.bucket_values = bucket_values if bucket_values is not None else {}
 
     def __repr__(self) -> str:
         return (
             f"ScanDataFile(path={self.path!r}, "
             f"statistics={self.statistics!r}, "
             f"delete_files={self.delete_files!r}, "
-            f"inline_deletes={self.inline_deletes!r})"
+            f"inline_deletes={self.inline_deletes!r}, "
+            f"bucket_values={self.bucket_values!r})"
         )
 
 

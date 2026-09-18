@@ -60,7 +60,12 @@ impl<'py> IntoPyObject<'py> for Wrap<ScanDataFile> {
             .inline_deletes
             .as_ref()
             .map(|array| ArrowPyArray::from_array_ref(array.clone()));
-        cls.call1((self.0.path, statistics, delete_files, inline_deletes))
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("bucket_values", self.0.bucket_values)?;
+        cls.call(
+            (self.0.path, statistics, delete_files, inline_deletes),
+            Some(&kwargs),
+        )
     }
 }
 

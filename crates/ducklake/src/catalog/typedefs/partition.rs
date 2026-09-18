@@ -13,7 +13,8 @@ pub(in crate::catalog) struct CatalogTablePartition {
 #[derive(Debug, Clone)]
 pub(in crate::catalog) struct CatalogPartitionColumn {
     pub column: ArenaIdx,
-    transform: crate::PartitionTransform,
+    pub partition_key_index: i64,
+    pub transform: crate::PartitionTransform,
 }
 
 /* ----------------------------------------- TRANSFORM ----------------------------------------- */
@@ -33,6 +34,7 @@ impl CatalogTablePartition {
                     .parse()
                     .map(|transform| CatalogPartitionColumn {
                         column: *columns.by_id.get(&col.column_id).unwrap(),
+                        partition_key_index: col.partition_key_index,
                         transform,
                     })
             })
@@ -51,9 +53,11 @@ impl CatalogTablePartition {
         let catalog_columns = partition
             .0
             .into_iter()
-            .map(|col| {
+            .enumerate()
+            .map(|(index, col)| {
                 Ok(CatalogPartitionColumn {
                     column: columns.arena_idx_by_path(&[col.column])?,
+                    partition_key_index: index as i64,
                     transform: col.transform,
                 })
             })

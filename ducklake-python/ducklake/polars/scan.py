@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import tempfile
 from collections import defaultdict
@@ -9,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 import polars as pl
 import polars.datatypes as pld
 import polars.selectors as cs
+from polars.io.plugins import register_io_source
 
 from ducklake import typedefs
 from ducklake._native import arrow_schema_field_ids
@@ -16,7 +18,9 @@ from ducklake.table import Table
 from ducklake.view import View
 
 if TYPE_CHECKING:
-    from ducklake.typedefs import Column, Schema
+    from collections.abc import Iterator
+
+    from ducklake.typedefs import Column, ScanResult, Schema
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
@@ -26,12 +30,49 @@ _POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)
 def scan_ducklake(
     table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
 ) -> pl.LazyFrame:
-    cache_path = Path(tempfile.mkdtemp())
-
     # 1) First, we read all relevant data from the table. We first scan, then get the
     #    schema because this ensures that the schema is up-to-date.
     scan_result = table.scan()
     schema = table.schema
+
+    if not any(file.bucket_values for file in scan_result.data_files):
+        return _scan_files(table, scan_result, schema, include_file_paths, time_zone)
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        pruned = _prune_bucket_files(scan_result, schema, predicate)
+        result = _scan_files(table, pruned, schema, include_file_paths, time_zone)
+        # Bucket collisions mean that pruning never replaces the original row filter.
+        if predicate is not None:
+            result = result.filter(predicate)
+        if with_columns is not None:
+            result = result.select(with_columns)
+        if n_rows is not None:
+            result = result.head(n_rows)
+        yield from result.collect_batches(chunk_size=batch_size)
+
+    result_time_zone = table._time_zone if time_zone is None else time_zone
+    output_schema = {
+        name: _convert_datetime_time_zone(dtype, result_time_zone)
+        for name, dtype in pl.Schema(schema).items()
+    }
+    if include_file_paths is not None:
+        output_schema[include_file_paths] = pl.String()
+    return register_io_source(source, schema=output_schema)
+
+
+def _scan_files(
+    table: Table,
+    scan_result: ScanResult,
+    schema: Schema,
+    include_file_paths: str | None,
+    time_zone: str | None,
+) -> pl.LazyFrame:
+    cache_path = Path(tempfile.mkdtemp())
 
     # 2) Then, we have to build all the inputs for the scan
     # 2.1) Deletion files: DuckLake's deletion files are the same as the ones used by Iceberg.
@@ -203,6 +244,106 @@ def read_ducklake(
     return scan_ducklake(
         table, include_file_paths=include_file_paths, time_zone=time_zone
     ).collect(optimizations=pl.QueryOptFlags._eager())
+
+
+def _bucket_equalities(predicate: pl.Expr) -> Iterator[tuple[str, pl.Series]]:
+    node = json.loads(predicate.meta.serialize(format="json"))
+    match node:
+        case {"BinaryExpr": {"op": op}}:
+            right, left = predicate.meta.pop()
+            if op == "And":
+                yield from _bucket_equalities(left)
+                yield from _bucket_equalities(right)
+            elif op in ("Eq", "EqValidity"):
+                if right.meta.is_column():
+                    left, right = right, left
+                if left.meta.is_column() and right.meta.is_literal():
+                    values = pl.select(right).to_series()
+                    if len(values) == 1 and not values.dtype.is_nested():
+                        yield left.meta.output_name(), values
+        case {"Function": {"function": {"Boolean": {"IsIn": _}}}}:
+            right, left = predicate.meta.pop()
+            if left.meta.is_column() and right.meta.is_literal():
+                values = pl.select(right).to_series()
+                if isinstance(values.dtype, pl.List) and len(values) == 1:
+                    items = values.item()
+                    if not isinstance(items, pl.Series):
+                        return
+                    values = items
+                if not values.dtype.is_nested():
+                    yield left.meta.output_name(), values
+
+
+def _literal_buckets(values: pl.Series, dtype: pl.DataType, num_buckets: int) -> set[int] | None:
+    from ducklake.polars.sink import _create_bucket_partition
+
+    values = values.drop_nulls()
+    # Integer/float comparisons can promote the column to a lossy floating-point
+    # representation. Casting just the literal back would then miss matching rows.
+    if dtype.is_integer():
+        if not values.dtype.is_integer() and len(values):
+            return None
+    elif dtype.is_float():
+        if not values.dtype.is_float() and len(values):
+            return None
+        if len(values) and not values.is_finite().all():
+            return None
+    elif isinstance(dtype, pl.Datetime):
+        if not isinstance(values.dtype, pl.Datetime) and len(values):
+            return None
+    elif values.dtype != dtype and len(values):
+        return None
+
+    try:
+        typed = values.cast(dtype, strict=True)
+        if len(values) and not typed.cast(values.dtype).equals(values):
+            return None
+        bucket_expr = _create_bucket_partition(pl.col("value"), dtype, num_buckets)
+        return set(typed.rename("value").to_frame().select(bucket_expr).to_series().to_list())
+    except (NotImplementedError, pl.exceptions.PolarsError):
+        return None
+
+
+def _prune_bucket_files(
+    scan_result: ScanResult, schema: Schema, predicate: pl.Expr | None
+) -> ScanResult:
+    if predicate is None:
+        return scan_result
+    try:
+        equalities = list(_bucket_equalities(predicate))
+    except (ValueError, TypeError, KeyError, pl.exceptions.PolarsError):
+        # Expression serialization is an unstable Polars API. Unknown forms must
+        # never prevent a scan, nor remove potentially matching data.
+        return scan_result
+
+    columns = {column.name: column.field_id for column in schema.columns}
+    polars_schema = pl.Schema(schema)
+    specifications = {
+        (field_id, num_buckets)
+        for file in scan_result.data_files
+        for field_id, (num_buckets, _) in file.bucket_values.items()
+    }
+    filters: dict[tuple[int, int], set[int]] = {}
+    for name, values in equalities:
+        for field_id, num_buckets in specifications:
+            if columns.get(name) != field_id:
+                continue
+            buckets = _literal_buckets(values, polars_schema[name], num_buckets)
+            if buckets is not None:
+                key = (field_id, num_buckets)
+                filters[key] = filters[key] & buckets if key in filters else buckets
+
+    return typedefs.ScanResult(
+        [
+            file
+            for file in scan_result.data_files
+            if all(
+                (allowed := filters.get((field_id, num_buckets))) is None or bucket in allowed
+                for field_id, (num_buckets, bucket) in file.bucket_values.items()
+            )
+        ],
+        scan_result.inline_data,
+    )
 
 
 # -------------------------------------------- VIEWS -------------------------------------------- #
