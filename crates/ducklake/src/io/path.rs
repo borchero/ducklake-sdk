@@ -300,6 +300,9 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
     if let Some(store) = cache.get(&key) {
         store.clone()
     } else {
+        #[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
+        let client_options =
+            object_store::ClientOptions::new().with_timeout(std::time::Duration::from_secs(300));
         let store: Arc<dyn ObjectStore> = match key {
             ObjectStoreCacheKey::Local => Arc::new(LocalFileSystem::new()),
             #[cfg(feature = "aws")]
@@ -308,6 +311,7 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
                 ref options,
             } => {
                 let mut builder = AmazonS3Builder::new()
+                    .with_client_options(client_options.clone())
                     .with_bucket_name(bucket)
                     .with_allow_http(true);
                 for (config_key, value) in options {
@@ -320,7 +324,10 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
                 ref bucket,
                 ref options,
             } => {
-                let mut builder = GoogleCloudStorageBuilder::new().with_bucket_name(bucket);
+                let mut builder = GoogleCloudStorageBuilder::new()
+                    // Preserve GCS's default HTTP support for custom endpoints and emulators.
+                    .with_client_options(client_options.clone().with_allow_http(true))
+                    .with_bucket_name(bucket);
                 for (config_key, value) in options {
                     builder = builder.with_config(*config_key, value);
                 }
@@ -332,6 +339,7 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
                 ref options,
             } => {
                 let mut builder = MicrosoftAzureBuilder::new()
+                    .with_client_options(client_options.clone())
                     .with_container_name(container)
                     .with_allow_http(true);
                 for (config_key, value) in options {
