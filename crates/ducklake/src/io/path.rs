@@ -325,7 +325,8 @@ fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
                 ref options,
             } => {
                 let mut builder = GoogleCloudStorageBuilder::new()
-                    .with_client_options(client_options.clone())
+                    // Preserve GCS's default HTTP support for custom endpoints and emulators.
+                    .with_client_options(client_options.clone().with_allow_http(true))
                     .with_bucket_name(bucket);
                 for (config_key, value) in options {
                     builder = builder.with_config(*config_key, value);
