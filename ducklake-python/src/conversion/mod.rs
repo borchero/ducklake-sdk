@@ -10,6 +10,7 @@ mod scan;
 mod snapshot;
 mod table_metadata;
 mod table_name;
+mod table_statistics;
 mod tag;
 mod value;
 mod write_data_file;

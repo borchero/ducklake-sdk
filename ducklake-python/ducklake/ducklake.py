@@ -19,6 +19,7 @@ from .typedefs import (
     SnapshotMetadata,
     TableMetadataUpdate,
     TableName,
+    TableStatistics,
     _serialize_metadata_value,
 )
 from .view import View
@@ -327,16 +328,42 @@ class Ducklake:
         """
         return self._pyducklake.has_table(name)
 
-    def list_tables(self, schema: str | None = None) -> list[Table]:
+    @overload
+    def list_tables(
+        self, schema: str | None = None, *, statistics: Literal[False] = False
+    ) -> list[Table]: ...
+
+    @overload
+    def list_tables(
+        self, schema: str | None = None, *, statistics: Literal[True]
+    ) -> list[tuple[Table, TableStatistics]]: ...
+
+    @overload
+    def list_tables(
+        self, schema: str | None = None, *, statistics: bool
+    ) -> list[Table] | list[tuple[Table, TableStatistics]]: ...
+
+    def list_tables(
+        self, schema: str | None = None, *, statistics: bool = False
+    ) -> list[Table] | list[tuple[Table, TableStatistics]]:
         """List all tables in the catalog.
 
         Args:
             schema: Optional schema name to filter tables by. If None, returns all tables
                 across all schemas.
+            statistics: If True, include aggregate storage statistics. This is much more efficient
+                than computing them manually by scanning all data files.
+
 
         Returns:
-            A list of all Table objects in the catalog, optionally filtered by schema.
+            Table handles by default, or pairs of table handles and :class:`TableStatistics`
+            when `statistics=True`.
         """
+        if statistics:
+            return [
+                (self._wrap_table(table), stats)
+                for table, stats in self._pyducklake.list_tables_with_statistics(schema)
+            ]
         pytables = self._pyducklake.list_tables(schema)
         return [self._wrap_table(pytable) for pytable in pytables]
 
