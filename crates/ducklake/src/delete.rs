@@ -8,6 +8,7 @@ impl Ducklake {
     ///
     /// Recursively deletes files under the data path and drops every table in the metadata
     /// catalog, including tables not managed by DuckLake. The catalog database itself is retained.
+    /// Files at schema or table paths outside the root data path are not deleted.
     ///
     /// Uses this connection's storage options and closes its pool on success. Other connections
     /// must not access the DuckLake during deletion. Deletion cannot be rolled back: a failure
