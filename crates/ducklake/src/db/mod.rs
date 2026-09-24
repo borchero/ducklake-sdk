@@ -159,6 +159,30 @@ impl Pool {
         })
     }
 
+    pub(crate) async fn list_tables(&self) -> DucklakeResult<Vec<String>> {
+        let tables: Vec<(String,)> = match &self.0 {
+            #[cfg(feature = "postgres")]
+            AnyPool::Postgres(pool) => {
+                let sql = "SELECT tablename FROM pg_tables WHERE schemaname = current_schema()";
+                log_sql(sql, None);
+                sqlx::query_as(sql).fetch_all(pool).await?
+            }
+            #[cfg(feature = "mysql")]
+            AnyPool::MySql(pool) => {
+                let sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'";
+                log_sql(sql, None);
+                sqlx::query_as(sql).fetch_all(pool).await?
+            }
+            #[cfg(feature = "sqlite")]
+            AnyPool::Sqlite(pool) => {
+                let sql = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*'";
+                log_sql(sql, None);
+                sqlx::query_as(sql).fetch_all(pool).await?
+            }
+        };
+        Ok(tables.into_iter().map(|(name,)| name).collect())
+    }
+
     pub(crate) async fn table_exists(&self, table_name: &str) -> DucklakeResult<bool> {
         let result: (bool,) = match &self.0 {
             #[cfg(feature = "postgres")]

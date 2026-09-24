@@ -66,6 +66,10 @@ pub(crate) fn connect(
 
 #[pymethods]
 impl PyDucklake {
+    pub fn delete(&mut self, py: Python) -> PyResult<()> {
+        block_on(py, self.0.delete()).map_err(error::into_pyerr)
+    }
+
     #[getter]
     pub fn time_zone(&self) -> &str {
         self.0.time_zone()

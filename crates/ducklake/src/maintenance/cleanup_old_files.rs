@@ -1,4 +1,4 @@
-use futures::{StreamExt, stream};
+use futures::stream;
 use sea_query::{Condition, ExprTrait, Query};
 
 use super::DryRun;
@@ -135,14 +135,7 @@ async fn delete_files(
         .map(|path| Ok(path.resolve()?.path()))
         .collect::<DucklakeResult<Vec<_>>>()?;
 
-    let mut stream = store.delete_stream(stream::iter(locations.into_iter().map(Ok)).boxed());
-    while let Some(result) = stream.next().await {
-        match result {
-            // We tolerate files that are already gone to keep the operation idempotent.
-            Ok(_) | Err(object_store::Error::NotFound { .. }) => {}
-            Err(e) => return Err(e.into()),
-        }
-    }
+    io::delete_objects(store.as_ref(), stream::iter(locations.into_iter().map(Ok))).await?;
     Ok(())
 }
 

@@ -82,20 +82,11 @@ impl Ducklake {
             orphans.push(meta.location);
         }
 
-        // 3) Delete the orphaned files unless this is a dry run. We batch the deletes via
-        // `delete_stream` so the object store can use batch APIs where available, and tolerate
-        // files that are already gone to keep the operation idempotent.
+        // 3) Delete the orphaned files unless this is a dry run.
         if matches!(dry_run, DryRun::No) {
             self.conn.check_writable()?;
-            let locations = orphans.clone();
-            let mut deletion =
-                store.delete_stream(stream::iter(locations.into_iter().map(Ok)).boxed());
-            while let Some(result) = deletion.next().await {
-                match result {
-                    Ok(_) | Err(object_store::Error::NotFound { .. }) => {}
-                    Err(e) => return Err(e.into()),
-                }
-            }
+            let locations = stream::iter(orphans.clone().into_iter().map(Ok));
+            io::delete_objects(store.as_ref(), locations).await?;
         }
 
         Ok(orphans

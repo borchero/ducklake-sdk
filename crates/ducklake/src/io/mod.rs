@@ -6,12 +6,27 @@ mod path;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use futures::TryStreamExt;
 use futures::stream::BoxStream;
+use futures::{Stream, StreamExt, TryStreamExt};
 use object_store::buffered::BufWriter;
 use object_store::{ObjectStore, ObjectStoreExt};
 pub(crate) use path::{DucklakePath, Path};
 use tokio::io::AsyncWriteExt;
+
+/// Batch file deletions through the object store, tolerating files that are already gone.
+pub(crate) async fn delete_objects(
+    store: &dyn ObjectStore,
+    locations: impl Stream<Item = object_store::Result<object_store::path::Path>> + Send + 'static,
+) -> object_store::Result<()> {
+    let mut deletion = store.delete_stream(locations.boxed());
+    while let Some(result) = deletion.next().await {
+        match result {
+            Ok(_) | Err(object_store::Error::NotFound { .. }) => {}
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(())
+}
 
 /// Copy a file between two object stores.
 pub(crate) async fn copy_file(
