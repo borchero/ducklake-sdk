@@ -7,6 +7,7 @@ mod io;
 mod caches;
 mod catalog;
 mod db;
+mod delete;
 mod ducklake;
 mod error;
 mod maintenance;

@@ -775,6 +775,20 @@ class Ducklake:
     #                                          DISCONNECT                                         #
     # ------------------------------------------------------------------------------------------- #
 
+    def delete(self) -> None:
+        """Permanently delete this DuckLake's data and catalog contents.
+
+        Recursively deletes files under the data path and drops every table in the metadata
+        catalog, including tables not managed by DuckLake. The catalog database itself is
+        retained. Local storage follows symlinks and may leave empty directories behind.
+        Schema and table paths outside the root data path are not traversed; their files remain.
+
+        Raises:
+            ReadonlyDucklakeError: If this connection is read-only or pinned to a snapshot.
+        """
+        self._pyducklake.delete()
+        self.disconnect()
+
     def disconnect(self) -> None:
         """Disconnect from the catalog database, gracefully closing all underlying connections.
 
