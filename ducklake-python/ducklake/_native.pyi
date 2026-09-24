@@ -9,6 +9,7 @@ from .typedefs import (
     ScanResult,
     SnapshotMetadata,
     TableMetadata,
+    TableStatistics,
     Value,
     WriteDataFile,
 )
@@ -57,6 +58,9 @@ class PyDucklake:
     def table(self, name: str | tuple[str, str]) -> PyTable: ...
     def has_table(self, name: str | tuple[str, str]) -> bool: ...
     def list_tables(self, schema: str | None) -> list[PyTable]: ...
+    def list_tables_with_statistics(
+        self, schema: str | None
+    ) -> list[tuple[PyTable, TableStatistics]]: ...
     def copy_tables(
         self,
         tables: list[tuple[str | tuple[str, str] | None, PyTable]],

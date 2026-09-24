@@ -223,6 +223,21 @@ impl PyDucklake {
             .map_err(error::into_pyerr)
     }
 
+    pub fn list_tables_with_statistics(
+        &self,
+        py: Python,
+        schema: Option<String>,
+    ) -> PyResult<Vec<(PyTable, Wrap<ducklake::TableStatistics>)>> {
+        block_on(py, self.0.list_tables_with_statistics(schema.as_deref()))
+            .map(|tables| {
+                tables
+                    .into_iter()
+                    .map(|(table, stats)| (PyTable::new(table), Wrap(stats)))
+                    .collect()
+            })
+            .map_err(error::into_pyerr)
+    }
+
     pub fn list_tables(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyTable>> {
         block_on(py, self.0.list_tables(schema.as_deref()))
             .map(|tables| tables.into_iter().map(PyTable::new).collect())

@@ -549,6 +549,25 @@ class WriteDataFile:
         )
 
 
+class TableStatistics:
+    """Aggregate table statistics."""
+
+    #: Current row count, including inline rows and excluding recorded deletions.
+    num_rows: int
+    #: Current rows stored inline in the catalog.
+    num_inline_rows: int
+    #: Recorded deletions for active data files (unknown delete counts count as zero).
+    num_deleted_rows: int
+    #: Number of active data files.
+    num_data_files: int
+    #: Total file size, or None if any size is unknown. Zero for an empty table.
+    total_file_size_bytes: int | None
+    #: Smallest known file size, or None if no size is known.
+    min_file_size_bytes: int | None
+    #: Largest known file size, or None if no size is known.
+    max_file_size_bytes: int | None
+
+
 class DataFileStatistics:
     """Statistics for a data file."""
 

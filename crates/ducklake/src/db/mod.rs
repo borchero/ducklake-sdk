@@ -187,6 +187,27 @@ impl Pool {
         Ok(result.0)
     }
 
+    /// Names of tables visible to unqualified queries on this connection.
+    pub(crate) async fn table_names(&self) -> DucklakeResult<std::collections::HashSet<String>> {
+        let sql = match self.dialect() {
+            #[cfg(feature = "postgres")]
+            Dialect::Postgres => {
+                "SELECT relname FROM pg_catalog.pg_class WHERE relkind IN ('r', 'p') AND pg_catalog.pg_table_is_visible(oid)"
+            }
+            #[cfg(feature = "mysql")]
+            Dialect::MySql => {
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()"
+            }
+            #[cfg(feature = "sqlite")]
+            Dialect::Sqlite => "SELECT name FROM sqlite_master WHERE type = 'table'",
+        };
+        log_sql(sql, None);
+        let rows: Vec<(String,)> = dispatch_pool!(self, pool => {
+            sqlx::query_as(sql).fetch_all(pool).await?
+        });
+        Ok(rows.into_iter().map(|(name,)| name).collect())
+    }
+
     pub(crate) async fn fetch_one<O>(&self, query: &impl SqlConvertible) -> DucklakeResult<O>
     where
         O: RowType,

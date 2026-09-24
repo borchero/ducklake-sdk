@@ -351,6 +351,14 @@ impl Ducklake {
     pub async fn list_tables(&self, schema: Option<&str>) -> DucklakeResult<Vec<Table>> {
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
         let catalog = snapshot.catalog().await?;
+        self.list_tables_from_catalog(catalog, schema)
+    }
+
+    pub(crate) fn list_tables_from_catalog(
+        &self,
+        catalog: &Catalog,
+        schema: Option<&str>,
+    ) -> DucklakeResult<Vec<Table>> {
         let tables = if let Some(schema) = schema {
             self.list_tables_in_schema(catalog.schema(schema)?)
         } else {

@@ -15,6 +15,7 @@ mod primitives;
 mod scan;
 mod spec;
 mod table;
+mod table_statistics;
 mod transaction;
 mod transfer;
 mod typedefs;
@@ -28,6 +29,7 @@ pub use maintenance::*;
 pub use options::*;
 pub use primitives::{Interval, TimeWithTimezone};
 pub use table::*;
+pub use table_statistics::TableStatistics;
 pub use transaction::{
     AuthorInfo,
     IfExistsStrategy,

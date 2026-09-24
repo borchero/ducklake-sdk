@@ -95,3 +95,4 @@ Data Files
     DeleteFile
     ScanDataFile
     ScanResult
+    TableStatistics
