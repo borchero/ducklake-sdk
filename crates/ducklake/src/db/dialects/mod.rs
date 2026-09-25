@@ -39,15 +39,23 @@ pub(crate) enum Dialect {
 }
 
 impl Dialect {
-    pub(crate) fn column_type_for_data_inlining(&self, data_type: &crate::DataType) -> ColumnType {
-        match self {
+    pub(crate) fn column_type_for_data_inlining(
+        &self,
+        data_type: &crate::DataType,
+    ) -> crate::DucklakeResult<ColumnType> {
+        if data_type.contains_variant() {
+            return Err(DucklakeError::InvalidDataType(
+                "VARIANT values cannot be inlined in the catalog".into(),
+            ));
+        }
+        Ok(match self {
             #[cfg(feature = "postgres")]
             Dialect::Postgres => postgres::column_type_for_data_type(data_type),
             #[cfg(feature = "mysql")]
             Dialect::MySql => unimplemented!("data inlining is not yet implemented for MySQL"),
             #[cfg(feature = "sqlite")]
             Dialect::Sqlite => sqlite::column_type_for_data_type(data_type),
-        }
+        })
     }
 
     /// The maximum number of bind parameters that may be used within a single statement for this

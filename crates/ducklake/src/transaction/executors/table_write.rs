@@ -131,9 +131,14 @@ pub(crate) fn create_inlined_data_table(
     table_ref: &TableRef,
 ) {
     let table_id = state.table_id(*table_ref);
-    changes
-        .inline_tables
-        .insert(table_id, state.table_schema(*table_ref));
+    let schema = state.table_schema(*table_ref);
+    if !schema
+        .columns
+        .values()
+        .any(|col| col.dtype.contains_variant())
+    {
+        changes.inline_tables.insert(table_id, schema);
+    }
 }
 
 pub(crate) async fn write_table_inline_data(

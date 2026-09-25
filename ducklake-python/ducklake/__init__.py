@@ -55,6 +55,7 @@ from .typedefs import (
     UInt128,
     Uuid,
     Varchar,
+    Variant,
     WriteDataFile,
 )
 from .view import View
@@ -107,6 +108,7 @@ __all__ = [
     "UInt64",
     "UInt8",
     "Uuid",
+    "Variant",
     "Varchar",
     "View",
     "WriteDataFile",

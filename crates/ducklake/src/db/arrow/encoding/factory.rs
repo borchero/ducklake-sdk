@@ -50,6 +50,11 @@ pub(in crate::db) fn make_column_encoder<E: TypeEncoder>(
         DataType::Varchar => Box::new(StringArrayExtractor::new(&array)),
         DataType::Blob => Box::new(BinaryArrayExtractor::new(&array)),
         DataType::Json => Box::new(StringArrayExtractor::new(&array)),
+        DataType::Variant => {
+            return Err(crate::DucklakeError::UnsupportedArrowDataType(
+                "VARIANT inline data".into(),
+            ));
+        }
         DataType::Uuid => Box::new(UuidArrayExtractor::new(&array)),
         DataType::List(inner) => Box::new(LargeListArrayExtractor::<E>::new(
             &array,

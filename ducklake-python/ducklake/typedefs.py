@@ -362,6 +362,10 @@ class Json(DataType):
     """JSON data type."""
 
 
+class Variant(DataType):
+    """Dynamically typed value stored in a binary encoding."""
+
+
 class Uuid(DataType):
     """Universally unique identifier data type."""
 
