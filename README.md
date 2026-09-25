@@ -38,7 +38,7 @@ All language SDKs are built on the same Rust core, which bundles the implementat
 
 <!-- prettier-ignore -->
 > [!WARNING]
-> This is _not_ an official SDK released by the DuckDB Foundation.
+> This is _not_ an official SDK released by DuckLabs.
 
 ## Getting Started
 
@@ -96,13 +96,15 @@ The Rust core — and therefore every SDK built on top of it — supports:
 - **[Data inlining](https://ducklake.select/docs/stable/duckdb/advanced_features/data_inlining)** for small writes
 - **[Metadata configuration](https://ducklake.select/docs/stable/duckdb/usage/configuration)**
 - **[Time travel](https://ducklake.select/docs/stable/duckdb/usage/time_travel)** queries
+- A subset of
+  **[maintenance operations](https://ducklake.select/docs/stable/duckdb/maintenance/recommended_maintenance)**
 
 The Python SDK additionally provides:
 
 - Reading and writing data through [Polars](https://github.com/pola-rs/polars)
 - Reading, writing, and deleting data through [DuckDB](https://github.com/duckdb/duckdb)
-- [Maintenance operations](https://ducklake.select/docs/stable/duckdb/maintenance/recommended_maintenance) —
-  compaction, snapshot expiration, and more — via DuckDB
+- All [maintenance operations](https://ducklake.select/docs/stable/duckdb/maintenance/recommended_maintenance) via
+  DuckDB
 
 ### Compatibility Matrix
 
@@ -148,7 +150,7 @@ See the DuckLake [release calendar](https://ducklake.select/release_calendar) fo
 
 - [ ] `GEOMETRY` and `VARIANT` data types
 - [ ] Mapping columns by name (Parquet files must currently carry field IDs)
-- [ ] Views, macros, sort info, and encrypted files
+- [ ] Macros, sort info, and encrypted files
 
 ### Known limitations
 
@@ -160,8 +162,7 @@ See the DuckLake [release calendar](https://ducklake.select/release_calendar) fo
 
 **Python SDK**:
 
-- [ ] Maintenance operations (compaction, snapshot expiration, ...) are dispatched to DuckDB rather than implemented
-      natively.
+- [ ] Some maintenance operations are dispatched to DuckDB rather than implemented natively.
 - [ ] Performance of polars reads and writes can be optimized further:
   - Writes currently require reading the file footer after the file has already been written (see also
     https://github.com/pola-rs/polars/issues/27226)
