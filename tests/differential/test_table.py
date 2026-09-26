@@ -21,6 +21,44 @@ def test_match_reference_table_creation(
 
 
 @pytest.mark.differential
+def test_match_reference_variant_table_creation(
+    ducklake: dl.Ducklake,
+    catalog_url: str,
+    reference_catalog_url: str,
+    reference_duckdb_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    # Arrange
+    columns = {"payload": dl.Variant()}
+
+    # Act
+    ducklake.create_table("test", columns)
+    reference_duckdb_connection.execute("CREATE TABLE test (payload VARIANT)")
+
+    # Assert
+    assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)
+
+
+@pytest.mark.differential
+def test_parse_reference_variant_catalog(
+    reference_catalog_url: str,
+    reference_duckdb_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    # Arrange
+    reference_duckdb_connection.execute("CREATE TABLE test (payload VARIANT)")
+    reference_duckdb_connection.execute("INSERT INTO test VALUES (42::VARIANT)")
+
+    # Act
+    with dl.connect(reference_catalog_url) as reference_ducklake:
+        table = reference_ducklake.table("test")
+        columns = table.schema.columns
+        data_files = table.scan().data_files
+
+    # Assert
+    assert columns == [dl.Column("payload", dl.Variant(), field_id=1)]
+    assert len(data_files) == 1
+
+
+@pytest.mark.differential
 def test_match_reference_comment(
     ducklake: dl.Ducklake,
     catalog_url: str,

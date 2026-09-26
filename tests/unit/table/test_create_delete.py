@@ -15,6 +15,18 @@ def test_create_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     assert table.tags == {}
 
 
+def test_create_table_with_variant(ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    columns = {"payload": dl.Variant()}
+
+    # Act
+    ducklake.create_table(random_table_name, columns)
+    table = ducklake.table(random_table_name)
+
+    # Assert
+    assert table.schema.columns == [dl.Column("payload", dl.Variant(), field_id=1)]
+
+
 def test_table_equality(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     created = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
