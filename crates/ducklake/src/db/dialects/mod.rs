@@ -39,20 +39,32 @@ pub(crate) enum Dialect {
 }
 
 impl Dialect {
+    /// Whether this catalog backend can store the type in an inline data table.
+    pub(crate) fn supports_data_inlining(&self, _data_type: &crate::DataType) -> bool {
+        match self {
+            #[cfg(feature = "postgres")]
+            Dialect::Postgres => !_data_type.contains_variant(),
+            #[cfg(feature = "sqlite")]
+            Dialect::Sqlite => !_data_type.contains_variant(),
+            #[cfg(feature = "mysql")]
+            Dialect::MySql => false,
+        }
+    }
+
     pub(crate) fn column_type_for_data_inlining(
         &self,
         data_type: &crate::DataType,
     ) -> crate::DucklakeResult<ColumnType> {
-        if data_type.contains_variant() {
-            return Err(DucklakeError::InvalidDataType(
-                "VARIANT values cannot be inlined in the catalog".into(),
-            ));
+        if !self.supports_data_inlining(data_type) {
+            return Err(DucklakeError::InvalidDataType(format!(
+                "{data_type} cannot be inlined in this catalog"
+            )));
         }
         Ok(match self {
             #[cfg(feature = "postgres")]
             Dialect::Postgres => postgres::column_type_for_data_type(data_type),
             #[cfg(feature = "mysql")]
-            Dialect::MySql => unimplemented!("data inlining is not yet implemented for MySQL"),
+            Dialect::MySql => unreachable!("data inlining is not yet implemented for MySQL"),
             #[cfg(feature = "sqlite")]
             Dialect::Sqlite => sqlite::column_type_for_data_type(data_type),
         })

@@ -452,14 +452,10 @@ impl<'a> Transaction<'a> {
         let table = self.catalog_mut().table(table_name)?;
         let table_ref = table.ref_();
         let schema = table.schema();
-        if schema
-            .columns
-            .values()
-            .any(|col| col.dtype.contains_variant())
-        {
-            return Err(DucklakeError::InvalidDataType(
-                "VARIANT values cannot be inlined in the catalog".into(),
-            ));
+        for column in schema.columns.values() {
+            self.pool
+                .dialect()
+                .column_type_for_data_inlining(&column.dtype)?;
         }
         let schema_columns = schema.columns_by_id();
 

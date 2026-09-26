@@ -280,7 +280,9 @@ impl<'a> Transaction<'a> {
         let mut changes = TransactionChanges::default();
 
         // First, we apply all the changes from the changeset
-        change_set.apply(&mut changes, state).await?;
+        change_set
+            .apply(&mut changes, state, pool.dialect())
+            .await?;
         let applied_changes = change_set.applied_change_set(state);
 
         // Then, we extract information from the applied changes to finalize the commit
