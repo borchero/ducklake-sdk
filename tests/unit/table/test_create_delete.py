@@ -133,3 +133,24 @@ def test_create_table_skip_when_missing(
     # Assert
     assert table.name == ("main", random_table_name)
     assert table.schema.columns == [dl.Column("x", dl.Int64(), field_id=1)]
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [dl.TimeTz(), dl.Interval(), dl.Timestamp("seconds"), dl.Timestamp("nanoseconds")],
+)
+def test_temporal_column_type_persists(
+    ducklake: dl.Ducklake,
+    catalog_url: str,
+    random_table_name: str,
+    dtype: dl.DataType,
+) -> None:
+    # Arrange
+    ducklake.create_table(random_table_name, {"value": dtype})
+
+    # Act
+    with dl.connect(catalog_url) as reopened:
+        schema = reopened.table(random_table_name).schema
+
+    # Assert
+    assert schema.columns == [dl.Column("value", dtype, field_id=1)]

@@ -124,3 +124,26 @@ impl FromStr for DucklakeVersion {
         Ok(DucklakeVersion { major, minor })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("")]
+    #[case("1")]
+    #[case("1.2.3")]
+    #[case("invalid.2")]
+    #[case("1.invalid")]
+    #[case("-1.2")]
+    #[case("1.-2")]
+    #[case("18446744073709551616.2")]
+    #[case("1.18446744073709551616")]
+    fn invalid_catalog_versions_preserve_the_invalid_input(#[case] version: &str) {
+        let result = version.parse::<DucklakeVersion>();
+
+        assert!(matches!(result, Err(DucklakeError::InvalidVersion(value)) if value == version));
+    }
+}
