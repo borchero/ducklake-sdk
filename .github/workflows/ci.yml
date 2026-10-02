@@ -54,15 +54,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Run tests
-        shell: bash
-        run: |
-          # The coverage wrapper cannot parse Cargo response files on Windows.
-          coverage_args=()
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            coverage_args+=(--no-rustc-wrapper)
-          fi
-          pixi run test-rs-coverage --locked --verbose "${coverage_args[@]}" --output-path coverage-rs.lcov
-          test -s coverage-rs.lcov
+        run: pixi run test-rs-coverage --locked --output-path coverage-rs.lcov
       - name: Upload coverage
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:

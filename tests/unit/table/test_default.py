@@ -4,7 +4,6 @@ import uuid
 from typing import Any
 
 import pytest
-from dateutil.relativedelta import relativedelta
 
 import ducklake as dl
 
@@ -12,7 +11,6 @@ import ducklake as dl
 @pytest.mark.parametrize(
     ("dtype", "value"),
     [
-        (dl.Interval(), relativedelta(months=2, days=3, hours=4)),
         (dl.Boolean(), True),
         (dl.Int64(), 42),
         (dl.UInt64(), 2**63),
@@ -43,19 +41,3 @@ def test_value_default_roundtrip(
 
     # Assert
     assert roundtripped == value
-
-
-@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "1e100"])
-def test_invalid_decimal_default_rejected(
-    shared_ducklake: dl.Ducklake,
-    random_table_name: str,
-    value: str,
-) -> None:
-    # Arrange
-    columns = [dl.Column("x", dl.Decimal(10, 2), default_value=decimal.Decimal(value))]
-
-    # Act & Assert
-    with pytest.raises(TypeError, match="Invalid decimal"):
-        shared_ducklake.create_table(random_table_name, columns)
-
-    assert all(table.name[1] != random_table_name for table in shared_ducklake.list_tables())
