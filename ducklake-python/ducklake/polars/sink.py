@@ -13,7 +13,7 @@ from ducklake import typedefs
 from ducklake._native import PyDataFilePathGenerator
 from ducklake.table import Table
 from ducklake.transaction import TransactionTable
-from ducklake.typedefs import Column, Partitioning, SortInfo, WriteDataFile
+from ducklake.typedefs import Column, Partitioning, WriteDataFile
 
 PARTITION_COLUMN_PREFIX = "__ducklake_partition__"
 # NOTE: This is taken from the polars Iceberg implementation
