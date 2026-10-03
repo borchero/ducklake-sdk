@@ -55,6 +55,12 @@ impl Dialect {
                 .columns
                 .values()
                 .all(|column| self.column_type_for_data_inlining(&column.dtype).is_ok())
+            && match self {
+                #[cfg(feature = "postgres")]
+                Dialect::Postgres => postgres::inline_row_fits(schema),
+                #[allow(unreachable_patterns)]
+                _ => true,
+            }
     }
 
     pub(crate) fn column_type_for_data_inlining(

@@ -52,6 +52,32 @@ pub(super) fn column_type_for_data_type(data_type: &DataType) -> ColumnType {
     }
 }
 
+pub(super) fn inline_row_fits(schema: &crate::Schema) -> bool {
+    // On the default 8 KiB pages, MaxHeapTupleSize is 8160 bytes. Reserve the 23-byte
+    // tuple header, null bitmap, MAXALIGN padding, and three BIGINT system columns.
+    // https://www.postgresql.org/docs/current/storage-page-layout.html
+    let mut size = (23 + (schema.columns.len() + 3).div_ceil(8)).next_multiple_of(8) + 3 * 8;
+    for column in schema.columns.values() {
+        // Use the PostgreSQL storage types above, not the logical DuckLake widths.
+        let (width, alignment) = match column.dtype {
+            DataType::Boolean => (1, 1),
+            DataType::Int8 | DataType::Int16 => (2, 2),
+            DataType::Int32 | DataType::UInt8 | DataType::UInt16 | DataType::Float32 => (4, 4),
+            DataType::Int64 | DataType::UInt32 | DataType::Float64 | DataType::Time => (8, 8),
+            DataType::TimeTz => (12, 8),
+            DataType::Interval => (16, 8),
+            DataType::Uuid => (16, 1),
+            // TOAST only externalizes values larger than its MAXALIGN-ed pointer size
+            // (24 bytes). Reserve that much plus alignment for values left inline.
+            // This is conservative for short or NULL values.
+            // https://www.postgresql.org/docs/current/storage-toast.html
+            _ => (24, 4),
+        };
+        size = size.next_multiple_of(alignment) + width;
+    }
+    size <= 8160
+}
+
 /* --------------------------------------------------------------------------------------------- */
 /*                                            DECODING                                           */
 /* --------------------------------------------------------------------------------------------- */

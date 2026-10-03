@@ -11,10 +11,21 @@ pytestmark = pytest.mark.skip_config(
 )
 
 
-@pytest.fixture()
-def boundary_frame(catalog: str) -> pl.DataFrame:
-    max_columns = {"sqlite": 1997, "postgres": 1597}[catalog]
-    return pl.DataFrame({f"c{i}": pl.Series([i], dtype=pl.Int32) for i in range(max_columns)})
+@pytest.fixture(
+    params=[
+        (pl.Int32, 1597),
+        (pl.Int64, 998),
+        (pl.Float64, 998),
+        (pl.UInt32, 998),
+        (pl.String, 336),
+    ]
+)
+def boundary_frame(catalog: str, request: pytest.FixtureRequest) -> pl.DataFrame:
+    # Wider types reach PostgreSQL's conservative tuple-size limit before its column limit.
+    dtype, postgres_limit = request.param
+    max_columns = {"sqlite": 1997, "postgres": postgres_limit}[catalog]
+    value = "x" * 20 if dtype == pl.String else 1
+    return pl.DataFrame({f"c{i}": pl.Series([value], dtype=dtype) for i in range(max_columns)})
 
 
 @pytest.fixture()
