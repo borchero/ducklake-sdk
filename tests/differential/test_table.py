@@ -21,30 +21,6 @@ def test_match_reference_table_creation(
 
 
 @pytest.mark.differential
-def test_read_reference_sort_info(
-    reference_catalog_url: str,
-    reference_duckdb_connection: duckdb.DuckDBPyConnection,
-) -> None:
-    # Arrange
-    reference_duckdb_connection.execute("CREATE TABLE test (x BIGINT, y BIGINT)")
-    reference_duckdb_connection.execute(
-        "ALTER TABLE test SET SORTED BY (x DESC NULLS FIRST, y ASC NULLS LAST)"
-    )
-
-    # Act
-    with dl.connect(reference_catalog_url) as lake:
-        sort_info = lake.table("test").sort_info
-
-    # Assert
-    assert sort_info is not None
-    assert [(c.expression, c.direction, c.null_order) for c in sort_info.columns] == [
-        ("x", "descending", "nulls_first"),
-        ("y", "ascending", "nulls_last"),
-    ]
-
-
-@pytest.mark.differential
-def test_match_reference_sort_info(
 def test_match_reference_variant_table_creation(
     ducklake: dl.Ducklake,
     catalog_url: str,
@@ -52,14 +28,6 @@ def test_match_reference_variant_table_creation(
     reference_duckdb_connection: duckdb.DuckDBPyConnection,
 ) -> None:
     # Arrange
-    table = ducklake.create_table("test", {"x": dl.Int64(), "y": dl.Int64()})
-    reference_duckdb_connection.execute("CREATE TABLE test (x BIGINT, y BIGINT)")
-
-    # Act
-    table.update_sort_info(dl.SortInfo([dl.SortColumn("x", direction="descending"), "y"]))
-    reference_duckdb_connection.execute(
-        "ALTER TABLE test SET SORTED BY (x DESC NULLS LAST, y ASC NULLS LAST)"
-    )
     columns = {"payload": dl.Variant()}
 
     # Act
@@ -88,6 +56,50 @@ def test_parse_reference_variant_catalog(
     # Assert
     assert columns == [dl.Column("payload", dl.Variant(), field_id=1)]
     assert len(data_files) == 1
+
+
+@pytest.mark.differential
+def test_read_reference_sort_info(
+    reference_catalog_url: str,
+    reference_duckdb_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    # Arrange
+    reference_duckdb_connection.execute("CREATE TABLE test (x BIGINT, y BIGINT)")
+    reference_duckdb_connection.execute(
+        "ALTER TABLE test SET SORTED BY (x DESC NULLS FIRST, y ASC NULLS LAST)"
+    )
+
+    # Act
+    with dl.connect(reference_catalog_url) as lake:
+        sort_info = lake.table("test").sort_info
+
+    # Assert
+    assert sort_info is not None
+    assert [(c.expression, c.direction, c.null_order) for c in sort_info.columns] == [
+        ("x", "descending", "nulls_first"),
+        ("y", "ascending", "nulls_last"),
+    ]
+
+
+@pytest.mark.differential
+def test_match_reference_sort_info(
+    ducklake: dl.Ducklake,
+    catalog_url: str,
+    reference_catalog_url: str,
+    reference_duckdb_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    # Arrange
+    table = ducklake.create_table("test", {"x": dl.Int64(), "y": dl.Int64()})
+    reference_duckdb_connection.execute("CREATE TABLE test (x BIGINT, y BIGINT)")
+
+    # Act
+    table.update_sort_info(dl.SortInfo([dl.SortColumn("x", direction="descending"), "y"]))
+    reference_duckdb_connection.execute(
+        "ALTER TABLE test SET SORTED BY (x DESC NULLS LAST, y ASC NULLS LAST)"
+    )
+
+    # Assert
+    assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)
 
 
 @pytest.mark.differential
