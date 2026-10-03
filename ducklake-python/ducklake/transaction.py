@@ -158,6 +158,50 @@ class Transaction:
             pytransaction_table, self._storage_options
         )
 
+    def delete_table(
+        self,
+        name: str | tuple[str, str] | TableName,
+        *,
+        if_not_exists: Literal["fail", "skip"] = "fail",
+    ) -> None:
+        """Delete an existing table from the catalog.
+
+        The deletion only becomes visible once the transaction is committed.
+
+        Args:
+            name: The name of the table to delete. If a string is provided, the schema is
+                optional and defaults to "main".
+            if_not_exists: The strategy to apply if the table (or its schema) does not exist.
+                "fail" raises a :class:`~ducklake.exceptions.NotFoundError`, while "skip"
+                leaves the catalog unchanged.
+
+        Raises:
+            NotFoundError: If the table does not exist and `if_not_exists` is "fail".
+        """
+        self._pytx.delete_table(name, if_not_exists)
+
+    def delete_view(
+        self,
+        name: str | tuple[str, str] | TableName,
+        *,
+        if_not_exists: Literal["fail", "skip"] = "fail",
+    ) -> None:
+        """Delete an existing view from the catalog.
+
+        The deletion only becomes visible once the transaction is committed.
+
+        Args:
+            name: The name of the view to delete. If a string is provided, the schema is
+                optional and defaults to "main".
+            if_not_exists: The strategy to apply if the view (or its schema) does not exist.
+                "fail" raises a :class:`~ducklake.exceptions.NotFoundError`, while "skip"
+                leaves the catalog unchanged.
+
+        Raises:
+            NotFoundError: If the view does not exist and `if_not_exists` is "fail".
+        """
+        self._pytx.delete_view(name, if_not_exists)
+
     def commit(self) -> None:
         self._pytx.commit()
 
@@ -436,13 +480,6 @@ class TransactionTable:
             schema: The new schema of the table.
         """
         self._pytxtable.update_schema(schema.columns)
-
-    def delete(self) -> None:
-        """Delete the table from the catalog.
-
-        After calling this method, the `TransactionTable` object is no longer valid.
-        """
-        self._pytxtable.delete()
 
     def add_tag(self, key: str, value: str) -> None:
         """Add a new tag to the table.

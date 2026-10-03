@@ -34,6 +34,15 @@ impl Value {
             Varchar => literals::parse(value)?.map(Value::Varchar),
             Blob => literals::parse(value)?.map(Value::Blob),
             Json => literals::parse(value)?.map(Value::Json),
+            Variant => {
+                if value == "NULL" {
+                    None
+                } else {
+                    return Err(DucklakeError::Parsing(
+                        "non-null VARIANT values have no string representation".into(),
+                    ));
+                }
+            }
             Uuid => literals::parse(value)?.map(Value::Uuid),
             List(inner) => literals::parse::<Vec<String>>(value)?
                 .map(|elements| {

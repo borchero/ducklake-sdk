@@ -17,9 +17,9 @@ def test_match_reference_expire_snapshot_versions(
     first_table = ducklake.create_table("first", schema={"x": dl.Int64()})  # snapshot 1
     second_table = ducklake.create_table("second", schema={"x": dl.Int64()})  # snapshot 2
     first_table.sink_polars(pl.LazyFrame({"x": range(100)}))  # snapshot 3
-    second_table.delete()  # snapshot 4
+    ducklake.delete_table(second_table.name)  # snapshot 4
     first_table.sink_polars(pl.LazyFrame({"x": range(100)}))  # snapshot 5
-    first_table.delete()  # snapshot 6
+    ducklake.delete_table(first_table.name)  # snapshot 6
     ducklake.create_table("third", schema={"x": dl.Int64()})  # snapshot 7
 
     reference_duckdb_connection.execute("CREATE TABLE first (x BIGINT)")
@@ -50,7 +50,7 @@ def test_match_reference_cleanup_old_files(
     # Arrange
     first_table = ducklake.create_table("first", schema={"x": dl.Int64()})  # snapshot 1
     first_table.sink_polars(pl.LazyFrame({"x": range(100)}))  # snapshot 2
-    first_table.delete()  # snapshot 3
+    ducklake.delete_table(first_table.name)  # snapshot 3
 
     reference_duckdb_connection.execute("CREATE TABLE first (x BIGINT)")
     reference_duckdb_connection.execute("INSERT INTO first SELECT * FROM range(100)")

@@ -163,6 +163,36 @@ def existing_table(ducklake: dl.Ducklake, request: pytest.FixtureRequest) -> boo
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
+@pytest.mark.parametrize("dtype", [dl.Variant(), dl.List(dl.Variant())])
+def test_inline_write_then_add_variant_rejects_commit(
+    ducklake: dl.Ducklake, catalog_url: str, existing_table: bool, dtype: dl.DataType
+) -> None:
+    # Arrange
+    data = pl.DataFrame({"x": [1, 2]})
+    snapshot_id = ducklake.get_latest_snapshot().id
+
+    # Act
+    with pytest.raises(RuntimeError, match="cannot be inlined in this catalog"):
+        with ducklake.transaction() as tx:
+            table = (
+                tx.table("table")
+                if existing_table
+                else tx.create_table("table", {"x": dl.Int64()})
+            )
+            table._write_inline_data(data)
+            table.add_column(dl.Column("variant", dtype))
+
+    # Assert
+    with dl.connect(catalog_url) as reopened:
+        assert reopened.get_latest_snapshot().id == snapshot_id
+        assert reopened.has_table("table") == existing_table
+        if existing_table:
+            table = reopened.table("table")
+            assert table.schema.columns == [dl.Column("x", dl.Int64(), field_id=1)]
+            assert table.scan_polars().collect().is_empty()
+
+
+@pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
 @pytest.mark.parametrize("inline_first", [False, True], ids=["file-first", "inline-first"])
 def test_mixed_writes_allocate_row_ids_in_request_order(
     ducklake: dl.Ducklake, catalog_engine: sa.Engine, existing_table: bool, inline_first: bool

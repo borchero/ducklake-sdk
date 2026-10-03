@@ -133,6 +133,24 @@ impl PyDucklake {
             .map_err(error::into_pyerr)
     }
 
+    pub fn delete_table(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::TableName>,
+        if_not_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<()> {
+        block_on(py, self.0.delete_table(name.0, if_not_exists.0)).map_err(error::into_pyerr)
+    }
+
+    pub fn delete_view(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::TableName>,
+        if_not_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<()> {
+        block_on(py, self.0.delete_view(name.0, if_not_exists.0)).map_err(error::into_pyerr)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn create_table(
         &self,

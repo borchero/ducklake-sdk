@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 import pytest
 
@@ -28,10 +29,11 @@ def test_create_delete_table_does_nothing(
     # Act
     with shared_ducklake.transaction() as tx:
         tx.create_table(random_table_name, {"x": dl.Int64()})
-        tx.table(random_table_name).delete()
+        tx.delete_table(random_table_name)
 
     # Assert
     assert shared_ducklake.get_latest_snapshot().id == snapshot.id
+    assert not shared_ducklake.has_table(random_table_name)
 
 
 def test_delete_create_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
@@ -40,7 +42,7 @@ def test_delete_create_table(shared_ducklake: dl.Ducklake, random_table_name: st
 
     # Act
     with shared_ducklake.transaction() as tx:
-        tx.table(random_table_name).delete()
+        tx.delete_table(random_table_name)
         tx.create_table(random_table_name, {"y": dl.Int64()})
 
     # Assert
@@ -106,19 +108,6 @@ def test_create_table_with_partitioning_and_tags(
     assert table.tags == {"env": "prod"}
 
 
-def test_delete_table_in_transaction(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
-    # Arrange
-    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
-
-    # Act
-    with shared_ducklake.transaction() as tx:
-        tx.table(random_table_name).delete()
-
-    # Assert
-    with pytest.raises(dlexc.NotFoundError):
-        shared_ducklake.table(random_table_name)
-
-
 def test_list_tables_reflects_transaction_changes(
     shared_ducklake: dl.Ducklake, random_schema_name: str, random_table_name: str
 ) -> None:
@@ -129,7 +118,7 @@ def test_list_tables_reflects_transaction_changes(
 
     # Act
     with shared_ducklake.transaction() as tx:
-        tx.table(existing_table_name).delete()
+        tx.delete_table(existing_table_name)
         tx.create_table((random_schema_name, random_table_name), {"x": dl.Int64()})
         all_tables = tx.list_tables()
         schema_tables = tx.list_tables(schema=random_schema_name)
@@ -141,3 +130,20 @@ def test_list_tables_reflects_transaction_changes(
     assert [table.name for table in schema_tables] == [
         dl.TableName(random_schema_name, random_table_name)
     ]
+
+
+@pytest.mark.parametrize("if_not_exists", ["fail", "skip"])
+def test_delete_table(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    if_not_exists: Literal["fail", "skip"],
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+
+    # Act
+    with shared_ducklake.transaction() as tx:
+        tx.delete_table(table.name, if_not_exists=if_not_exists)
+
+    # Assert
+    assert not shared_ducklake.has_table(random_table_name)

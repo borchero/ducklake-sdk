@@ -44,6 +44,7 @@ pub(super) fn column_type_for_data_type(data_type: &DataType) -> ColumnType {
         }
         DataType::Interval => ColumnType::Interval(None, None),
         DataType::Varchar | DataType::Json | DataType::Blob => ColumnType::Blob,
+        DataType::Variant => unreachable!("VARIANT cannot be inlined"),
         DataType::Uuid => ColumnType::Uuid,
         DataType::List(_) | DataType::Struct(_) | DataType::Map(_, _) => {
             ColumnType::String(Default::default())

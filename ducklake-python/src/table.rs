@@ -140,10 +140,6 @@ impl PyTable {
         block_on(py, self.0.update_schema(cols)).map_err(error::into_pyerr)
     }
 
-    pub fn delete(&mut self, py: Python) -> PyResult<()> {
-        block_on(py, self.0.delete()).map_err(error::into_pyerr)
-    }
-
     pub fn add_tag(&mut self, py: Python, key: &str, value: &str) -> PyResult<()> {
         block_on(py, self.0.add_tag(key, value)).map_err(error::into_pyerr)
     }

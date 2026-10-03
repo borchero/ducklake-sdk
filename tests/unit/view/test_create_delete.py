@@ -1,3 +1,5 @@
+from typing import Literal
+
 import pytest
 
 import ducklake as dl
@@ -74,20 +76,6 @@ def test_create_view_rejects_non_select(
     # Act & Assert
     with pytest.raises(ValueError):
         shared_ducklake.create_view(random_view_name, "CREATE VIEW v AS SELECT 1")
-
-
-def test_delete_view(
-    shared_ducklake: dl.Ducklake, random_table_name: str, random_view_name: str
-) -> None:
-    # Arrange
-    shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    view = shared_ducklake.create_view(random_view_name, f"SELECT x FROM {random_table_name}")
-
-    # Act
-    view.delete()
-
-    # Assert
-    assert not any(v.name == ("main", random_view_name) for v in shared_ducklake.list_views())
 
 
 def test_create_existing_view_raises(
@@ -186,3 +174,39 @@ def test_view_repr(ducklake: dl.Ducklake, random_table_name: str, random_view_na
 
     # Assert
     assert actual == f"View(schema='main', name='{random_view_name}')"
+
+
+@pytest.mark.parametrize("if_not_exists", ["fail", "skip"])
+def test_delete_view(
+    shared_ducklake: dl.Ducklake,
+    random_view_name: str,
+    if_not_exists: Literal["fail", "skip"],
+) -> None:
+    # Arrange
+    view = shared_ducklake.create_view(random_view_name, "SELECT 1 AS x")
+
+    # Act
+    shared_ducklake.delete_view(view.name, if_not_exists=if_not_exists)
+
+    # Assert
+    assert ("main", random_view_name) not in {item.name for item in shared_ducklake.list_views()}
+
+
+@pytest.mark.parametrize("name", ["missing", "missing_schema.test"])
+def test_delete_missing_view_raises(ducklake: dl.Ducklake, name: str) -> None:
+    # Act & Assert
+    with pytest.raises(dlexc.NotFoundError):
+        ducklake.delete_view(name)
+
+
+@pytest.mark.parametrize("name", ["missing", "missing_schema.test"])
+def test_delete_missing_view_skip(ducklake: dl.Ducklake, name: str) -> None:
+    # Arrange
+    snapshot = ducklake.get_latest_snapshot()
+
+    # Act
+    ducklake.delete_view(name, if_not_exists="skip")
+
+    # Assert
+    assert ducklake.list_views() == []
+    assert ducklake.get_latest_snapshot().id == snapshot.id

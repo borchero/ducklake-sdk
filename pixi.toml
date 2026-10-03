@@ -92,7 +92,7 @@ install-polars-nightly = "pip install --pre --no-deps --upgrade --only-binary :a
 # --------------------------------------------- RUST -------------------------------------------- #
 
 [feature.test-rs.dependencies]
-cargo-llvm-cov = "*"
+cargo-llvm-cov = ">=0.9.1"
 
 [feature.test-rs.tasks]
 test-rs = "cargo test --all-features -p ducklake"

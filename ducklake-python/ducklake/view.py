@@ -125,17 +125,6 @@ class View:
         return self._duckdb_connection.execute(f"SELECT * FROM {self.name}").to_arrow_table()
 
     # ------------------------------------------------------------------------------------------- #
-    #                                           DELETION                                         #
-    # ------------------------------------------------------------------------------------------- #
-
-    def delete(self) -> None:
-        """Delete the view from the catalog.
-
-        After calling this method, the View object is no longer valid.
-        """
-        self._pyview.delete()
-
-    # ------------------------------------------------------------------------------------------- #
     #                                            DUNDER                                           #
     # ------------------------------------------------------------------------------------------- #
 

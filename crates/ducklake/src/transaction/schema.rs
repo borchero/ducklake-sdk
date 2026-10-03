@@ -45,10 +45,10 @@ impl<'a> Transaction<'a> {
 
         if cascade {
             for table_name in self.list_tables(Some(name))? {
-                self.delete_table(&table_name)?;
+                self.delete_table(table_name, IfExistsStrategy::Fail)?;
             }
             for view_name in self.list_views(Some(name))? {
-                self.delete_view(&view_name)?;
+                self.delete_view(view_name, IfExistsStrategy::Fail)?;
             }
         }
 

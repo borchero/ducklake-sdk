@@ -28,12 +28,12 @@ pub enum DataType {
     Varchar,
     Blob,
     Json,
+    Variant,
     Uuid,
     List(Box<Column>),
     Struct(Vec<Column>),
     Map(Box<Column>, Box<Column>),
     // TODO: Add geometry data types
-    // TODO: Add variant data type
 }
 
 /// The precision of a [`DataType::Timestamp`] value.
@@ -162,6 +162,11 @@ impl DataType {
         DataType::Json
     }
 
+    /// Construct a [`DataType::Variant`] value.
+    pub fn variant() -> Self {
+        DataType::Variant
+    }
+
     /// Construct a [`DataType::Uuid`] value.
     pub fn uuid() -> Self {
         DataType::Uuid
@@ -193,6 +198,19 @@ impl DataType {
             self,
             DataType::List(_) | DataType::Struct(_) | DataType::Map(_, _)
         )
+    }
+
+    /// Whether this type contains a VARIANT value at any nesting level.
+    pub(crate) fn contains_variant(&self) -> bool {
+        match self {
+            DataType::Variant => true,
+            DataType::List(inner) => inner.dtype.contains_variant(),
+            DataType::Struct(fields) => fields.iter().any(|field| field.dtype.contains_variant()),
+            DataType::Map(key, value) => {
+                key.dtype.contains_variant() || value.dtype.contains_variant()
+            }
+            _ => false,
+        }
     }
 }
 
@@ -230,6 +248,7 @@ impl Display for DataType {
             Varchar => write!(f, "varchar"),
             Blob => write!(f, "blob"),
             Json => write!(f, "json"),
+            Variant => write!(f, "variant"),
             Uuid => write!(f, "uuid"),
             List(_) => write!(f, "list"),
             Struct(_) => write!(f, "struct"),
@@ -271,6 +290,7 @@ mod tests {
     #[case(DataType::varchar(), "varchar")]
     #[case(DataType::blob(), "blob")]
     #[case(DataType::json(), "json")]
+    #[case(DataType::variant(), "variant")]
     #[case(DataType::uuid(), "uuid")]
     fn test_primitive_display(#[case] dtype: DataType, #[case] expected: &str) {
         assert_eq!(dtype.to_string(), expected);
@@ -314,6 +334,16 @@ mod tests {
     #[case(DataType::map(DataType::varchar(), DataType::int32()), true)]
     fn test_is_nested(#[case] dtype: DataType, #[case] expected: bool) {
         assert_eq!(dtype.is_nested(), expected);
+    }
+
+    #[rstest]
+    #[case(DataType::int32(), false)]
+    #[case(DataType::variant(), true)]
+    #[case(DataType::list(DataType::variant()), true)]
+    #[case(DataType::struct_(vec![Column::new("v".into(), DataType::variant())]), true)]
+    #[case(DataType::map(DataType::varchar(), DataType::variant()), true)]
+    fn test_contains_variant(#[case] dtype: DataType, #[case] expected: bool) {
+        assert_eq!(dtype.contains_variant(), expected);
     }
 
     #[test]

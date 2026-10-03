@@ -578,6 +578,10 @@ within_transaction! {
     fn create_schema(name: &str, path: Option<String>, if_exists: IfExistsStrategy) -> DucklakeResult<()>;
     /// Delete an existing schema from the catalog, optionally deleting all of its tables and views.
     fn delete_schema(name: &str, cascade: bool, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
+    /// Delete an existing table from the catalog.
+    fn delete_table(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
+    /// Delete an existing view from the catalog.
+    fn delete_view(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
 }
 
 impl Ducklake {

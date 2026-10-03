@@ -11,7 +11,7 @@ use crate::transaction::{
     TransactionChanges,
     executors,
 };
-use crate::{DucklakeResult, io};
+use crate::{DucklakeResult, db, io};
 
 /* ----------------------------------------- CHANGE SET ---------------------------------------- */
 
@@ -150,13 +150,24 @@ impl ChangeSet {
         &self,
         changes: &mut TransactionChanges,
         state: &mut CommitState<'_>,
+        dialect: db::Dialect,
     ) -> DucklakeResult<()> {
+        // The schema may have changed after inline data was queued. Validate its final types
+        // against the catalog backend before applying any changes.
+        for change in &self.changes {
+            if let Change::WriteTableInlineData { table_ref, .. } = change {
+                for column in state.table_schema(*table_ref).columns.values() {
+                    dialect.column_type_for_data_inlining(&column.dtype)?;
+                }
+            }
+        }
+
         for change in &self.changes {
             change.apply(changes, state).await?;
         }
 
         for table_ref in self.table_refs_with_schema_changes() {
-            executors::create_inlined_data_table(changes, state, &table_ref);
+            executors::create_inlined_data_table(changes, state, &table_ref, dialect);
         }
 
         // Finally, we need to check whether we wrote inline data without writing any data files.

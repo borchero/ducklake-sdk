@@ -1,4 +1,4 @@
-#![feature(trait_alias, unwrap_infallible, never_type)]
+#![feature(trait_alias)]
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 #[macro_use]
@@ -31,13 +31,7 @@ pub use options::*;
 pub use primitives::{Interval, TimeWithTimezone};
 pub use table::*;
 pub use table_statistics::TableStatistics;
-pub use transaction::{
-    AuthorInfo,
-    IfExistsStrategy,
-    Transaction,
-    TransactionTable,
-    TransactionView,
-};
+pub use transaction::{AuthorInfo, IfExistsStrategy, Transaction, TransactionTable};
 pub use transfer::TableTransfer;
 pub use typedefs::*;
 pub use utils::DataFilePathGenerator;

@@ -72,6 +72,13 @@ impl Column {
             DataType::Varchar => ArrowDataType::Utf8View,
             DataType::Blob => ArrowDataType::LargeBinary,
             DataType::Json => ArrowDataType::Utf8View,
+            DataType::Variant => ArrowDataType::Struct(
+                vec![
+                    ArrowField::new("metadata", ArrowDataType::Binary, false),
+                    ArrowField::new("value", ArrowDataType::Binary, true),
+                ]
+                .into(),
+            ),
             DataType::Uuid => ArrowDataType::FixedSizeBinary(16),
             DataType::List(inner) => ArrowDataType::LargeList(Arc::new(convert_child(inner))),
             DataType::Struct(fields) => {
@@ -101,12 +108,21 @@ impl Column {
                     field.with_extension_type(extension::Opaque::new("time_tz", "DuckLake"))
                 }
                 DataType::Json => field.with_extension_type(extension::Json::default()),
+                DataType::Variant => field.with_metadata(
+                    [(
+                        "ARROW:extension:name".into(),
+                        "arrow.parquet.variant".into(),
+                    )]
+                    .into(),
+                ),
                 DataType::Uuid => field.with_extension_type(extension::Uuid),
                 _ => field,
             }
         };
         if let Some(field_id) = self.field_id {
-            field.with_metadata([(PARQUET_FIELD_ID_KEY.to_string(), field_id.to_string())].into())
+            let mut metadata = field.metadata().clone();
+            metadata.insert(PARQUET_FIELD_ID_KEY.to_string(), field_id.to_string());
+            field.with_metadata(metadata)
         } else {
             field
         }
@@ -189,6 +205,15 @@ impl Column {
                 inner_type.name = "element".to_string();
                 Ok(DataType::List(Box::new(inner_type)))
             }
+            ArrowDataType::Struct(_)
+                if field
+                    .metadata()
+                    .get("ARROW:extension:name")
+                    .map(String::as_str)
+                    == Some("arrow.parquet.variant") =>
+            {
+                Ok(DataType::variant())
+            }
             ArrowDataType::Struct(fields) => Ok(DataType::struct_(
                 fields
                     .iter()
@@ -227,5 +252,42 @@ impl TryFrom<&ArrowField> for Column {
 
     fn try_from(field: &ArrowField) -> Result<Self, Self::Error> {
         Self::try_from_arrow_field_with(field, &|field| Column::try_from(field))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_variant_arrow_field_roundtrip() {
+        let column = Column::new("payload".into(), DataType::Variant).field_id(Some(7));
+
+        let field = column.to_arrow_field();
+        let parsed = Column::try_from(&field).unwrap();
+        let parquet_schema = parquet::arrow::ArrowSchemaConverter::new()
+            .convert(&ArrowSchema::new(vec![field.clone()]))
+            .unwrap();
+
+        assert_eq!(
+            field.metadata().get("ARROW:extension:name").unwrap(),
+            "arrow.parquet.variant"
+        );
+        assert_eq!(
+            field.metadata().get(PARQUET_FIELD_ID_META_KEY).unwrap(),
+            "7"
+        );
+        let ArrowDataType::Struct(fields) = field.data_type() else {
+            panic!("expected VARIANT storage struct")
+        };
+        assert!(!fields[0].is_nullable());
+        assert!(fields[1].is_nullable());
+        assert!(matches!(
+            parquet_schema.root_schema().get_fields()[0]
+                .get_basic_info()
+                .logical_type_ref(),
+            Some(parquet::basic::LogicalType::Variant(_))
+        ));
+        assert_eq!(parsed, column);
     }
 }

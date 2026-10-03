@@ -14,7 +14,7 @@ def ducklake_with_scheduled_files(
     table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
     table.sink_polars(pl.LazyFrame({"x": [1]}))
     file_paths = {file.path for file in table.scan().data_files}
-    table.delete()
+    ducklake.delete_table(table.name)
     ducklake.expire_snapshots(versions=[0, 1, 2])
     return ducklake, file_paths
 

@@ -1,3 +1,5 @@
+from typing import Literal
+
 import pytest
 
 import ducklake as dl
@@ -16,6 +18,18 @@ def test_create_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     assert table.tags == {}
 
 
+def test_create_table_with_variant(ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    columns = {"payload": dl.Variant()}
+
+    # Act
+    ducklake.create_table(random_table_name, columns)
+    table = ducklake.table(random_table_name)
+
+    # Assert
+    assert table.schema.columns == [dl.Column("payload", dl.Variant(), field_id=1)]
+
+
 def test_table_equality(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     created = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
@@ -25,17 +39,6 @@ def test_table_equality(shared_ducklake: dl.Ducklake, random_table_name: str) ->
 
     # Assert
     assert created == fetched
-
-
-def test_delete_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
-    # Arrange
-    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
-
-    # Act
-    table.delete()
-
-    # Assert
-    assert not any(t.name == ("main", random_table_name) for t in shared_ducklake.list_tables())
 
 
 def test_table_repr(
@@ -122,3 +125,39 @@ def test_create_table_skip_when_missing(
     # Assert
     assert table.name == ("main", random_table_name)
     assert table.schema.columns == [dl.Column("x", dl.Int64(), field_id=1)]
+
+
+@pytest.mark.parametrize("if_not_exists", ["fail", "skip"])
+def test_delete_table(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    if_not_exists: Literal["fail", "skip"],
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+
+    # Act
+    shared_ducklake.delete_table(table.name, if_not_exists=if_not_exists)
+
+    # Assert
+    assert not shared_ducklake.has_table(random_table_name)
+
+
+@pytest.mark.parametrize("name", ["missing", "missing_schema.test"])
+def test_delete_missing_table_raises(ducklake: dl.Ducklake, name: str) -> None:
+    # Act & Assert
+    with pytest.raises(dlexc.NotFoundError):
+        ducklake.delete_table(name)
+
+
+@pytest.mark.parametrize("name", ["missing", "missing_schema.test"])
+def test_delete_missing_table_skip(ducklake: dl.Ducklake, name: str) -> None:
+    # Arrange
+    snapshot = ducklake.get_latest_snapshot()
+
+    # Act
+    ducklake.delete_table(name, if_not_exists="skip")
+
+    # Assert
+    assert ducklake.list_tables() == []
+    assert ducklake.get_latest_snapshot().id == snapshot.id

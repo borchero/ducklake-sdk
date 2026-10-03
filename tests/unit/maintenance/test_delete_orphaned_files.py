@@ -42,7 +42,7 @@ def test_delete_orphaned_files_keeps_scheduled_for_deletion(
     table.sink_polars(pl.LazyFrame({"x": [1]}))
     live_files = {file.path for file in table.scan().data_files}
 
-    table.delete()
+    ducklake.delete_table(table.name)
     ducklake.expire_snapshots(versions=[0, 1, 2])
 
     # Act

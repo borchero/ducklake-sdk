@@ -61,10 +61,6 @@ impl PyView {
                 .collect(),
         ))
     }
-
-    pub fn delete(&self, py: Python) -> PyResult<()> {
-        block_on(py, self.0.delete()).map_err(error::into_pyerr)
-    }
 }
 
 #[allow(clippy::type_complexity)]

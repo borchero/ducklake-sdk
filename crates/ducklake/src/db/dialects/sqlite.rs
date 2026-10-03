@@ -47,6 +47,7 @@ pub(super) fn column_type_for_data_type(data_type: &DataType) -> ColumnType {
         | DataType::Struct(_)
         | DataType::Map(_, _) => ColumnType::string(None),
         DataType::Blob => ColumnType::Blob,
+        DataType::Variant => unreachable!("VARIANT cannot be inlined"),
     }
 }
 

@@ -345,7 +345,7 @@ async fn persist_inline_data(
         for (column, info) in schema.columns {
             query.col(ColumnDef::new_with_type(
                 column,
-                dialect.column_type_for_data_inlining(&info.dtype),
+                dialect.column_type_for_data_inlining(&info.dtype)?,
             ));
         }
         tx.execute(&query).await?;

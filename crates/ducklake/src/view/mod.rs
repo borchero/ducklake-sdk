@@ -111,14 +111,4 @@ impl View {
             views,
         })
     }
-
-    /// Delete the view.
-    ///
-    /// Once this method returns successfully, this object should no longer be used.
-    pub async fn delete(&self) -> DucklakeResult<()> {
-        let mut tx = self.conn.transaction(None).await?;
-        let name = tx.catalog().view(self.id)?.name().clone();
-        tx.delete_view(&name)?;
-        tx.commit().await
-    }
 }

@@ -4,10 +4,10 @@ use std::sync::Arc;
 use arrow_array::RecordBatch;
 use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 
-use crate::DucklakeResult;
 use crate::catalog::TableRef;
 use crate::spec::*;
 use crate::transaction::{CommitDataFile, CommitInlineData, CommitState, TransactionChanges};
+use crate::{DucklakeResult, db};
 
 /* ------------------------------------------- FILES ------------------------------------------- */
 
@@ -129,11 +129,17 @@ pub(crate) fn create_inlined_data_table(
     changes: &mut TransactionChanges,
     state: &mut CommitState<'_>,
     table_ref: &TableRef,
+    dialect: db::Dialect,
 ) {
     let table_id = state.table_id(*table_ref);
-    changes
-        .inline_tables
-        .insert(table_id, state.table_schema(*table_ref));
+    let schema = state.table_schema(*table_ref);
+    if schema
+        .columns
+        .values()
+        .all(|col| dialect.supports_data_inlining(&col.dtype))
+    {
+        changes.inline_tables.insert(table_id, schema);
+    }
 }
 
 pub(crate) async fn write_table_inline_data(

@@ -44,7 +44,7 @@ def test_match_reference_create_and_delete(
     with ducklake.transaction() as tx:
         tx.create_table("test", {"x": dl.Int64()})
         tx.table("test").rename("test2")
-        tx.table("test2").delete()
+        tx.delete_table("test2")
 
     reference_duckdb_connection.execute(
         """BEGIN;

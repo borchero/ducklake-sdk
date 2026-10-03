@@ -252,16 +252,6 @@ within_transaction_async! {
 }
 
 impl Table {
-    /// Delete the table.
-    ///
-    /// Once this method returns successfully, this object should no longer be used.
-    pub async fn delete(&self) -> DucklakeResult<()> {
-        let mut tx = self.conn.transaction(None).await?;
-        let table = self.transaction_table(&mut tx)?;
-        table.delete()?;
-        tx.commit().await
-    }
-
     /// Set a metadata option for this table.
     pub async fn set_metadata(&self, key: &str, value: &str) -> DucklakeResult<()> {
         self.conn.set_table_metadata(key, value, self.id).await

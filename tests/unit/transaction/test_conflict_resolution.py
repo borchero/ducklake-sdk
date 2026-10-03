@@ -148,9 +148,9 @@ def test_conflict_concurrent_drop_same_table(
     # Act / Assert
     with pytest.raises(dlexc.TransactionConflictError):
         with shared_ducklake.transaction() as tx1:
-            tx1.table(random_table_name).delete()
+            tx1.delete_table(random_table_name)
             with shared_ducklake.transaction() as tx2:
-                tx2.table(random_table_name).delete()
+                tx2.delete_table(random_table_name)
 
 
 def test_conflict_concurrent_alter_same_table(
@@ -178,7 +178,7 @@ def test_conflict_alter_then_drop_same_table(
         with shared_ducklake.transaction() as tx1:
             tx1.table(random_table_name).add_column(dl.Column("y", dl.Varchar()))
             with shared_ducklake.transaction() as tx2:
-                tx2.table(random_table_name).delete()
+                tx2.delete_table(random_table_name)
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
@@ -194,7 +194,7 @@ def test_conflict_insert_then_drop_same_table(
         with shared_ducklake.transaction() as tx1:
             tx1.table(random_table_name).write_polars(df)
             with shared_ducklake.transaction() as tx2:
-                tx2.table(random_table_name).delete()
+                tx2.delete_table(random_table_name)
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
