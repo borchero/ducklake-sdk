@@ -142,17 +142,24 @@ impl Table {
         tx.commit().await
     }
 
-    /// Get the table metadata and a path generator that can be used to write new data files.
+    /// Get the table metadata, a path generator, and whether the current schema supports inlining.
     pub async fn get_write_info(
         &self,
-    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator)> {
+    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool)> {
         let snapshot = self.conn.snapshot(SnapshotAccess::Write).await?;
         let catalog = snapshot.catalog().await?;
+        let table = catalog.table(self.id)?;
+
         let meta = self.conn.metadata();
         let metadata = meta.table_metadata(Some(self.schema_id), Some(self.id));
-        let data_path = catalog.table(self.id)?.data_path(&meta.data_path());
+        let data_path = table.data_path(&meta.data_path());
         let generator = utils::DataFilePathGenerator::new(data_path, metadata.hive_file_pattern);
-        Ok((metadata, generator))
+        let supports_inlining = self
+            .conn
+            .pool()
+            .dialect()
+            .supports_data_inlining(&table.schema());
+        Ok((metadata, generator, supports_inlining))
     }
 
     /// Commit the provided pre-written data files to the table.

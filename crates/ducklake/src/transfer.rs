@@ -232,7 +232,7 @@ impl Ducklake {
             tx.create_schema(&name.schema, None, IfExistsStrategy::Skip)?;
             let mut table = tx.create_transfer_table(name.clone(), info, retired_columns)?;
 
-            let (_, generator) = table.get_write_info()?;
+            let (_, generator, _) = table.get_write_info()?;
             let mut data_files = Vec::with_capacity(scan.result.data_files.len());
             for (data_file, metadata) in scan
                 .result

@@ -264,8 +264,10 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
         self.tx.write_table_data(&self.name, write_fn).await
     }
 
-    /// Get the table metadata and a path generator that can be used to write new data files.
-    pub fn get_write_info(&self) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator)> {
+    /// Get the table metadata, a path generator, and whether the current schema supports inlining.
+    pub fn get_write_info(
+        &self,
+    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool)> {
         self.tx.get_table_write_info(&self.name)
     }
 
@@ -301,7 +303,7 @@ impl<'a> Transaction<'a> {
     where
         F: Future<Output = DucklakeResult<Vec<crate::WriteDataFile>>>,
     {
-        let (metadata, generator) = self.get_table_write_info(table_name)?;
+        let (metadata, generator, _) = self.get_table_write_info(table_name)?;
         let data_files = write_fn(metadata, generator).await?;
         self.write_table_data_files(table_name, data_files).await
     }
@@ -310,7 +312,7 @@ impl<'a> Transaction<'a> {
     fn get_table_write_info(
         &self,
         table_name: &TableName,
-    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator)> {
+    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool)> {
         // Derive data path
         let table = self.catalog().table(table_name)?;
         let data_path = table.data_path(&self.metadata.data_path());
@@ -324,7 +326,8 @@ impl<'a> Transaction<'a> {
 
         // Construct result
         let generator = utils::DataFilePathGenerator::new(data_path, metadata.hive_file_pattern);
-        Ok((metadata, generator))
+        let supports_inlining = self.pool.dialect().supports_data_inlining(&table.schema());
+        Ok((metadata, generator, supports_inlining))
     }
 
     #[visibility_if(feature = "python", pub)]
@@ -473,10 +476,10 @@ impl<'a> Transaction<'a> {
         let table = self.catalog_mut().table(table_name)?;
         let table_ref = table.ref_();
         let schema = table.schema();
-        for column in schema.columns.values() {
-            self.pool
-                .dialect()
-                .column_type_for_data_inlining(&column.dtype)?;
+        if !self.pool.dialect().supports_data_inlining(&schema) {
+            return Err(DucklakeError::InvalidChanges(
+                "cannot inline data for this table; write Parquet files instead".into(),
+            ));
         }
         let schema_columns = schema.columns_by_id();
 

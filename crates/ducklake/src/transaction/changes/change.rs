@@ -11,7 +11,7 @@ use crate::transaction::{
     TransactionChanges,
     executors,
 };
-use crate::{DucklakeResult, db, io};
+use crate::{DucklakeError, DucklakeResult, db, io};
 
 /* ----------------------------------------- CHANGE SET ---------------------------------------- */
 
@@ -152,13 +152,15 @@ impl ChangeSet {
         state: &mut CommitState<'_>,
         dialect: db::Dialect,
     ) -> DucklakeResult<()> {
-        // The schema may have changed after inline data was queued. Validate its final types
+        // The schema may have changed after inline data was queued. Validate its final schema
         // against the catalog backend before applying any changes.
         for change in &self.changes {
-            if let Change::WriteTableInlineData { table_ref, .. } = change {
-                for column in state.table_schema(*table_ref).columns.values() {
-                    dialect.column_type_for_data_inlining(&column.dtype)?;
-                }
+            if let Change::WriteTableInlineData { table_ref, .. } = change
+                && !dialect.supports_data_inlining(&state.table_schema(*table_ref))
+            {
+                return Err(DucklakeError::InvalidChanges(
+                    "cannot inline data for this table; write Parquet files instead".into(),
+                ));
             }
         }
 

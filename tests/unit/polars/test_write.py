@@ -12,7 +12,9 @@ import ducklake as dl
 from ducklake.typedefs import _ParamLessPartitionTransform
 
 
-def test_sink_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+def test_sink_parquet(
+    shared_ducklake: dl.Ducklake, random_table_name: str, shared_catalog_engine: sa.Engine
+) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64(), "y": dl.Varchar()})
     lf = pl.LazyFrame({"x": range(100), "y": ["foo"] * 100})
@@ -50,19 +52,13 @@ def test_sink_parquet(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     )
 
     # -- Table stats
-    table_stats = read_table_stats(
-        shared_ducklake._connection_args.render_as_string(hide_password=False),
-        random_table_name,
-    )
+    table_stats = read_table_stats(shared_catalog_engine, random_table_name)
     assert table_stats["record_count"] == 100
     assert table_stats["next_row_id"] == 100
     assert table_stats["file_size_bytes"] == data_file.statistics.file_size_bytes
 
     # -- Table column stats
-    table_column_stats = read_table_column_stats(
-        shared_ducklake._connection_args.render_as_string(hide_password=False),
-        random_table_name,
-    )
+    table_column_stats = read_table_column_stats(shared_catalog_engine, random_table_name)
     assert table_column_stats[1]["min_value"] == "0"
     assert table_column_stats[1]["max_value"] == "99"
     assert not table_column_stats[1]["contains_null"]
@@ -239,7 +235,9 @@ def test_write_matches_nested_timestamp_schema(
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
-def test_write_parquet_inline(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+def test_write_parquet_inline(
+    shared_ducklake: dl.Ducklake, random_table_name: str, shared_catalog_engine: sa.Engine
+) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64(), "y": dl.Varchar()})
     num_rows = table.metadata["data_inlining_row_limit"]
@@ -258,19 +256,13 @@ def test_write_parquet_inline(shared_ducklake: dl.Ducklake, random_table_name: s
     assert_frame_equal(df, pl.DataFrame(scan_result.inline_data[0]))
 
     # -- Table stats
-    table_stats = read_table_stats(
-        shared_ducklake._connection_args.render_as_string(hide_password=False),
-        random_table_name,
-    )
+    table_stats = read_table_stats(shared_catalog_engine, random_table_name)
     assert table_stats["record_count"] == num_rows
     assert table_stats["next_row_id"] == num_rows
     assert table_stats["file_size_bytes"] == 0
 
     # -- Table column stats
-    table_column_stats = read_table_column_stats(
-        shared_ducklake._connection_args.render_as_string(hide_password=False),
-        random_table_name,
-    )
+    table_column_stats = read_table_column_stats(shared_catalog_engine, random_table_name)
     assert table_column_stats[1]["min_value"] == "0"
     assert table_column_stats[1]["max_value"] == f"{num_rows - 1}"
     assert not table_column_stats[1]["contains_null"]
@@ -520,8 +512,7 @@ def test_sink_many_tiny_files(shared_ducklake: dl.Ducklake, random_table_name: s
 # ----------------------------------------------------------------------------------------------- #
 
 
-def read_table_stats(url: str, table: str) -> dict[str, Any]:
-    engine = sa.create_engine(url)
+def read_table_stats(engine: sa.Engine, table: str) -> dict[str, Any]:
     query = f"""
         SELECT ducklake_table_stats.*
         FROM ducklake_table_stats
@@ -529,17 +520,13 @@ def read_table_stats(url: str, table: str) -> dict[str, Any]:
             ON ducklake_table_stats.table_id = ducklake_table.table_id
         WHERE ducklake_table.table_name = '{table}'
     """
-    try:
-        with engine.connect() as conn:
-            row = conn.execute(sa.text(query)).mappings().first()
-            assert row is not None
-            return dict(row)
-    finally:
-        engine.dispose()
+    with engine.connect() as conn:
+        row = conn.execute(sa.text(query)).mappings().first()
+        assert row is not None
+        return dict(row)
 
 
-def read_table_column_stats(url: str, table: str) -> dict[int, dict[str, Any]]:
-    engine = sa.create_engine(url)
+def read_table_column_stats(engine: sa.Engine, table: str) -> dict[int, dict[str, Any]]:
     query = f"""
         SELECT ducklake_table_column_stats.*
         FROM ducklake_table_column_stats
@@ -547,12 +534,8 @@ def read_table_column_stats(url: str, table: str) -> dict[int, dict[str, Any]]:
             ON ducklake_table_column_stats.table_id = ducklake_table.table_id
         WHERE ducklake_table.table_name = '{table}'
     """
-    try:
-        with engine.connect() as conn:
-            rows = conn.execute(sa.text(query)).mappings().all()
-            return {
-                row["column_id"]: {k: v for k, v in row.items() if k != "column_id"}
-                for row in rows
-            }
-    finally:
-        engine.dispose()
+    with engine.connect() as conn:
+        rows = conn.execute(sa.text(query)).mappings().all()
+        return {
+            row["column_id"]: {k: v for k, v in row.items() if k != "column_id"} for row in rows
+        }

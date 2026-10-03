@@ -133,11 +133,7 @@ pub(crate) fn create_inlined_data_table(
 ) {
     let table_id = state.table_id(*table_ref);
     let schema = state.table_schema(*table_ref);
-    if schema
-        .columns
-        .values()
-        .all(|col| dialect.supports_data_inlining(&col.dtype))
-    {
+    if dialect.supports_data_inlining(&schema) {
         changes.inline_tables.insert(table_id, schema);
     }
 }

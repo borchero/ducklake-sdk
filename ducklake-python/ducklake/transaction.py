@@ -305,7 +305,7 @@ class TransactionTable:
             [WriteDataFile(f) if isinstance(f, str) else f for f in files]
         )
 
-    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator]:
+    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator, bool]:
         return self._pytxtable.get_write_info()
 
     def _write_inline_data(self, data: ArrowStreamExportable) -> None:

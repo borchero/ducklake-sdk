@@ -198,13 +198,19 @@ impl PyTransactionTable {
         Ok(sort.map(|c| c.into_iter().map(Into::into).collect()))
     }
 
-    fn get_write_info(&mut self) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator)> {
+    fn get_write_info(
+        &mut self,
+    ) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator, bool)> {
         let table = self.table.clone();
-        let (metadata, generator) = self
+        let (metadata, generator, supports_inlining) = self
             .tx()
             .get_table_write_info(&table)
             .map_err(error::into_pyerr)?;
-        Ok((metadata.into(), PyDataFilePathGenerator::new(generator)))
+        Ok((
+            metadata.into(),
+            PyDataFilePathGenerator::new(generator),
+            supports_inlining,
+        ))
     }
 
     fn write_data_files(

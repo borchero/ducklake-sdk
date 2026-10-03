@@ -1,4 +1,5 @@
 import re
+import warnings
 from functools import partial
 from typing import Literal, overload
 
@@ -54,7 +55,7 @@ def sink_ducklake(
 ) -> pl.LazyFrame | None:
     # 1) First, we need to read metadata information about the table to know how to write it. This
     #    also makes sure that the table metadata is up-to-date.
-    table_metadata, file_generator = table._get_write_info()
+    table_metadata, file_generator, _ = table._get_write_info()
 
     # 2) Then, we prepare the lazy frame contents
     lf = lf.pipe(_prepare_frame, table)
@@ -127,13 +128,21 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
             "allowed as inlining of categorical data is not yet supported."
         )
 
-    table_metadata, _ = table._get_write_info()
-    if df.height <= table_metadata["data_inlining_row_limit"]:
+    table_metadata, _, supports_inlining = table._get_write_info()
+    inline_limit = table_metadata["data_inlining_row_limit"]
+    would_inline = inline_limit > 0 and df.height <= inline_limit
+    if would_inline and supports_inlining:
         # Inline the data
         df = df.lazy().pipe(_prepare_frame, table).collect(optimizations=pl.QueryOptFlags._eager())
         table._write_inline_data(df)
     else:
         # Write data files
+        if would_inline and not supports_inlining:
+            warnings.warn(
+                "Writing DataFrame to Parquet instead of inlining because this schema does not "
+                "support inlining in the catalog.",
+                UserWarning,
+            )
         df.lazy().pipe(
             sink_ducklake,
             table,

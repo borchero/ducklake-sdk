@@ -39,23 +39,29 @@ pub(crate) enum Dialect {
 }
 
 impl Dialect {
-    /// Whether this catalog backend can store the type in an inline data table.
-    pub(crate) fn supports_data_inlining(&self, _data_type: &crate::DataType) -> bool {
-        match self {
-            #[cfg(feature = "postgres")]
-            Dialect::Postgres => !_data_type.contains_variant(),
+    /// Whether this catalog backend can store the entire schema in an inline data table.
+    pub(crate) fn supports_data_inlining(&self, schema: &crate::Schema) -> bool {
+        let max_columns = match self {
+            // SQLite's default SQLITE_MAX_COLUMN, including DuckLake's three system columns.
             #[cfg(feature = "sqlite")]
-            Dialect::Sqlite => !_data_type.contains_variant(),
+            Dialect::Sqlite => 2000,
+            #[cfg(feature = "postgres")]
+            Dialect::Postgres => 1600,
             #[cfg(feature = "mysql")]
-            Dialect::MySql => false,
-        }
+            Dialect::MySql => 0,
+        };
+        schema.columns.len() + 3 <= max_columns
+            && schema
+                .columns
+                .values()
+                .all(|column| self.column_type_for_data_inlining(&column.dtype).is_ok())
     }
 
     pub(crate) fn column_type_for_data_inlining(
         &self,
         data_type: &crate::DataType,
     ) -> crate::DucklakeResult<ColumnType> {
-        if !self.supports_data_inlining(data_type) {
+        if data_type.contains_variant() {
             return Err(DucklakeError::InvalidDataType(format!(
                 "{data_type} cannot be inlined in this catalog"
             )));
@@ -64,7 +70,11 @@ impl Dialect {
             #[cfg(feature = "postgres")]
             Dialect::Postgres => postgres::column_type_for_data_type(data_type),
             #[cfg(feature = "mysql")]
-            Dialect::MySql => unreachable!("data inlining is not yet implemented for MySQL"),
+            Dialect::MySql => {
+                return Err(DucklakeError::InvalidDataType(
+                    "data inlining is not supported for MySQL".into(),
+                ));
+            }
             #[cfg(feature = "sqlite")]
             Dialect::Sqlite => sqlite::column_type_for_data_type(data_type),
         })

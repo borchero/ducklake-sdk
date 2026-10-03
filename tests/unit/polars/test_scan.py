@@ -195,7 +195,7 @@ def test_scan_enum_prunes_files(enum_table: tuple[dl.Table, pl.DataFrame]) -> No
         column = column.data_type.fields[0]
         expression = expression.struct.field(column.name)
     assert column.field_id is not None
-    _, generator = table._get_write_info()
+    _, generator, _ = table._get_write_info()
     data.write_parquet(
         f"{generator.base_path}data.parquet",
         arrow_schema=table.schema,

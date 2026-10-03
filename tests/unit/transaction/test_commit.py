@@ -1,24 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import polars as pl
 import pytest
 import sqlalchemy as sa
 
 import ducklake as dl
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
-
-@pytest.fixture()
-def catalog_engine(catalog_url: str) -> Iterator[sa.Engine]:
-    engine = sa.create_engine(catalog_url)
-    try:
-        yield engine
-    finally:
-        engine.dispose()
 
 
 @pytest.mark.parametrize("rename", [False, True])
@@ -172,7 +158,7 @@ def test_inline_write_then_add_variant_rejects_commit(
     snapshot_id = ducklake.get_latest_snapshot().id
 
     # Act
-    with pytest.raises(RuntimeError, match="cannot be inlined in this catalog"):
+    with pytest.raises(ValueError, match="cannot inline data"):
         with ducklake.transaction() as tx:
             table = (
                 tx.table("table")

@@ -12,7 +12,7 @@ pytestmark = pytest.mark.skip_config(
 
 
 def _write_parquet(table: dl.Table, name: str, data: dict) -> str:
-    _, generator = table._get_write_info()
+    _, generator, _ = table._get_write_info()
     path = os.path.join(generator.base_path, name)
     pl.DataFrame(data).write_parquet(
         path,

@@ -147,7 +147,7 @@ class Table:
             [WriteDataFile(f) if isinstance(f, str) else f for f in files]
         )
 
-    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator]:
+    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator, bool]:
         return self._pytable.get_write_info()
 
     def _write_inline_data(self, data: ArrowStreamExportable) -> None:
@@ -207,6 +207,11 @@ class Table:
         self,
         df: pl.DataFrame,
     ) -> None:
+        """Append a DataFrame to the table.
+
+        Schemas that cannot be inlined in the catalog are written to Parquet files. A
+        :class:`UserWarning` is emitted when the row count would otherwise allow inlining.
+        """
         from .polars.sink import write_ducklake
 
         write_ducklake(df, self)
