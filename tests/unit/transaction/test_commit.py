@@ -149,8 +149,10 @@ def existing_table(ducklake: dl.Ducklake, request: pytest.FixtureRequest) -> boo
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
-@pytest.mark.parametrize("dtype", [dl.Variant(), dl.List(dl.Variant())])
-def test_inline_write_then_add_variant_rejects_commit(
+@pytest.mark.parametrize(
+    "dtype", [dl.Variant(), dl.List(dl.Variant()), dl.Geometry(), dl.List(dl.Geometry())]
+)
+def test_inline_write_then_add_unsupported_type_rejects_commit(
     ducklake: dl.Ducklake, catalog_url: str, existing_table: bool, dtype: dl.DataType
 ) -> None:
     # Arrange
@@ -166,7 +168,7 @@ def test_inline_write_then_add_variant_rejects_commit(
                 else tx.create_table("table", {"x": dl.Int64()})
             )
             table._write_inline_data(data)
-            table.add_column(dl.Column("variant", dtype))
+            table.add_column(dl.Column("payload", dtype))
 
     # Assert
     with dl.connect(catalog_url) as reopened:

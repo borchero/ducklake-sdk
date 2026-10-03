@@ -42,6 +42,7 @@ Primitive Data Types
     Varchar
     Blob
     Json
+    Geometry
     Uuid
     Date
     Time

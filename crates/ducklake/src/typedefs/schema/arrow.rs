@@ -70,7 +70,7 @@ impl Column {
                 ArrowDataType::Interval(arrow_schema::IntervalUnit::MonthDayNano)
             }
             DataType::Varchar => ArrowDataType::Utf8View,
-            DataType::Blob => ArrowDataType::LargeBinary,
+            DataType::Blob | DataType::Geometry => ArrowDataType::LargeBinary,
             DataType::Json => ArrowDataType::Utf8View,
             DataType::Variant => ArrowDataType::Struct(
                 vec![
@@ -113,6 +113,13 @@ impl Column {
                         "ARROW:extension:name".into(),
                         "arrow.parquet.variant".into(),
                     )]
+                    .into(),
+                ),
+                DataType::Geometry => field.with_metadata(
+                    [
+                        ("ARROW:extension:name".into(), "geoarrow.wkb".into()),
+                        ("ARROW:extension:metadata".into(), "{}".into()),
+                    ]
                     .into(),
                 ),
                 DataType::Uuid => field.with_extension_type(extension::Uuid),
@@ -193,7 +200,11 @@ impl Column {
                 }
             }
             ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView => {
-                Ok(DataType::blob())
+                if field.extension_type_name() == Some("geoarrow.wkb") {
+                    Ok(DataType::geometry())
+                } else {
+                    Ok(DataType::blob())
+                }
             }
             ArrowDataType::FixedSizeBinary(16)
                 if field.try_extension_type::<extension::Uuid>().is_ok() =>
@@ -257,6 +268,8 @@ impl TryFrom<&ArrowField> for Column {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -289,5 +302,43 @@ mod tests {
             Some(parquet::basic::LogicalType::Variant(_))
         ));
         assert_eq!(parsed, column);
+    }
+
+    #[test]
+    fn test_geometry_arrow_field_roundtrip() {
+        let column = Column::new("shape".into(), DataType::geometry()).field_id(Some(7));
+
+        let field = column.to_arrow_field();
+        let parsed = Column::try_from(&field).unwrap();
+        let parquet_schema = parquet::arrow::ArrowSchemaConverter::new()
+            .convert(&ArrowSchema::new(vec![field.clone()]))
+            .unwrap();
+
+        assert_eq!(field.extension_type_name(), Some("geoarrow.wkb"));
+        assert_eq!(field.data_type(), &ArrowDataType::LargeBinary);
+        assert!(matches!(
+            parquet_schema.root_schema().get_fields()[0]
+                .get_basic_info()
+                .logical_type_ref(),
+            Some(parquet::basic::LogicalType::Geometry(_))
+        ));
+        assert_eq!(parsed, column);
+    }
+
+    #[rstest]
+    #[case(ArrowDataType::Binary)]
+    #[case(ArrowDataType::LargeBinary)]
+    #[case(ArrowDataType::BinaryView)]
+    fn test_parse_geometry_arrow_field(#[case] storage_type: ArrowDataType) {
+        let binary = ArrowField::new("shape", storage_type, true);
+        let geometry = binary
+            .clone()
+            .with_metadata([("ARROW:extension:name".into(), "geoarrow.wkb".into())].into());
+
+        assert_eq!(
+            Column::try_from(&geometry).unwrap().dtype,
+            DataType::geometry()
+        );
+        assert_eq!(Column::try_from(&binary).unwrap().dtype, DataType::blob());
     }
 }

@@ -20,32 +20,64 @@ def test_match_reference_table_creation(
     assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)
 
 
+@pytest.fixture(
+    params=[
+        (dl.Variant(), "VARIANT", "42::VARIANT"),
+        (dl.Geometry(), "GEOMETRY", "'POINT (1 2)'::GEOMETRY"),
+        (
+            dl.List(dl.Column("element", dl.Geometry(), field_id=2)),
+            "GEOMETRY[]",
+            "['POINT (1 2)'::GEOMETRY]",
+        ),
+        (
+            dl.Struct([dl.Column("g", dl.Geometry(), field_id=2)]),
+            "STRUCT(g GEOMETRY)",
+            "{'g': 'POINT (1 2)'::GEOMETRY}",
+        ),
+        (
+            dl.Map(
+                dl.Column("key", dl.Varchar(), field_id=2),
+                dl.Column("value", dl.Geometry(), field_id=3),
+            ),
+            "MAP(VARCHAR, GEOMETRY)",
+            "MAP {'g': 'POINT (1 2)'::GEOMETRY}",
+        ),
+    ],
+    ids=["variant", "geometry", "geometry_list", "geometry_struct", "geometry_map"],
+)
+def metadata_type(request: pytest.FixtureRequest) -> tuple[dl.DataType, str, str]:
+    return request.param
+
+
 @pytest.mark.differential
-def test_match_reference_variant_table_creation(
+def test_match_reference_metadata_type_table_creation(
     ducklake: dl.Ducklake,
     catalog_url: str,
     reference_catalog_url: str,
     reference_duckdb_connection: duckdb.DuckDBPyConnection,
+    metadata_type: tuple[dl.DataType, str, str],
 ) -> None:
     # Arrange
-    columns = {"payload": dl.Variant()}
+    dtype, sql_type, _ = metadata_type
 
     # Act
-    ducklake.create_table("test", columns)
-    reference_duckdb_connection.execute("CREATE TABLE test (payload VARIANT)")
+    ducklake.create_table("test", {"payload": dtype})
+    reference_duckdb_connection.execute(f"CREATE TABLE test (payload {sql_type})")
 
     # Assert
     assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)
 
 
 @pytest.mark.differential
-def test_parse_reference_variant_catalog(
+def test_parse_reference_metadata_type_catalog(
     reference_catalog_url: str,
     reference_duckdb_connection: duckdb.DuckDBPyConnection,
+    metadata_type: tuple[dl.DataType, str, str],
 ) -> None:
     # Arrange
-    reference_duckdb_connection.execute("CREATE TABLE test (payload VARIANT)")
-    reference_duckdb_connection.execute("INSERT INTO test VALUES (42::VARIANT)")
+    dtype, sql_type, sql_value = metadata_type
+    reference_duckdb_connection.execute(f"CREATE TABLE test (payload {sql_type})")
+    reference_duckdb_connection.execute(f"INSERT INTO test VALUES ({sql_value})")
 
     # Act
     with dl.connect(reference_catalog_url) as reference_ducklake:
@@ -54,7 +86,7 @@ def test_parse_reference_variant_catalog(
         data_files = table.scan().data_files
 
     # Assert
-    assert columns == [dl.Column("payload", dl.Variant(), field_id=1)]
+    assert columns == [dl.Column("payload", dtype, field_id=1)]
     assert len(data_files) == 1
 
 

@@ -79,8 +79,12 @@ pub(crate) fn find_min(data_type: &DataType, array: &arrow_array::ArrayRef) -> O
             utf8_view => aggregate!(array, StringViewArray, min_string_view, Varchar)
         ),
         DataType::Uuid => aggregate!(array, FixedSizeBinaryArray, min_fixed_size_binary, Uuid),
-        // Nested types are not supported: they always have a `None` min value
-        DataType::Variant | DataType::List(_) | DataType::Struct(_) | DataType::Map(_, _) => None,
+        // These types do not have scalar min/max statistics.
+        DataType::Variant
+        | DataType::Geometry
+        | DataType::List(_)
+        | DataType::Struct(_)
+        | DataType::Map(_, _) => None,
     }
 }
 
@@ -142,8 +146,12 @@ pub(crate) fn find_max(data_type: &DataType, array: &arrow_array::ArrayRef) -> O
             utf8_view => aggregate!(array, StringViewArray, max_string_view, Varchar)
         ),
         DataType::Uuid => aggregate!(array, FixedSizeBinaryArray, max_fixed_size_binary, Uuid),
-        // Nested types are not supported: they always have a `None` max value
-        DataType::Variant | DataType::List(_) | DataType::Struct(_) | DataType::Map(_, _) => None,
+        // These types do not have scalar min/max statistics.
+        DataType::Variant
+        | DataType::Geometry
+        | DataType::List(_)
+        | DataType::Struct(_)
+        | DataType::Map(_, _) => None,
     }
 }
 

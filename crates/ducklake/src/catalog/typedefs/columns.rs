@@ -653,6 +653,7 @@ fn parse_primitive_dtype(s: &str) -> DucklakeResult<crate::DataType> {
         "blob" => Ok(Blob),
         "json" => Ok(Json),
         "variant" => Ok(Variant),
+        "geometry" => Ok(Geometry),
         "uuid" => Ok(Uuid),
         s => {
             static RE_DECIMAL: LazyLock<Regex> =

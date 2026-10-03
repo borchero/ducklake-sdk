@@ -43,10 +43,11 @@ pub(in crate::db) fn make_array_appender<D: TypeDecoder>(
         DataType::Varchar => Box::new(StringViewArrayAppender::new()),
         DataType::Blob => Box::new(LargeBinaryArrayAppender::new()),
         DataType::Json => Box::new(StringViewArrayAppender::new()),
-        DataType::Variant => {
-            return Err(crate::DucklakeError::UnsupportedArrowDataType(
-                "VARIANT inline data".into(),
-            ));
+        DataType::Variant | DataType::Geometry => {
+            return Err(crate::DucklakeError::UnsupportedArrowDataType(format!(
+                "{} inline data",
+                column.dtype
+            )));
         }
         DataType::Uuid => Box::new(UuidArrayAppender::new()),
         DataType::List(inner) => Box::new(LargeListArrayAppender::<D>::new(Arc::new(

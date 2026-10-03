@@ -54,6 +54,7 @@ impl FromPyObject<'_, '_> for Wrap<DataType> {
             "Blob" => DataType::Blob,
             "Json" => DataType::Json,
             "Variant" => DataType::Variant,
+            "Geometry" => DataType::Geometry,
             "Uuid" => DataType::Uuid,
             "List" => {
                 let inner = ob.getattr("inner")?.extract::<Wrap<Column>>()?;
@@ -122,6 +123,7 @@ impl<'py> IntoPyObject<'py> for Wrap<DataType> {
             DataType::Blob => dl.getattr("Blob")?.call0(),
             DataType::Json => dl.getattr("Json")?.call0(),
             DataType::Variant => dl.getattr("Variant")?.call0(),
+            DataType::Geometry => dl.getattr("Geometry")?.call0(),
             DataType::Uuid => dl.getattr("Uuid")?.call0(),
             DataType::List(inner) => {
                 let inner_py = Wrap(*inner.clone()).into_pyobject(py)?;

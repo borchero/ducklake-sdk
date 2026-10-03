@@ -148,7 +148,6 @@ See the DuckLake [release calendar](https://ducklake.select/release_calendar) fo
 
 ### Not yet implemented from the specification
 
-- [ ] `GEOMETRY` data type
 - [ ] Mapping columns by name (Parquet files must currently carry field IDs)
 - [ ] Macros and encrypted files
 

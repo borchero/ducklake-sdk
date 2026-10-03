@@ -366,6 +366,10 @@ class Variant(DataType):
     """Dynamically typed value stored in a binary encoding."""
 
 
+class Geometry(DataType):
+    """Spatial geometry data type stored as well-known binary (WKB)."""
+
+
 class Uuid(DataType):
     """Universally unique identifier data type."""
 

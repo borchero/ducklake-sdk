@@ -29,11 +29,11 @@ pub enum DataType {
     Blob,
     Json,
     Variant,
+    Geometry,
     Uuid,
     List(Box<Column>),
     Struct(Vec<Column>),
     Map(Box<Column>, Box<Column>),
-    // TODO: Add geometry data types
 }
 
 /// The precision of a [`DataType::Timestamp`] value.
@@ -167,6 +167,11 @@ impl DataType {
         DataType::Variant
     }
 
+    /// Construct a [`DataType::Geometry`] value.
+    pub fn geometry() -> Self {
+        DataType::Geometry
+    }
+
     /// Construct a [`DataType::Uuid`] value.
     pub fn uuid() -> Self {
         DataType::Uuid
@@ -200,16 +205,18 @@ impl DataType {
         )
     }
 
-    /// Whether this type contains a VARIANT value at any nesting level.
-    pub(crate) fn contains_variant(&self) -> bool {
+    /// Whether this type can be encoded in an inline data table by the SDK.
+    pub(crate) fn supports_data_inlining(&self) -> bool {
         match self {
-            DataType::Variant => true,
-            DataType::List(inner) => inner.dtype.contains_variant(),
-            DataType::Struct(fields) => fields.iter().any(|field| field.dtype.contains_variant()),
+            DataType::Variant | DataType::Geometry => false,
+            DataType::List(inner) => inner.dtype.supports_data_inlining(),
+            DataType::Struct(fields) => fields
+                .iter()
+                .all(|field| field.dtype.supports_data_inlining()),
             DataType::Map(key, value) => {
-                key.dtype.contains_variant() || value.dtype.contains_variant()
+                key.dtype.supports_data_inlining() && value.dtype.supports_data_inlining()
             }
-            _ => false,
+            _ => true,
         }
     }
 }
@@ -249,6 +256,7 @@ impl Display for DataType {
             Blob => write!(f, "blob"),
             Json => write!(f, "json"),
             Variant => write!(f, "variant"),
+            Geometry => write!(f, "geometry"),
             Uuid => write!(f, "uuid"),
             List(_) => write!(f, "list"),
             Struct(_) => write!(f, "struct"),
@@ -291,6 +299,7 @@ mod tests {
     #[case(DataType::blob(), "blob")]
     #[case(DataType::json(), "json")]
     #[case(DataType::variant(), "variant")]
+    #[case(DataType::geometry(), "geometry")]
     #[case(DataType::uuid(), "uuid")]
     fn test_primitive_display(#[case] dtype: DataType, #[case] expected: &str) {
         assert_eq!(dtype.to_string(), expected);
@@ -337,13 +346,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case(DataType::int32(), false)]
-    #[case(DataType::variant(), true)]
-    #[case(DataType::list(DataType::variant()), true)]
-    #[case(DataType::struct_(vec![Column::new("v".into(), DataType::variant())]), true)]
-    #[case(DataType::map(DataType::varchar(), DataType::variant()), true)]
-    fn test_contains_variant(#[case] dtype: DataType, #[case] expected: bool) {
-        assert_eq!(dtype.contains_variant(), expected);
+    #[case(DataType::int32(), true)]
+    #[case(DataType::list(DataType::int32()), true)]
+    #[case(DataType::variant(), false)]
+    #[case(DataType::list(DataType::variant()), false)]
+    #[case(DataType::struct_(vec![Column::new("v".into(), DataType::variant())]), false)]
+    #[case(DataType::map(DataType::varchar(), DataType::variant()), false)]
+    #[case(DataType::geometry(), false)]
+    #[case(DataType::list(DataType::geometry()), false)]
+    #[case(DataType::struct_(vec![Column::new("g".into(), DataType::geometry())]), false)]
+    #[case(DataType::map(DataType::varchar(), DataType::geometry()), false)]
+    #[case(DataType::map(DataType::geometry(), DataType::int32()), false)]
+    fn test_supports_data_inlining(#[case] dtype: DataType, #[case] expected: bool) {
+        assert_eq!(dtype.supports_data_inlining(), expected);
     }
 
     #[test]

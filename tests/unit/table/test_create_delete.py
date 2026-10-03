@@ -18,16 +18,19 @@ def test_create_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     assert table.tags == {}
 
 
-def test_create_table_with_variant(ducklake: dl.Ducklake, random_table_name: str) -> None:
+@pytest.mark.parametrize("dtype", [dl.Variant(), dl.Geometry()])
+def test_create_table_with_metadata_type(
+    ducklake: dl.Ducklake, random_table_name: str, dtype: dl.DataType
+) -> None:
     # Arrange
-    columns = {"payload": dl.Variant()}
+    columns = {"payload": dtype}
 
     # Act
     ducklake.create_table(random_table_name, columns)
     table = ducklake.table(random_table_name)
 
     # Assert
-    assert table.schema.columns == [dl.Column("payload", dl.Variant(), field_id=1)]
+    assert table.schema.columns == [dl.Column("payload", dtype, field_id=1)]
 
 
 def test_table_equality(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:

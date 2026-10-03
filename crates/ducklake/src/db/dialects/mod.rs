@@ -67,7 +67,7 @@ impl Dialect {
         &self,
         data_type: &crate::DataType,
     ) -> crate::DucklakeResult<ColumnType> {
-        if data_type.contains_variant() {
+        if !data_type.supports_data_inlining() {
             return Err(DucklakeError::InvalidDataType(format!(
                 "{data_type} cannot be inlined in this catalog"
             )));

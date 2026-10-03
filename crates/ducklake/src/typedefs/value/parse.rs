@@ -34,13 +34,13 @@ impl Value {
             Varchar => literals::parse(value)?.map(Value::Varchar),
             Blob => literals::parse(value)?.map(Value::Blob),
             Json => literals::parse(value)?.map(Value::Json),
-            Variant => {
+            Variant | Geometry => {
                 if value == "NULL" {
                     None
                 } else {
-                    return Err(DucklakeError::Parsing(
-                        "non-null VARIANT values have no string representation".into(),
-                    ));
+                    return Err(DucklakeError::Parsing(format!(
+                        "parsing non-null {dtype} values is not supported"
+                    )));
                 }
             }
             Uuid => literals::parse(value)?.map(Value::Uuid),
