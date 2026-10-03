@@ -17,6 +17,8 @@ from .typedefs import (
     Partitioning,
     Schema,
     SnapshotMetadata,
+    SortColumn,
+    SortInfo,
     TableMetadataUpdate,
     TableName,
     TableStatistics,
@@ -251,6 +253,7 @@ class Ducklake:
         partition_by: (
             Partitioning | Sequence[PartitionColumn] | Sequence[str] | PartitionColumn | str | None
         ) = None,
+        sort_by: SortInfo | Sequence[SortColumn | str] | SortColumn | str | None = None,
         data_path: str | None = None,
         tags: Mapping[str, str] | None = None,
         if_exists: Literal["fail", "skip"] = "fail",
@@ -261,6 +264,7 @@ class Ducklake:
             name: The fully qualified name of the new table.
             schema: The schema of the new table.
             partition_by: Optional partitioning for the table.
+            sort_by: Optional sort configuration for the table.
             data_path: Optional data path for the table.
             tags: Optional tags to attach to the table.
             if_exists: The strategy to apply if a table with the same name already exists.
@@ -276,12 +280,22 @@ class Ducklake:
             if isinstance(partition_by, Partitioning)
             else (Partitioning(partition_by) if partition_by is not None else None)
         )
+        sort_cls = (
+            sort_by
+            if isinstance(sort_by, SortInfo)
+            else (SortInfo(sort_by) if sort_by is not None else None)
+        )
         pytable = self._pyducklake.create_table(
             name,
             schema_cls.columns,
             partition=(
                 [(c.name, c.transform, c.num_buckets) for c in partition_cls.columns]
                 if partition_cls
+                else None
+            ),
+            sort_info=(
+                [(c.expression, c.dialect, c.direction, c.null_order) for c in sort_cls.columns]
+                if sort_cls
                 else None
             ),
             data_path=data_path,

@@ -501,6 +501,45 @@ class PartitionColumn:
         return self.name
 
 
+# ------------------------------------------ SORT INFO ------------------------------------------ #
+
+
+class SortInfo:
+    """Ordered sort columns for a table."""
+
+    def __init__(self, columns: Sequence[SortColumn | str] | SortColumn | str) -> None:
+        if isinstance(columns, (str, SortColumn)):
+            columns = [columns]
+        if not columns:
+            raise ValueError("Sort info must have at least one column")
+        self.columns = [col if isinstance(col, SortColumn) else SortColumn(col) for col in columns]
+
+    def __repr__(self) -> str:
+        return ", ".join(map(repr, self.columns))
+
+
+class SortColumn:
+    """A column and its ordering within a table's sort configuration."""
+
+    def __init__(
+        self,
+        expression: str,
+        *,
+        direction: Literal["ascending", "descending"] = "ascending",
+        null_order: Literal["nulls_first", "nulls_last"] = "nulls_last",
+        dialect: Literal["duckdb"] = "duckdb",
+    ) -> None:
+        self.expression = expression
+        self.dialect: Literal["duckdb"] = dialect
+        self.direction: Literal["ascending", "descending"] = direction
+        self.null_order: Literal["nulls_first", "nulls_last"] = null_order
+
+    def __repr__(self) -> str:
+        direction = "DESC" if self.direction == "descending" else "ASC"
+        null_order = "NULLS FIRST" if self.null_order == "nulls_first" else "NULLS LAST"
+        return f"{self.expression} {direction} {null_order}"
+
+
 # -------------------------------------------- VALUE -------------------------------------------- #
 
 # NOTE: This must be a union s.t. `dateutil` can be an optional dependency. With Python 3.12+, we

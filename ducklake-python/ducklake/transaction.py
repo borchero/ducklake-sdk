@@ -8,6 +8,8 @@ from .typedefs import (
     PartitionColumn,
     Partitioning,
     Schema,
+    SortColumn,
+    SortInfo,
     TableMetadata,
     TableName,
     Value,
@@ -103,6 +105,7 @@ class Transaction:
         partition_by: (
             Partitioning | Sequence[PartitionColumn] | Sequence[str] | PartitionColumn | str | None
         ) = None,
+        sort_by: SortInfo | Sequence[SortColumn | str] | SortColumn | str | None = None,
         data_path: str | None = None,
         tags: Mapping[str, str] | None = None,
         if_exists: Literal["fail", "skip"] = "fail",
@@ -116,6 +119,7 @@ class Transaction:
             name: The fully qualified name of the new table.
             schema: The schema of the new table.
             partition_by: Optional partitioning for the table.
+            sort_by: Optional sort configuration for the table.
             data_path: Optional data path for the table.
             tags: Optional tags to attach to the table.
 
@@ -128,12 +132,22 @@ class Transaction:
             if isinstance(partition_by, Partitioning)
             else (Partitioning(partition_by) if partition_by is not None else None)
         )
+        sort_cls = (
+            sort_by
+            if isinstance(sort_by, SortInfo)
+            else (SortInfo(sort_by) if sort_by is not None else None)
+        )
         pytransaction_table = self._pytx.create_table(
             name,
             schema_cls.columns,
             partition=(
                 [(c.name, c.transform, c.num_buckets) for c in partition_cls.columns]
                 if partition_cls
+                else None
+            ),
+            sort_info=(
+                [(c.expression, c.dialect, c.direction, c.null_order) for c in sort_cls.columns]
+                if sort_cls
                 else None
             ),
             data_path=data_path,
@@ -197,6 +211,19 @@ class TransactionTable:
                     num_buckets=col[2],  # type: ignore
                 )
                 for col in partitioning
+            ]
+        )
+
+    @property
+    def sort_info(self) -> SortInfo | None:
+        """The table's sort configuration within this transaction."""
+        sort = self._pytxtable.sort_info
+        if sort is None:
+            return None
+        return SortInfo(
+            [
+                SortColumn(expression, dialect=dialect, direction=direction, null_order=null_order)
+                for expression, dialect, direction, null_order in sort
             ]
         )
 
@@ -319,6 +346,17 @@ class TransactionTable:
             None
             if partitioning is None
             else [(col.name, col.transform, col.num_buckets) for col in partitioning.columns]
+        )
+
+    def update_sort_info(self, sort_info: SortInfo | None) -> None:
+        """Set or reset sorting for future writes within this transaction."""
+        self._pytxtable.update_sort_info(
+            None
+            if sort_info is None
+            else [
+                (col.expression, col.dialect, col.direction, col.null_order)
+                for col in sort_info.columns
+            ]
         )
 
     def add_column(self, column: Column) -> None:

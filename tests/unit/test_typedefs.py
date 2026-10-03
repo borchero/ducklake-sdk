@@ -304,6 +304,35 @@ def test_partition_column_bucket_requires_positive_num_buckets(num_buckets: int)
         dl.PartitionColumn("user_id", transform="bucket", num_buckets=num_buckets)
 
 
+# ------------------------------------------- SORT INFO ----------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("columns", "expected"),
+    [
+        ("x", ["x"]),
+        (["x", "y"], ["x", "y"]),
+        (dl.SortColumn("x"), ["x"]),
+    ],
+)
+def test_sort_info_columns(columns: str | list[str] | dl.SortColumn, expected: list[str]) -> None:
+    # Act
+    sort_info = dl.SortInfo(columns)
+
+    # Assert
+    assert [column.expression for column in sort_info.columns] == expected
+    assert all(
+        column.direction == "ascending" and column.null_order == "nulls_last"
+        for column in sort_info.columns
+    )
+
+
+def test_sort_info_empty_raises() -> None:
+    # Act & Assert
+    with pytest.raises(ValueError, match="at least one column"):
+        dl.SortInfo([])
+
+
 # ---------------------------------- _serialize_metadata_value ---------------------------------- #
 
 

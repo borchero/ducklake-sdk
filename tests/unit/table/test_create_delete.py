@@ -12,6 +12,7 @@ def test_create_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> N
     assert table.name == ("main", random_table_name)
     assert table.schema.columns == [dl.Column("x", dl.Int64(), field_id=1)]
     assert table.partitioning is None
+    assert table.sort_info is None
     assert table.tags == {}
 
 

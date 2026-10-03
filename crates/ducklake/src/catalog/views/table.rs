@@ -7,6 +7,7 @@ use crate::catalog::{
     Catalog,
     CatalogTable,
     CatalogTablePartition,
+    CatalogTableSortInfo,
     ColumnRef,
     TableRef,
 };
@@ -135,6 +136,7 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
             name: self.name().clone(),
             schema: self.schema(),
             partitioning: self.partitioning(),
+            sort_info: self.sort_info(),
             tags: self.tags(),
         }
     }
@@ -157,6 +159,21 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
             .partition
             .as_ref()
             .map(|p| p.into_partition(&table.columns))
+    }
+
+    pub(crate) fn sort_info(&self) -> Option<crate::SortInfo> {
+        let table = self.inner();
+        table
+            .sort_info
+            .as_ref()
+            .map(|sort| sort.into_sort_info(&table.columns))
+    }
+
+    pub(crate) fn sort_info_includes_column(&self, column_ref: ColumnRef) -> bool {
+        self.inner()
+            .sort_info
+            .as_ref()
+            .is_some_and(|sort| sort.references_column(column_ref.column_idx))
     }
 
     pub(crate) fn data_path(&self, root_data_path: &io::DucklakePath) -> io::DucklakePath {
@@ -282,6 +299,17 @@ impl<'a> TableViewMut<'a> {
                 .collect()
         });
         Ok(partition_refs)
+    }
+
+    pub(crate) fn update_sort_info(
+        &mut self,
+        sort_info: Option<crate::SortInfo>,
+    ) -> DucklakeResult<()> {
+        let table = self.inner_mut();
+        table.sort_info = sort_info
+            .map(|sort| CatalogTableSortInfo::from_sort_info(sort, &table.columns))
+            .transpose()?;
+        Ok(())
     }
 
     pub(crate) fn add_tag(&mut self, tag: crate::Tag) {

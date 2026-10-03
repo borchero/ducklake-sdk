@@ -30,11 +30,6 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
         OutdatedVersion(_, _) => OutdatedVersionError::new_err(error.to_string()),
         AlreadyExists { .. } => AlreadyExistsError::new_err(error.to_string()),
         NotFound { .. } => NotFoundError::new_err(error.to_string()),
-        InvalidTableName { .. } => PyValueError::new_err(error.to_string()),
-        InvalidView { .. } => PyValueError::new_err(error.to_string()),
-        InvalidPartitionTransform { .. } => PyValueError::new_err(error.to_string()),
-        InvalidTimeZone(_) => PyValueError::new_err(error.to_string()),
-        ReadOnlyMetadata { .. } => PyValueError::new_err(error.to_string()),
         InvalidCast { .. } => InvalidCastError::new_err(error.to_string()),
         InvalidNullValue { .. } => InvalidNullValueError::new_err(error.to_string()),
         InvalidNullabilityChange { .. } => {
@@ -42,9 +37,16 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
         }
         TransactionConflict(_) => TransactionConflictError::new_err(error.to_string()),
         ReadonlyDucklake => ReadonlyDucklakeError::new_err(error.to_string()),
-        SnapshotPinned => PyValueError::new_err(error.to_string()),
-        InvalidChanges(_) => PyValueError::new_err(error.to_string()),
-        InvalidTableTransfer(_) => PyValueError::new_err(error.to_string()),
+        InvalidTableName { .. }
+        | InvalidView { .. }
+        | InvalidPartitionTransform { .. }
+        | InvalidSortDirection { .. }
+        | InvalidNullOrder { .. }
+        | InvalidTimeZone(_)
+        | ReadOnlyMetadata { .. }
+        | SnapshotPinned
+        | InvalidChanges(_)
+        | InvalidTableTransfer(_) => PyValueError::new_err(error.to_string()),
         _ => pyo3::exceptions::PyRuntimeError::new_err(error.to_string()),
     }
 }

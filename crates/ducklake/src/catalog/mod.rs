@@ -107,11 +107,16 @@ impl Catalog {
             .partitioning
             .map(|p| CatalogTablePartition::from_partition(p, &columns))
             .transpose()?;
+        let sort_info = table
+            .sort_info
+            .map(|sort| CatalogTableSortInfo::from_sort_info(sort, &columns))
+            .transpose()?;
         let catalog_table = CatalogTable {
             id: None,
             name: table.name.clone(),
             columns,
             partition: partition.clone(),
+            sort_info,
             tags: table.tags,
             path,
         };

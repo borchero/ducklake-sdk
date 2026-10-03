@@ -192,6 +192,13 @@ impl<'a> ColumnViewMut<'a> {
                 "cannot remove column from table as the table is partitioned by it - reset or change the partitioning on this table in order to drop this column".to_string(),
             ));
         }
+        if let Some(sort) = table.sort_info.as_ref()
+            && sort.references_column(column_idx)
+        {
+            return Err(DucklakeError::InvalidChanges(
+                "cannot remove column from table as the table is sorted by it - reset or change the sort info on this table in order to drop this column".to_string(),
+            ));
+        }
         let column_idxs = table.columns.remove_column(column_idx)?;
         Ok(column_idxs
             .into_iter()

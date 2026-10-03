@@ -20,12 +20,14 @@
 mod columns;
 mod partition;
 mod schema;
+mod sort;
 mod table;
 mod view;
 
 pub(super) use columns::{CatalogColumn, CatalogColumns, CatalogDataType};
 pub(super) use partition::CatalogTablePartition;
 pub(super) use schema::CatalogSchema;
+pub(super) use sort::CatalogTableSortInfo;
 pub(super) use table::CatalogTable;
 pub(super) use view::CatalogView;
 

@@ -1,4 +1,5 @@
 import datetime as dt
+from typing import Literal, TypeAlias
 
 from .typedefs import (
     ArrowSchemaExportable,
@@ -13,6 +14,18 @@ from .typedefs import (
     Value,
     WriteDataFile,
 )
+
+NativePartitioning: TypeAlias = tuple[
+    str,
+    str | None,
+    int | None,
+]
+NativeSortExpression: TypeAlias = tuple[
+    str,
+    Literal["duckdb"],
+    Literal["ascending", "descending"],
+    Literal["nulls_first", "nulls_last"],
+]
 
 # ------------------------------------------- DUCKLAKE ------------------------------------------ #
 
@@ -52,6 +65,7 @@ class PyDucklake:
         name: str | tuple[str, str],
         columns: list[Column],
         partition: list[tuple[str, str | None, int | None]] | None,
+        sort_info: list[NativeSortExpression] | None,
         data_path: str | None,
         tags: list[tuple[str, str]] | None,
         if_exists: str,
@@ -113,7 +127,9 @@ class PyTable:
     @property
     def columns(self) -> list[Column]: ...
     @property
-    def partitioning(self) -> list[tuple[str, str | None, int | None]] | None: ...
+    def partitioning(self) -> list[NativePartitioning] | None: ...
+    @property
+    def sort_info(self) -> list[NativeSortExpression] | None: ...
     @property
     def tags(self) -> list[tuple[str, str]]: ...
     @property
@@ -121,9 +137,8 @@ class PyTable:
     @property
     def data_path(self) -> str: ...
     def rename(self, new_name: str) -> None: ...
-    def update_partitioning(
-        self, partitioning: list[tuple[str, str | None, int | None]] | None
-    ) -> None: ...
+    def update_partitioning(self, partitioning: list[NativePartitioning] | None) -> None: ...
+    def update_sort_info(self, sort_info: list[NativeSortExpression] | None) -> None: ...
     def add_column(self, column: Column) -> None: ...
     def rename_column(self, column: str, new_name: str) -> None: ...
     def remove_column(self, column: str) -> None: ...
@@ -173,6 +188,7 @@ class PyTransaction:
         name: str | tuple[str, str],
         schema: list[Column],
         partition: list[tuple[str, str | None, int | None]] | None,
+        sort_info: list[NativeSortExpression] | None,
         data_path: str | None,
         tags: list[tuple[str, str]] | None,
         if_exists: str,
@@ -185,11 +201,12 @@ class PyTransactionTable:
     @property
     def columns(self) -> list[Column]: ...
     @property
-    def partitioning(self) -> list[tuple[str, str | None, int | None]] | None: ...
+    def partitioning(self) -> list[NativePartitioning] | None: ...
+    @property
+    def sort_info(self) -> list[NativeSortExpression] | None: ...
     def rename(self, new_name: str) -> None: ...
-    def update_partitioning(
-        self, partitioning: list[tuple[str, str | None, int | None]] | None
-    ) -> None: ...
+    def update_partitioning(self, partitioning: list[NativePartitioning] | None) -> None: ...
+    def update_sort_info(self, sort_info: list[NativeSortExpression] | None) -> None: ...
     def add_column(self, column: Column) -> None: ...
     def rename_column(self, column: str | list[str], new_name: str) -> None: ...
     def remove_column(self, column: str | list[str]) -> None: ...

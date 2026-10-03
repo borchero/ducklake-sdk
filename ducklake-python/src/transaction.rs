@@ -102,11 +102,13 @@ impl PyTransaction {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_table(
         &mut self,
         name: Wrap<ducklake::TableName>,
         schema: Vec<Wrap<ducklake::Column>>,
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
+        sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,
         data_path: Option<String>,
         tags: Option<Vec<Wrap<ducklake::Tag>>>,
         if_exists: Wrap<ducklake::IfExistsStrategy>,
@@ -116,6 +118,7 @@ impl PyTransaction {
                 name.0.clone(),
                 schema.into_iter().map(|c| c.0).collect(),
                 partition.map(|v| v.into_iter().map(|p| p.0).collect()),
+                sort_info.map(|items| items.into_iter().map(|item| item.0).collect()),
                 data_path,
                 tags.map(|v| v.into_iter().map(|t| t.0).collect()),
                 if_exists.0,
@@ -151,7 +154,7 @@ impl PyTransactionTable {
         let mut tx_guard = self.tx();
         let tx_table = tx_guard.table(table).map_err(error::into_pyerr)?;
         let columns = tx_table.columns().map_err(error::into_pyerr)?;
-        Ok(columns.into_iter().map(|col| col.into()).collect())
+        Ok(columns.into_iter().map(Into::into).collect())
     }
 
     #[getter]
@@ -160,7 +163,19 @@ impl PyTransactionTable {
         let mut tx_guard = self.tx();
         let tx_table = tx_guard.table(table).map_err(error::into_pyerr)?;
         let partitioning = tx_table.partitioning().map_err(error::into_pyerr)?;
-        Ok(partitioning.map(|p| p.into_iter().map(|col| col.into()).collect()))
+        Ok(partitioning.map(|p| p.into_iter().map(Into::into).collect()))
+    }
+
+    #[getter]
+    pub fn sort_info(&mut self) -> PyResult<Option<Vec<Wrap<ducklake::SortExpression>>>> {
+        let table = self.table.clone();
+        let mut tx_guard = self.tx();
+        let sort = tx_guard
+            .table(table)
+            .map_err(error::into_pyerr)?
+            .sort_info()
+            .map_err(error::into_pyerr)?;
+        Ok(sort.map(|c| c.into_iter().map(Into::into).collect()))
     }
 
     fn get_write_info(&mut self) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator)> {
@@ -209,6 +224,17 @@ impl PyTransactionTable {
         let partitioning = partitioning.map(|cols| cols.into_iter().map(|c| c.0).collect());
         self.tx()
             .update_table_partitioning(&table, partitioning)
+            .map_err(error::into_pyerr)
+    }
+
+    fn update_sort_info(
+        &mut self,
+        sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,
+    ) -> PyResult<()> {
+        let table = self.table.clone();
+        let expressions = sort_info.map(|items| items.into_iter().map(|item| item.0).collect());
+        self.tx()
+            .update_table_sort_info(&table, expressions)
             .map_err(error::into_pyerr)
     }
 

@@ -12,6 +12,8 @@ from .typedefs import (
     Partitioning,
     ScanResult,
     Schema,
+    SortColumn,
+    SortInfo,
     TableMetadata,
     TableMetadataUpdate,
     TableName,
@@ -86,6 +88,19 @@ class Table:
                     num_buckets=col[2],  # type: ignore
                 )
                 for col in partitioning
+            ]
+        )
+
+    @property
+    def sort_info(self) -> SortInfo | None:
+        """The table's sort configuration, if any."""
+        sort = self._pytable.sort_info
+        if sort is None:
+            return None
+        return SortInfo(
+            [
+                SortColumn(expression, dialect=dialect, direction=direction, null_order=null_order)
+                for expression, dialect, direction, null_order in sort
             ]
         )
 
@@ -283,6 +298,17 @@ class Table:
             None
             if partitioning is None
             else [(col.name, col.transform, col.num_buckets) for col in partitioning.columns]
+        )
+
+    def update_sort_info(self, sort_info: SortInfo | None) -> None:
+        """Set or reset sorting for future writes; existing files are not rewritten."""
+        self._pytable.update_sort_info(
+            None
+            if sort_info is None
+            else [
+                (col.expression, col.dialect, col.direction, col.null_order)
+                for col in sort_info.columns
+            ]
         )
 
     def add_column(self, column: Column) -> None:

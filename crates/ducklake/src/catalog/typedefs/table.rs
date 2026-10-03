@@ -8,6 +8,7 @@ pub(in crate::catalog) struct CatalogTable {
     pub name: crate::TableName,
     pub columns: CatalogColumns,
     pub partition: Option<CatalogTablePartition>,
+    pub sort_info: Option<CatalogTableSortInfo>,
     pub tags: Vec<crate::Tag>,
     pub path: io::DucklakePath,
 }

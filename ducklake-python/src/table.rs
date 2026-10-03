@@ -42,6 +42,12 @@ impl PyTable {
     }
 
     #[getter]
+    pub fn sort_info(&self, py: Python) -> PyResult<Option<Vec<Wrap<ducklake::SortExpression>>>> {
+        let sort = block_on(py, self.0.sort_info()).map_err(error::into_pyerr)?;
+        Ok(sort.map(|expressions| expressions.into_iter().map(Into::into).collect()))
+    }
+
+    #[getter]
     pub fn tags(&self, py: Python) -> PyResult<Vec<Wrap<ducklake::Tag>>> {
         let tags = block_on(py, self.0.tags()).map_err(error::into_pyerr)?;
         Ok(tags.into_iter().map(|tag| tag.into()).collect())
@@ -64,6 +70,15 @@ impl PyTable {
     ) -> PyResult<()> {
         let partitioning = partitioning.map(|cols| cols.into_iter().map(|c| c.0).collect());
         block_on(py, self.0.update_partitioning(partitioning)).map_err(error::into_pyerr)
+    }
+
+    pub fn update_sort_info(
+        &mut self,
+        py: Python,
+        sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,
+    ) -> PyResult<()> {
+        let expressions = sort_info.map(|items| items.into_iter().map(|item| item.0).collect());
+        block_on(py, self.0.update_sort_info(expressions)).map_err(error::into_pyerr)
     }
 
     pub fn add_column(&mut self, py: Python, column: Wrap<ducklake::Column>) -> PyResult<()> {

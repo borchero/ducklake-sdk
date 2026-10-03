@@ -13,7 +13,7 @@ from ducklake import typedefs
 from ducklake._native import PyDataFilePathGenerator
 from ducklake.table import Table
 from ducklake.transaction import TransactionTable
-from ducklake.typedefs import Column, Partitioning, WriteDataFile
+from ducklake.typedefs import Column, Partitioning, SortInfo, WriteDataFile
 
 PARTITION_COLUMN_PREFIX = "__ducklake_partition__"
 # NOTE: This is taken from the polars Iceberg implementation
@@ -59,7 +59,7 @@ def sink_ducklake(
     # 2) Then, we prepare the lazy frame contents
     lf = lf.pipe(_prepare_frame, table)
 
-    # 4) Then, we need to derive partitions from the table. If a partition applies a transform,
+    # 3) Then, we need to derive partitions from the table. If a partition applies a transform,
     #    we need to apply the transform to the lazyframe. In order to not include those transformed
     #    columns in the output, we set `include_key=False` below and simply add a new column for
     #    the partitioning for ALL partition columns, regardless of whether they have a transform.
@@ -67,7 +67,7 @@ def sink_ducklake(
     if table.partitioning is not None:
         lf, partition_columns = lf.pipe(_prepare_partitions, table.partitioning)
 
-    # 5) Afterwards, we create the partitioning object for the sink. Note that we need to keep a
+    # 4) Afterwards, we create the partitioning object for the sink. Note that we need to keep a
     #    mapping from the generated file paths to partition values as we cannot read the partition
     #    values in the sink callback but need them to write to DuckLake.
     partition_value_cache: dict[str, pl.DataFrame] = {}
@@ -87,7 +87,7 @@ def sink_ducklake(
         ),
     )
 
-    # 6) Eventually, we can actually write the data. The callback will take care of actually
+    # 5) Eventually, we can actually write the data. The callback will take care of actually
     #    committing the new data files to the Ducklake. This allows to perform the entire
     #    operation lazily if requested.
     sinked_paths_callback = partial(
@@ -164,7 +164,18 @@ def _prepare_frame(lf: pl.LazyFrame, table: Table | TransactionTable) -> pl.Lazy
         if _has_default_expression(col)
     ]
     if default_exprs:
-        return lf.with_columns(default_exprs)
+        lf = lf.with_columns(default_exprs)
+
+    # Make sure that we sort if necessary
+    if (sort_info := table.sort_info) is not None:
+        lf = lf.sort(
+            # NOTE: We currently assume that all expressions are simple column names. Specification
+            #  v1.0 restricts expressions as such.
+            [pl.col(column.expression) for column in sort_info.columns],
+            descending=[column.direction == "descending" for column in sort_info.columns],
+            nulls_last=[column.null_order == "nulls_last" for column in sort_info.columns],
+        )
+
     return lf
 
 

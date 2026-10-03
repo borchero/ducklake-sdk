@@ -2,6 +2,7 @@ mod data;
 mod name;
 mod partition;
 mod schema;
+mod sort;
 mod tag;
 mod value;
 
@@ -11,5 +12,7 @@ pub(crate) use partition::Partition;
 pub use partition::{PartitionColumn, PartitionTransform};
 pub(crate) use schema::Schema;
 pub use schema::{Column, ColumnDefault, DataType, TimestampPrecision};
+pub(crate) use sort::SortInfo;
+pub use sort::{NullOrder, SortDirection, SortExpression};
 pub use tag::Tag;
 pub use value::Value;

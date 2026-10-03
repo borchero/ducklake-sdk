@@ -33,6 +33,10 @@ pub enum DucklakeError {
     InvalidTimeZone(String),
     #[error("invalid partition transform: {0}")]
     InvalidPartitionTransform(String),
+    #[error("invalid sort direction: {0}")]
+    InvalidSortDirection(String),
+    #[error("invalid null order: {0}")]
+    InvalidNullOrder(String),
     #[error("invalid schema name '{name}': {reason}")]
     InvalidSchemaName { name: String, reason: &'static str },
     #[error("invalid table name '{name}': {reason}")]

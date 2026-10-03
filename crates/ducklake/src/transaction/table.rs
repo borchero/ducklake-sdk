@@ -81,6 +81,16 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
             .map(|p| p.0);
         Ok(columns)
     }
+
+    /// Get the table's sort configuration within the transaction.
+    pub fn sort_info(&self) -> DucklakeResult<Option<Vec<crate::SortExpression>>> {
+        Ok(self
+            .tx
+            .catalog()
+            .table(&self.name)?
+            .sort_info()
+            .map(|s| s.0))
+    }
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -91,11 +101,13 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
 
 impl<'a> Transaction<'a> {
     /// Create a new table in the catalog.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_table(
         &mut self,
         name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
         columns: Vec<Column>,
         partition_columns: Option<Vec<PartitionColumn>>,
+        sort_info: Option<Vec<crate::SortExpression>>,
         path: Option<String>,
         tags: Option<Vec<Tag>>,
         if_exists: IfExistsStrategy,
@@ -105,6 +117,7 @@ impl<'a> Transaction<'a> {
             name,
             columns,
             partition_columns,
+            sort_info,
             path,
             tags,
             if_exists,
@@ -123,6 +136,7 @@ impl<'a> Transaction<'a> {
             name,
             info.schema.columns.into_values().collect(),
             info.partitioning.map(|partition| partition.0),
+            info.sort_info.map(|sort| sort.0),
             None,
             Some(info.tags),
             IfExistsStrategy::Fail,
@@ -136,6 +150,7 @@ impl<'a> Transaction<'a> {
         name: TableName,
         columns: Vec<Column>,
         partition_columns: Option<Vec<PartitionColumn>>,
+        sort_info: Option<Vec<crate::SortExpression>>,
         path: Option<String>,
         tags: Option<Vec<Tag>>,
         if_exists: IfExistsStrategy,
@@ -155,7 +170,8 @@ impl<'a> Transaction<'a> {
         let info = crate::TableInfo {
             name: name.clone(),
             schema: columns.clone().try_into()?,
-            partitioning: partition_columns.clone().map(|p| p.into()),
+            partitioning: partition_columns.clone().map(Into::into),
+            sort_info: sort_info.clone().map(Into::into),
             tags: tags.clone().unwrap_or_default(),
         };
         let next_column_id = retired_columns.as_ref().map(|retired| {
@@ -182,6 +198,7 @@ impl<'a> Transaction<'a> {
             columns,
             retired_columns: retired_columns.unwrap_or_default(),
             partition_columns,
+            sort_info,
             path,
             tags,
         };
@@ -710,14 +727,27 @@ impl<'a> Transaction<'a> {
         }
 
         let mut table = self.catalog_mut().table_mut(table_name)?;
-        let mut column = table.column_mut(column.as_ref())?;
-        column.rename(new_name)?;
-        let change = Change::UpdateTableColumn {
-            parent_column_ref: column.parent_ref(),
-            column_ref: column.ref_(),
-            column: column.info(),
+        let (column_ref, change) = {
+            let mut column = table.column_mut(column.as_ref())?;
+            column.rename(new_name)?;
+            let column_ref = column.ref_();
+            let change = Change::UpdateTableColumn {
+                parent_column_ref: column.parent_ref(),
+                column_ref,
+                column: column.info(),
+            };
+            (column_ref, change)
         };
+        let updated_sort_expressions = table
+            .sort_info_includes_column(column_ref)
+            .then(|| table.sort_info().unwrap().0);
         self.changes.push(change);
+        if let Some(expressions) = updated_sort_expressions {
+            self.changes.push(Change::UpdateTableSortInfo {
+                table_ref: column_ref.table_ref,
+                expressions: Some(expressions),
+            });
+        }
         Ok(())
     }
 
@@ -936,6 +966,36 @@ impl<'a> Transaction<'a> {
             partition_columns,
         };
         self.changes.push(change);
+        Ok(())
+    }
+}
+
+/* -------------------------------------- UPDATE SORT INFO ------------------------------------- */
+
+impl<'tx, 'a> TransactionTable<'tx, 'a> {
+    /// Update or reset the table's sort configuration.
+    pub fn update_sort_info(
+        &mut self,
+        expressions: Option<Vec<crate::SortExpression>>,
+    ) -> DucklakeResult<()> {
+        self.tx.update_table_sort_info(&self.name, expressions)
+    }
+}
+
+impl<'a> Transaction<'a> {
+    #[visibility_if(feature = "python", pub)]
+    fn update_table_sort_info(
+        &mut self,
+        table_name: &TableName,
+        expressions: Option<Vec<crate::SortExpression>>,
+    ) -> DucklakeResult<()> {
+        let mut table = self.catalog_mut().table_mut(table_name)?;
+        table.update_sort_info(expressions.clone().map(Into::into))?;
+        let table_ref = table.ref_();
+        self.changes.push(Change::UpdateTableSortInfo {
+            table_ref,
+            expressions,
+        });
         Ok(())
     }
 }

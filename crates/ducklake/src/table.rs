@@ -24,6 +24,7 @@ pub(crate) struct TableInfo {
     pub name: TableName,
     pub schema: crate::Schema,
     pub partitioning: Option<crate::Partition>,
+    pub sort_info: Option<crate::SortInfo>,
     pub tags: Vec<crate::Tag>,
 }
 
@@ -63,6 +64,18 @@ impl Table {
             .partitioning()
             .map(|p| p.0);
         Ok(columns)
+    }
+
+    /// Get the table's sort configuration.
+    pub async fn sort_info(&self) -> DucklakeResult<Option<Vec<crate::SortExpression>>> {
+        Ok(self
+            .conn
+            .current_snapshot()
+            .catalog()
+            .await?
+            .table(self.id)?
+            .sort_info()
+            .map(|s| s.0))
     }
 
     /// Get the tags of the table.
@@ -209,6 +222,8 @@ within_transaction! {
     fn rename(new_name: &str);
     /// Update the table's partitioning.
     fn update_partitioning(columns: Option<Vec<crate::PartitionColumn>>);
+    /// Update or reset the table's sort configuration.
+    fn update_sort_info(expressions: Option<Vec<crate::SortExpression>>);
     /// Rename a column in the table.
     fn rename_column(column: impl IntoColumnName, new_name: &str);
     /// Remove a column from the table.

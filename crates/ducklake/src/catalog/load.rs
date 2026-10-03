@@ -52,6 +52,25 @@ impl Catalog {
             .column(Asterisk)
             .from(ducklake_partition_column::Table)
             .to_owned();
+        let sort_infos_query = snapshot_query!(ducklake_sort_info, snapshot_id);
+        let active_sort_ids = Query::select()
+            .column(ducklake_sort_info::Column::SortId)
+            .from(ducklake_sort_info::Table)
+            .filter_for_snapshot(
+                ducklake_sort_info::Column::BeginSnapshot.col(),
+                ducklake_sort_info::Column::EndSnapshot.col(),
+                snapshot_id,
+            )
+            .to_owned();
+        let sort_expressions_query = Query::select()
+            .column(Asterisk)
+            .from(ducklake_sort_expression::Table)
+            .and_where(
+                ducklake_sort_expression::Column::SortId
+                    .col()
+                    .in_subquery(active_sort_ids),
+            )
+            .to_owned();
 
         #[allow(clippy::type_complexity)]
         let (
@@ -63,6 +82,8 @@ impl Catalog {
             fetched_column_tags,
             fetched_partition_infos,
             fetched_partition_columns,
+            fetched_sort_infos,
+            fetched_sort_expressions,
         ): (
             Vec<DucklakeSchema>,
             Vec<DucklakeTable>,
@@ -72,6 +93,8 @@ impl Catalog {
             Vec<DucklakeColumnTag>,
             Vec<DucklakePartitionInfo>,
             Vec<DucklakePartitionColumn>,
+            Vec<DucklakeSortInfo>,
+            Vec<DucklakeSortExpression>,
         ) = tokio::try_join!(
             pool.fetch_all(&schemas_query),
             pool.fetch_all(&tables_query),
@@ -81,6 +104,8 @@ impl Catalog {
             pool.fetch_all(&column_tags_query),
             pool.fetch_all(&partition_infos_query),
             pool.fetch_all(&partition_columns_query),
+            pool.fetch_all(&sort_infos_query),
+            pool.fetch_all(&sort_expressions_query),
         )?;
 
         // Group all relevant data by the keys we need to filter by below. This avoids a bunch
@@ -98,6 +123,12 @@ impl Catalog {
         let mut grouped_partition_columns = fetched_partition_columns
             .into_iter()
             .into_group_map_by(|pc| pc.table_id);
+        let mut grouped_sort_infos = fetched_sort_infos
+            .into_iter()
+            .into_group_map_by(|s| s.table_id);
+        let mut grouped_sort_expressions = fetched_sort_expressions
+            .into_iter()
+            .into_group_map_by(|s| s.table_id);
 
         // Initialize a new catalog and populate it with the fetched data
         let mut catalog = Catalog::new();
@@ -108,6 +139,8 @@ impl Catalog {
             &mut grouped_column_tags,
             &mut grouped_partition_infos,
             &mut grouped_partition_columns,
+            &mut grouped_sort_infos,
+            &mut grouped_sort_expressions,
             &mut grouped_tags,
         )?;
         catalog.set_views(fetched_views, &mut grouped_tags)?;
@@ -139,6 +172,7 @@ impl Catalog {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn set_tables(
         &mut self,
         tables: Vec<DucklakeTable>,
@@ -146,6 +180,8 @@ impl Catalog {
         column_tags: &mut HashMap<i64, Vec<DucklakeColumnTag>>,
         partition_infos: &mut HashMap<i64, Vec<DucklakePartitionInfo>>,
         partition_columns: &mut HashMap<i64, Vec<DucklakePartitionColumn>>,
+        sort_infos: &mut HashMap<i64, Vec<DucklakeSortInfo>>,
+        sort_expressions: &mut HashMap<i64, Vec<DucklakeSortExpression>>,
         tags: &mut HashMap<i64, Vec<DucklakeTag>>,
     ) -> DucklakeResult<()> {
         for table in tables {
@@ -193,6 +229,28 @@ impl Catalog {
                 None
             };
 
+            let mut table_sort_infos = sort_infos.remove(&table.table_id).unwrap_or_default();
+            if table_sort_infos.len() > 1 {
+                return Err(DucklakeError::InvalidChanges(format!(
+                    "expected at most one active sort for table {table_name}"
+                )));
+            }
+            let table_sort_info = if let Some(info) = table_sort_infos.pop() {
+                let expressions = sort_expressions
+                    .remove(&table.table_id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|expr| expr.sort_id == info.sort_id)
+                    .collect();
+                Some(CatalogTableSortInfo::from_ducklake(
+                    info,
+                    expressions,
+                    &table_columns,
+                )?)
+            } else {
+                None
+            };
+
             // 4) Construct the full table catalog object
             let catalog_table = CatalogTable {
                 id: Some(table.table_id),
@@ -202,6 +260,7 @@ impl Catalog {
                 },
                 columns: table_columns,
                 partition: table_partition,
+                sort_info: table_sort_info,
                 tags: tags
                     .remove(&table.table_id)
                     .map(|v| v.into_iter().map(|tag| tag.into()).collect())

@@ -582,11 +582,13 @@ within_transaction! {
 
 impl Ducklake {
     /// Create a new table in the catalog.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_table(
         &self,
         name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
         columns: Vec<Column>,
         partition_columns: Option<Vec<PartitionColumn>>,
+        sort_info: Option<Vec<crate::SortExpression>>,
         path: Option<String>,
         tags: Option<Vec<Tag>>,
         if_exists: IfExistsStrategy,
@@ -597,6 +599,7 @@ impl Ducklake {
             name.clone(),
             columns,
             partition_columns,
+            sort_info,
             path,
             tags,
             if_exists,

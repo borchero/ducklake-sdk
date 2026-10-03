@@ -96,6 +96,12 @@ impl<'a> CommitState<'a> {
         id
     }
 
+    /// Generate an ID for a new sort configuration. Each update needs its own ID because a
+    /// transaction may replace the sort configuration more than once before committing.
+    pub(crate) fn sort_info_id(&mut self) -> i64 {
+        self.catalog_id()
+    }
+
     pub(crate) fn column_stats_changed(&self, table_id: i64, column_id: i64) -> bool {
         let current = self
             .table_stats
@@ -163,15 +169,3 @@ impl<'a> From<&CommitState<'a>> for DucklakeSnapshot {
         }
     }
 }
-
-// impl<'a> From<&CommitState<'a>> for SnapshotInfo {
-//     fn from(metadata: &CommitState<'a>) -> Self {
-//         Self {
-//             id: metadata.snapshot_id,
-//             schema_version: metadata.schema_version,
-//             next_catalog_id: metadata.next_catalog_id,
-//             next_file_id: metadata.next_file_id,
-//             snapshot_time: chrono::Utc::now(),
-//         }
-//     }
-// }

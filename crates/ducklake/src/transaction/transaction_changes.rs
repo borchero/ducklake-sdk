@@ -18,6 +18,8 @@ pub(super) struct TransactionChanges {
     pub new_columns: Vec<DucklakeColumn>,
     pub new_partition_info: Vec<DucklakePartitionInfo>,
     pub new_partition_columns: Vec<DucklakePartitionColumn>,
+    pub new_sort_info: Vec<DucklakeSortInfo>,
+    pub new_sort_expressions: Vec<DucklakeSortExpression>,
     pub new_tags: Vec<DucklakeTag>,
     pub new_column_tags: Vec<DucklakeColumnTag>,
     pub dropped_schemas: HashSet<i64>,
@@ -26,6 +28,7 @@ pub(super) struct TransactionChanges {
     pub detached_tables: HashSet<i64>,
     pub renamed_tables: HashMap<i64, String>,
     pub retired_partition_tables: HashSet<i64>,
+    pub retired_sort_tables: HashSet<i64>,
     pub retired_columns: HashSet<(i64, i64)>,
     pub table_tags: HashMap<i64, Vec<TagChange>>,
     pub column_tags: HashMap<(i64, i64), Vec<TagChange>>,
@@ -120,6 +123,11 @@ impl TransactionChanges {
                 .chain(&self.retired_partition_tables)
         );
         retire!(
+            ducklake_sort_info,
+            TableId,
+            self.dropped_tables.iter().chain(&self.retired_sort_tables)
+        );
+        retire!(
             ducklake_tag,
             ObjectId,
             self.dropped_tables
@@ -143,6 +151,8 @@ impl TransactionChanges {
         tx.insert_entities(self.new_columns).await?;
         tx.insert_entities(self.new_partition_info).await?;
         tx.insert_entities(self.new_partition_columns).await?;
+        tx.insert_entities(self.new_sort_info).await?;
+        tx.insert_entities(self.new_sort_expressions).await?;
         tx.insert_entities(self.new_tags).await?;
         tx.insert_entities(self.new_column_tags).await?;
 

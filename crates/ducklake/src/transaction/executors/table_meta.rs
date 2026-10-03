@@ -22,12 +22,13 @@ pub(crate) fn create_table<'a>(
     columns: &[crate::Column],
     retired_columns: &[DucklakeColumn],
     partition_columns: &Option<Vec<crate::PartitionColumn>>,
+    sort_info: &Option<Vec<crate::SortExpression>>,
     path: &io::DucklakePath,
     tags: &Option<Vec<crate::Tag>>,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
 
-    // 1/4) Create the table
+    // 1/5) Create the table
     let table = DucklakeTable {
         table_id,
         schema_id: state.schema_id(*schema_ref),
@@ -40,7 +41,7 @@ pub(crate) fn create_table<'a>(
     };
     changes.new_tables.push(table);
 
-    // 2/4) Create the columns and, optionally, their tags
+    // 2/5) Create the columns and, optionally, their tags
     let mut ducklake_columns = Vec::new();
     let mut column_tags = Vec::new();
     for (column, column_refs) in columns.iter().zip(column_refs.iter()) {
@@ -65,7 +66,7 @@ pub(crate) fn create_table<'a>(
     changes.new_columns.extend(ducklake_columns);
     changes.new_column_tags.extend(column_tags);
 
-    // 3/4) Optionally create partition
+    // 3/5) Optionally create partition
     if let Some(partition_column_refs) = partition_column_refs
         && let Some(partition_columns) = partition_columns
     {
@@ -79,7 +80,12 @@ pub(crate) fn create_table<'a>(
         )?;
     }
 
-    // 4/4) Optionally add tags to the table
+    // 4/5) Optionally create sort info
+    if let Some(expressions) = sort_info {
+        create_sort_info(changes, state, table_id, expressions);
+    }
+
+    // 5/5) Optionally add tags to the table
     if let Some(tags) = tags
         && !tags.is_empty()
     {
@@ -149,6 +155,25 @@ pub(crate) fn update_table_partitioning<'a>(
         )?;
     }
 
+    Ok(())
+}
+
+pub(crate) fn update_table_sort_info(
+    changes: &mut TransactionChanges,
+    state: &mut CommitState<'_>,
+    table_ref: &TableRef,
+    expressions: &Option<Vec<crate::SortExpression>>,
+) -> DucklakeResult<()> {
+    let table_id = state.table_id(*table_ref);
+    changes.retired_sort_tables.insert(table_id);
+    for info in &mut changes.new_sort_info {
+        if info.table_id == table_id {
+            info.end_snapshot = Some(state.snapshot_id());
+        }
+    }
+    if let Some(expressions) = expressions {
+        create_sort_info(changes, state, table_id, expressions);
+    }
     Ok(())
 }
 
@@ -240,6 +265,37 @@ fn create_partitioning<'a>(
 
     changes.new_partition_columns.extend(partition_columns);
     Ok(())
+}
+
+fn create_sort_info(
+    changes: &mut TransactionChanges,
+    state: &mut CommitState<'_>,
+    table_id: i64,
+    expressions: &[crate::SortExpression],
+) {
+    let sort_id = state.sort_info_id();
+    changes.new_sort_info.push(DucklakeSortInfo {
+        sort_id,
+        table_id,
+        begin_snapshot: state.snapshot_id(),
+        end_snapshot: None,
+    });
+    changes
+        .new_sort_expressions
+        .extend(
+            expressions
+                .iter()
+                .enumerate()
+                .map(|(i, expression)| DucklakeSortExpression {
+                    sort_id,
+                    table_id,
+                    sort_key_index: i as i64,
+                    expression: Some(expression.expression.clone()),
+                    dialect: Some(expression.dialect.clone()),
+                    sort_direction: Some(expression.direction.to_string()),
+                    null_order: Some(expression.null_order.to_string()),
+                }),
+        );
 }
 
 /* --------------------------------------------------------------------------------------------- */

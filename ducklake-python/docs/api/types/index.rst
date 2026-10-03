@@ -72,6 +72,16 @@ Partitioning
     Partitioning
     PartitionColumn
 
+Sorting
+-------
+
+.. autosummary::
+    :toctree: _gen/
+    :template: autosummary/class.rst
+
+    SortInfo
+    SortColumn
+
 Snapshots & Maintenance
 -----------------------
 

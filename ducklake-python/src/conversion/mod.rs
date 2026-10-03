@@ -8,6 +8,7 @@ mod nominal_enums;
 mod partition;
 mod scan;
 mod snapshot;
+mod sort;
 mod table_metadata;
 mod table_name;
 mod table_statistics;

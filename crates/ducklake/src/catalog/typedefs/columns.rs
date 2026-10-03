@@ -115,13 +115,22 @@ impl CatalogColumns {
         idx: ArenaIdx,
         new_name: &str,
     ) -> DucklakeResult<ArenaIdx> {
-        // Check that the new name is unique among the column's siblings
+        // Check that the new name is unused at this level of the table schema.
         let parent = self.arena[idx.0].parent_column;
         self.ensure_column_unique_at_parent(parent, new_name)?;
 
-        // If unique, rename
-        let column = &mut self.arena[idx.0];
-        column.name = new_name.to_string();
+        // Update the root-column or struct-field lookup without changing column order.
+        let old_name = self.arena[idx.0].name.clone();
+        let columns_by_name = match parent {
+            None => &mut self.root_columns,
+            Some(parent) => match &mut self.arena[parent.0].dtype {
+                CatalogDataType::Struct(fields) => fields,
+                _ => unreachable!(),
+            },
+        };
+        let (position, _, _) = columns_by_name.shift_remove_full(&old_name).unwrap();
+        columns_by_name.shift_insert(position, new_name.to_string(), idx);
+        self.arena[idx.0].name = new_name.to_string();
         Ok(idx)
     }
 
