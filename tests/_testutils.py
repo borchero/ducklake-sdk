@@ -12,12 +12,12 @@ import boto3
 import sqlalchemy as sa
 from azure.storage.blob import BlobServiceClient
 from botocore.exceptions import ClientError
-from sqlalchemy_utils import create_database, database_exists, drop_database
+from sqlalchemy import make_url
 
 from ducklake._storage import AzureStorageOptions, S3StorageOptions, StorageOptions
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator, Iterator
     from pathlib import Path
 
     import ducklake as dl
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 @contextmanager
-def make_catalog_url(catalog: str, tmp_path: Path) -> Iterator[str]:
+def make_catalog_url(catalog: str, tmp_path: Path) -> Generator[str]:
     database_name = uuid.uuid4()
     match catalog:
         case "sqlite":
@@ -60,7 +60,7 @@ def make_catalog_url(catalog: str, tmp_path: Path) -> Iterator[str]:
 
 
 @contextmanager
-def make_storage_path(storage: str, tmp_path: Path) -> Iterator[str]:
+def make_storage_path(storage: str, tmp_path: Path) -> Generator[str]:
     match storage:
         case "local":
             yield str(tmp_path / str(uuid.uuid4()))
@@ -185,7 +185,7 @@ def assert_ducklake_catalogs_equal(
 
 
 @contextmanager
-def _get_engine(conn: sa.Engine | str) -> Iterator[sa.Engine]:
+def _get_engine(conn: sa.Engine | str) -> Generator[sa.Engine]:
     if isinstance(conn, sa.Engine):
         yield conn
     else:
@@ -291,6 +291,54 @@ def _row_sort_key(row: dict[str, Any]) -> tuple[tuple[int, str], ...]:
     return tuple(
         (0, "") if value is None else (1, repr(value)) for _, value in sorted(row.items())
     )
+
+
+# ----------------------------------------------------------------------------------------------- #
+#                                       DATABASE OPERATIONS                                       #
+# ----------------------------------------------------------------------------------------------- #
+
+
+def create_database(url: str) -> None:
+    sa_url = make_url(url)
+    engine = sa.create_engine(_get_default_url(sa_url))
+    with engine.begin() as tx:
+        tx.execute(sa.text(f"CREATE DATABASE {sa_url.database}"))
+    engine.dispose()
+
+
+def database_exists(url: str) -> bool:
+    sa_url = make_url(url)
+    engine = sa.create_engine(_get_default_url(sa_url))
+    match sa_url.get_dialect().name:
+        case "postgresql":
+            query = f"SELECT 1 FROM pg_database WHERE datname = '{sa_url.database}'"
+        case "mysql":
+            query = f"SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '{sa_url.database}'"
+        case _:
+            raise NotImplementedError
+
+    with engine.connect() as conn:
+        result = conn.execute(sa.text(query)).scalar() is not None
+    engine.dispose()
+    return result
+
+
+def drop_database(url: str) -> None:
+    sa_url = make_url(url)
+    engine = sa.create_engine(_get_default_url(sa_url))
+    with engine.begin() as tx:
+        tx.execute(sa.text(f"DROP DATABASE {sa_url.database}"))
+    engine.dispose()
+
+
+def _get_default_url(url: sa.URL) -> sa.URL:
+    match url.get_dialect().name:
+        case "postgresql":
+            return url.set(database="postgres")
+        case "mysql":
+            return url.set(database="mysql")
+        case _:
+            raise NotImplementedError
 
 
 # ----------------------------------------------------------------------------------------------- #

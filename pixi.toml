@@ -58,7 +58,6 @@ pytest = ">=9"
 pytest-codspeed = ">=5,<6"
 pytest-cov = "*"
 sqlalchemy = ">=2"
-sqlalchemy-utils = ">=0.42"
 sqlite = "*"
 
 [feature.test-py.tasks]

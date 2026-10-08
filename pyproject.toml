@@ -50,7 +50,7 @@ python-version = "3.11"
 exclude = ["docs/"]
 
 [tool.ty.analysis]
-allowed-unresolved-imports = ["duckdb.**", "pyarrow.**", "sqlalchemy_utils.**"]
+allowed-unresolved-imports = ["duckdb.**", "pyarrow.**"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib --strict-markers -m 'not benchmark'"
