@@ -49,15 +49,10 @@ pytestmark = pytest.mark.skip_config(
         ),
         (dl.Varchar(), pl.String, ["foo", "bar", None]),
         (dl.Blob(), pl.Binary, [b"foo", b"bar", None]),
-        pytest.param(
+        (
             dl.Json(),
-            pl.String,
+            pl.Extension("arrow.json", pl.String, metadata=""),
             ['{"a":1}', '{"b":2}', None],
-            marks=pytest.mark.xfail(
-                reason="Polars does not support the Arrow JSON extension type.",
-                raises=TypeError,
-                strict=True,
-            ),
         ),
         (dl.List(dl.Int64()), pl.List(pl.Int64), [[1, 2, 3], [], None]),
         (

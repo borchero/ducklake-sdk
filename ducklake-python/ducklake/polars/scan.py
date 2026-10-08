@@ -114,31 +114,34 @@ def scan_ducklake(
     table_statistics = pl.DataFrame(statistics)
 
     # 3) Then, we create the lazy frame by scanning all data files
-    result = pl.scan_parquet(
-        # --- Files ---
-        [data_file.path for data_file in scan_result.data_files],
-        glob=False,
-        hive_partitioning=False,
-        include_file_paths=include_file_paths,
-        storage_options=table._storage_options.to_dict(),
-        # --- Schema ---
-        schema=target_schema,
-        missing_columns="insert",
-        extra_columns="ignore",
-        cast_options=pl.ScanCastOptions(
-            integer_cast="upcast",
-            float_cast="upcast",
-            missing_struct_fields="insert",
-            extra_struct_fields="ignore",
-            categorical_to_string="allow",
-        ),
-        # --- Optimization ---
-        _column_mapping=("iceberg-column-mapping", schema),
-        _deletion_files=deletion_files,  # ty: ignore[invalid-argument-type]
-        _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
-        _table_statistics=table_statistics,
-        _row_count=(physical_rows, deleted_rows),
-    )
+    if scan_result.data_files:
+        result = pl.scan_parquet(
+            # --- Files ---
+            [data_file.path for data_file in scan_result.data_files],
+            glob=False,
+            hive_partitioning=False,
+            include_file_paths=include_file_paths,
+            storage_options=table._storage_options.to_dict(),
+            # --- Schema ---
+            schema=target_schema,
+            missing_columns="insert",
+            extra_columns="ignore",
+            cast_options=pl.ScanCastOptions(
+                integer_cast="upcast",
+                float_cast="upcast",
+                missing_struct_fields="insert",
+                extra_struct_fields="ignore",
+                categorical_to_string="allow",
+            ),
+            # --- Optimization ---
+            _column_mapping=("iceberg-column-mapping", schema),
+            _deletion_files=deletion_files,  # ty: ignore[invalid-argument-type]
+            _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
+            _table_statistics=table_statistics,
+            _row_count=(physical_rows, deleted_rows),
+        )
+    else:
+        result = pl.LazyFrame(schema=target_schema)
 
     # 4) If we had any inline data, we also want to include that in the scan result
     if scan_result.inline_data:

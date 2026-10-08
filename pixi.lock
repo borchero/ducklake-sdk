@@ -524,7 +524,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pcre2-10.47-haa7fec5_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pendulum-3.2.0-py314h2e6c369_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/polars-hash-0.9.3-py310h7bf8455_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/polars-runtime-32-1.44.1-py310h90887b8_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/polars-runtime-32-2.0.0-py311h8d0b121_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/postgresql-18.3-h9d31465_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/prettier-3.8.1-h7e4c9f4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/prometheus-cpp-1.3.0-ha5d0236_0.conda
@@ -676,7 +676,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.0.1-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.9.4-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pre-commit-hooks-5.0.0-pyhd8ed1ab_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prometheus_client-0.24.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.52-pyha770c72_0.conda
@@ -861,7 +861,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/pcre2-10.47-hf841c20_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/pendulum-3.2.0-py314h451b6cc_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/polars-hash-0.9.3-py310h1df484c_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/polars-runtime-32-1.44.1-py310h3417b80_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/polars-runtime-32-2.0.0-py311hb26503e_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/postgresql-18.3-h74cfda6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/prettier-3.8.3-h70496c1_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/prometheus-cpp-1.3.0-h7938499_0.conda
@@ -1013,7 +1013,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.0.1-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.9.6-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pre-commit-hooks-5.0.0-pyhd8ed1ab_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prometheus_client-0.25.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.52-pyha770c72_0.conda
@@ -1204,7 +1204,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.0.1-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.9.6-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pre-commit-hooks-5.0.0-pyhd8ed1ab_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prometheus_client-0.25.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.52-pyha770c72_0.conda
@@ -1375,7 +1375,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/orc-2.3.0-hb9b210e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/pendulum-3.2.0-py314h3079ba5_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/polars-hash-0.9.3-py314h9eeb3b1_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-64/polars-runtime-32-1.44.1-py310h513836f_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/polars-runtime-32-2.0.0-py311hb25e4a4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/postgresql-18.3-h94a8a0f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/prettier-3.8.3-h810254c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/prometheus-cpp-1.3.0-h7802330_0.conda
@@ -1528,7 +1528,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.0.1-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.9.4-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pre-commit-hooks-5.0.0-pyhd8ed1ab_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prometheus_client-0.24.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.52-pyha770c72_0.conda
@@ -1700,7 +1700,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/orc-2.3.0-hd11884d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pendulum-3.2.0-py314h54f3292_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/polars-hash-0.9.3-py310h813d4fe_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/polars-runtime-32-1.44.1-py310h9b16bf9_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/polars-runtime-32-2.0.0-py311h1c79744_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/postgresql-18.3-ha3e2e0f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/prettier-3.8.1-h9907cc9_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/prometheus-cpp-1.3.0-h0967b3e_0.conda
@@ -4460,7 +4460,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/orc-2.3.1-h443056b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pendulum-3.2.0-py314h2e6c369_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/polars-hash-0.9.3-py310h7bf8455_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/polars-runtime-32-1.44.1-py310h90887b8_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/polars-runtime-32-2.0.0-py311h8d0b121_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/postgresql-18.4-h3dddfe3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/prometheus-cpp-1.3.0-ha5d0236_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/psycopg2-2.9.12-py314hf06d13c_0.conda
@@ -4527,7 +4527,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/phonenumbers-9.0.35-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.1.2-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.53-pyha770c72_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt_toolkit-3.0.53-hd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pycparser-3.0-pyhcf101f3_0.conda
@@ -4664,7 +4664,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/orc-2.3.1-h1fb4f23_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/pendulum-3.2.0-py314h451b6cc_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/polars-hash-0.9.3-py310h1df484c_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/polars-runtime-32-1.44.1-py310h3417b80_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/polars-runtime-32-2.0.0-py311hb26503e_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/postgresql-18.4-h84e248d_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/prometheus-cpp-1.3.0-h7938499_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/psycopg2-2.9.12-py314h0a448df_0.conda
@@ -4731,7 +4731,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/phonenumbers-9.0.35-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.1.2-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.53-pyha770c72_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt_toolkit-3.0.53-hd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pycparser-3.0-pyhcf101f3_0.conda
@@ -4817,7 +4817,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/phonenumbers-9.0.35-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.1.2-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.53-pyha770c72_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt_toolkit-3.0.53-hd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pycparser-3.0-pyhcf101f3_0.conda
@@ -4943,7 +4943,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/orc-2.3.1-h982cfee_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/pendulum-3.2.0-py314h3079ba5_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/polars-hash-0.9.3-py310hf9ea48a_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-64/polars-runtime-32-1.44.1-py310h513836f_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/polars-runtime-32-2.0.0-py311hb25e4a4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/postgresql-18.4-he8835e8_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/prometheus-cpp-1.3.0-h7802330_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/psycopg2-2.9.12-py314h9276055_0.conda
@@ -5011,7 +5011,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/phonenumbers-9.0.35-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.1.2-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.53-pyha770c72_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt_toolkit-3.0.53-hd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pycparser-3.0-pyhcf101f3_0.conda
@@ -5137,7 +5137,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/orc-2.3.1-hef2a647_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pendulum-3.2.0-py314h54f3292_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/polars-hash-0.9.3-py310h813d4fe_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/polars-runtime-32-1.44.1-py310h9b16bf9_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/polars-runtime-32-2.0.0-py311h1c79744_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/postgresql-18.4-hfde6fa7_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/prometheus-cpp-1.3.0-h0967b3e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/psycopg2-2.9.12-py314h96bd916_0.conda
@@ -5205,7 +5205,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/phonenumbers-9.0.35-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.1.2-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.53-pyha770c72_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt_toolkit-3.0.53-hd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pycparser-3.0-pyhcf101f3_0.conda
@@ -5322,7 +5322,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/orc-2.3.1-hf7eca67_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/pendulum-3.2.0-py314h9f07db2_2.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/polars-hash-0.9.3-py310h9ee1adf_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/win-64/polars-runtime-32-1.44.1-py310hdaf7fe2_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/polars-runtime-32-2.0.0-py311hb4e3305_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/postgresql-18.4-hfea5a2c_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/prometheus-cpp-1.3.0-hcea2f5d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/psycopg2-2.9.12-py314h3cd40a6_0.conda
@@ -15705,26 +15705,23 @@ packages:
   run_exports: {}
   size: 41707372
   timestamp: 1785582019869
-- conda: https://conda.anaconda.org/conda-forge/linux-64/polars-runtime-32-1.44.1-py310h90887b8_0.conda
+- conda: https://conda.anaconda.org/conda-forge/linux-64/polars-runtime-32-2.0.0-py311h8d0b121_1.conda
   noarch: python
-  sha256: 954fcef67506ab6ae294e7a148431942cbdc87f4caf5f1f164848557a968841c
-  md5: 24f967fe60ca561c2bed10814d264ad1
+  sha256: 7c068b967124d7c4eed78a1fb08668f4e75507d4e79c80e4c4bdf3d7b8f2e283
+  md5: f222738f221ddb3ce1d988874afc0394
   depends:
   - python
   - libgcc >=15
-  - __glibc >=2.17,<3.0.a0
   - libstdcxx >=15
+  - __glibc >=2.28,<3.0.a0
   - _python_abi3_support 1.*
-  - cpython >=3.10
+  - cpython >=3.11
   constrains:
   - __glibc >=2.17
   license: MIT
-  license_family: MIT
-  purls:
-  - pkg:pypi/polars-runtime-32?source=compressed-mapping
   run_exports: {}
-  size: 41487215
-  timestamp: 1787748957373
+  size: 40977893
+  timestamp: 1791456445318
 - conda: https://conda.anaconda.org/conda-forge/linux-64/postgresql-18.3-h9d31465_0.conda
   sha256: bcb9bf8bd7a6ebaf755c13af51e3e02e3975835b2c62ad3bbb6985f858a6f42c
   md5: a1e4bf17691405d39f6df92d4f6dd525
@@ -21359,25 +21356,23 @@ packages:
   run_exports: {}
   size: 38129376
   timestamp: 1785582047793
-- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/polars-runtime-32-1.44.1-py310h3417b80_0.conda
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/polars-runtime-32-2.0.0-py311hb26503e_1.conda
   noarch: python
-  sha256: 556ba5b218cb8a98b46e64106a9a74659dc2a1db90fed4a6fefa976693c8b756
-  md5: 7abe7d6a2e62149f6a206353df7fb133
+  sha256: 602ee65703a635a4886adcbd6dbe22dd0c13ac2857a83544cd372f672baf4da9
+  md5: c6b0d0cde01d28c68c487162863121a6
   depends:
   - python
   - libgcc >=15
+  - __glibc >=2.28,<3.0.a0
   - libstdcxx >=15
   - _python_abi3_support 1.*
-  - cpython >=3.10
+  - cpython >=3.11
   constrains:
   - __glibc >=2.17
   license: MIT
-  license_family: MIT
-  purls:
-  - pkg:pypi/polars-runtime-32?source=hash-mapping
   run_exports: {}
-  size: 38861707
-  timestamp: 1787748931091
+  size: 37984425
+  timestamp: 1791456427307
 - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/postgresql-18.3-h74cfda6_0.conda
   sha256: be0cc00c0efcd81df8d25667727b29e492a8e579f5b50db649d44f6df89303a2
   md5: b135ab96da29e24d26977fbb7eb1beec
@@ -25788,12 +25783,12 @@ packages:
   run_exports: {}
   size: 549013
   timestamp: 1785582019869
-- conda: https://conda.anaconda.org/conda-forge/noarch/polars-1.44.1-pyh8da0edf_0.conda
-  sha256: 04a1d4401656be9ab8df89b8a850c9a3e4d0e58176d114ee95dd8d5446b92b4f
-  md5: 2ea66c4626a66a757455650409e92ebc
+- conda: https://conda.anaconda.org/conda-forge/noarch/polars-2.0.0-pyh3138b34_1.conda
+  sha256: e31ef5b3643d5d87f00155520f0dd7961dd068f6edb3ece4d72388dcb0084572
+  md5: 0bfa1d7d4c55aa5129501e4af932b165
   depends:
-  - polars-runtime-32 ==1.44.1
-  - python >=3.10
+  - polars-runtime-32 ==2.0.0
+  - python >=3.11
   - python
   constrains:
   - numpy >=1.16.0
@@ -25806,16 +25801,13 @@ packages:
   - pyiceberg >=0.7.1
   - altair >=5.4.0
   - great_tables >=0.8.0
-  - polars-runtime-32 ==1.44.1
-  - polars-runtime-64 ==1.44.1
-  - polars-runtime-compat ==1.44.1
+  - polars-runtime-32 ==2.0.0
+  - polars-runtime-64 ==2.0.0
+  - polars-runtime-compat ==2.0.0
   license: MIT
-  license_family: MIT
-  purls:
-  - pkg:pypi/polars?source=compressed-mapping
   run_exports: {}
-  size: 558812
-  timestamp: 1787748957373
+  size: 568210
+  timestamp: 1791456445318
 - conda: https://conda.anaconda.org/conda-forge/noarch/pre-commit-hooks-5.0.0-pyhd8ed1ab_2.conda
   sha256: b3c0e650280e660268c5c3a609c1d008fab598c41eb310f5c6993590889625e7
   md5: f41a1e00c55bc911fcc9cab2a88b4a66
@@ -31161,25 +31153,23 @@ packages:
   run_exports: {}
   size: 40885098
   timestamp: 1785582036195
-- conda: https://conda.anaconda.org/conda-forge/osx-64/polars-runtime-32-1.44.1-py310h513836f_0.conda
+- conda: https://conda.anaconda.org/conda-forge/osx-64/polars-runtime-32-2.0.0-py311hb25e4a4_0.conda
   noarch: python
-  sha256: 3d6326732caeeecd061378fe9096b2d70e308543e58d84afe10f9f07b99de877
-  md5: dc30d12556f38b0e0cde3ebf80b669cb
+  sha256: afd77b063e1ef7362592e127a46525699b044220198425a373badcb0f1babb01
+  md5: 04039ed75d3d0ce2fec314e30e8f95fa
   depends:
   - python
   - __osx >=11.0
   - libcxx >=21
   - _python_abi3_support 1.*
-  - cpython >=3.10
+  - cpython >=3.11
   constrains:
   - __osx >=11.0
   license: MIT
   license_family: MIT
-  purls:
-  - pkg:pypi/polars-runtime-32?source=hash-mapping
   run_exports: {}
-  size: 40949232
-  timestamp: 1787748936860
+  size: 40403566
+  timestamp: 1791293531277
 - conda: https://conda.anaconda.org/conda-forge/osx-64/postgresql-18.3-h94a8a0f_0.conda
   sha256: 6e52137fcd50b2ee40271167d341ef2e6aab3591b095e1791a120d3503eddbb8
   md5: 69756b5923beb02a8960f98ca489cd31
@@ -36443,25 +36433,22 @@ packages:
   run_exports: {}
   size: 36474118
   timestamp: 1785581928504
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/polars-runtime-32-1.44.1-py310h9b16bf9_0.conda
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/polars-runtime-32-2.0.0-py311h1c79744_1.conda
   noarch: python
-  sha256: 81979d39c2b8204b81bf5560182ea241bf4436f8a4197df6f782273a70e0acec
-  md5: a37c43c7d9d7a7b783e6bca78f1e6b6e
+  sha256: 2c6083d83e8db6e9c7811cf42b538a0eeef0d753d6d26314ec13c7cc99ca35f0
+  md5: 89f5dcac846f8a67d50ecc6e58266a23
   depends:
   - python
   - libcxx >=21
   - __osx >=11.0
   - _python_abi3_support 1.*
-  - cpython >=3.10
+  - cpython >=3.11
   constrains:
   - __osx >=11.0
   license: MIT
-  license_family: MIT
-  purls:
-  - pkg:pypi/polars-runtime-32?source=hash-mapping
   run_exports: {}
-  size: 36966276
-  timestamp: 1787748854971
+  size: 36499491
+  timestamp: 1791456261693
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/postgresql-18.3-ha3e2e0f_0.conda
   sha256: 3dc7e5b3126467e885922b3d0b6fbd531d41e62bb1d6e2b6c7088e08357d30b6
   md5: 78e859f904c4e8c051c0e776ecc14e03
@@ -41488,24 +41475,21 @@ packages:
   run_exports: {}
   size: 42861903
   timestamp: 1785581869011
-- conda: https://conda.anaconda.org/conda-forge/win-64/polars-runtime-32-1.44.1-py310hdaf7fe2_0.conda
+- conda: https://conda.anaconda.org/conda-forge/win-64/polars-runtime-32-2.0.0-py311hb4e3305_1.conda
   noarch: python
-  sha256: ab206c020bf81f8f3badc67a9e56ddef184e85914a799d1941fb45fd6f10688a
-  md5: 0c865538e74f10234b109c712665c5ed
+  sha256: bd175a01dec4c5d154c4e8cf04270e0c305005ffb080f429b04e6417462c7fd5
+  md5: a7129174edf1113082454cf53fab62dc
   depends:
   - python
   - vc >=14.3,<15
   - vc14_runtime >=14.44.35208
   - ucrt >=10.0.20348.0
   - _python_abi3_support 1.*
-  - cpython >=3.10
+  - cpython >=3.11
   license: MIT
-  license_family: MIT
-  purls:
-  - pkg:pypi/polars-runtime-32?source=hash-mapping
   run_exports: {}
-  size: 43285816
-  timestamp: 1787748825821
+  size: 43387763
+  timestamp: 1791456230956
 - conda: https://conda.anaconda.org/conda-forge/win-64/postgresql-18.4-hfea5a2c_0.conda
   sha256: 10e68d1e056ddd057bcb76c4feef73d5e43534c283816bdc3d820e0c1ab6d9d7
   md5: ecdd7d9f018be1761f7ceb6c9a5b11e7
