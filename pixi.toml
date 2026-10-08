@@ -151,10 +151,6 @@ readthedocs = { cmd = "rm -rf $READTHEDOCS_OUTPUT/html && cp -r ducklake-python/
 
 # -------------------------------------------- PYTHON ------------------------------------------- #
 
-[feature.py310.dependencies]
-python = "=3.10"
-typing-extensions = "*"
-
 [feature.py311.dependencies]
 python = "=3.11"
 
@@ -204,7 +200,6 @@ default = ["build-py", "dev", "ducklake", "install-py", "lint", "optionals", "po
 
 build = { features = ["build-py", "install-py"], no-default-feature = true }
 docs = { features = ["docs-py", "install-py", "optionals"] }
-test-py310 = ["install-py", "optionals", "py310", "test-py", "test-rs"]
 test-py311 = ["install-py", "optionals", "py311", "test-py", "test-rs"]
 test-py312 = ["install-py", "optionals", "py312", "test-py", "test-rs"]
 test-py313 = ["install-py", "optionals", "py313", "test-py", "test-rs"]
