@@ -244,10 +244,10 @@ def _assert_table_contents_equal(
 
     Columns listed in `ignored_columns` are excluded from row comparison.
 
-    `conditional_ignored_columns` allows per-row value masking: for each
-    `(match_column, match_value) -> [columns]` entry, rows whose `match_column` equals
-    `match_value` have their values in `[columns]` replaced with a nullability sentinel.
-    Such rows are still asserted to be present, but the listed columns are not compared.
+    `conditional_ignored_columns` allows per-row value masking: for each `(match_column,
+    match_value) -> [columns]` entry, rows whose `match_column` equals `match_value` have their
+    values in `[columns]` replaced with a nullability sentinel. Such rows are still asserted to be
+    present, but the listed columns are not compared.
     """
     column_names = [c.name for c in expected.columns if c.name not in ignored_columns]
     with expected_engine.connect() as expected_conn, actual_engine.connect() as actual_conn:

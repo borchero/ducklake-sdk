@@ -127,9 +127,8 @@ def _sanitize_url(url: str | sa.URL) -> ConnectionArgs:
 
 
 URL_PATTERN = re.compile(
-    r"""(?P<name>[\w\+]+)://
-    (?:
-        (?P<username>[^:/]*)
+    r"""(?P<name>[\w\+]+):// (?: (?P<username>[^:/]*)
+
         (?::(?P<password>[^@]*))?
     @)?
     (?:
@@ -140,7 +139,9 @@ URL_PATTERN = re.compile(
         (?::(?P<port>[^/\?]*))?
     )?
     (?:/(?P<database>[^\?]*))?
-    (?:\?(?P<query>.*))?""",
+    (?:\?(?P<query>.*))?
+    """
+                           ,
     re.X,
 )
 
