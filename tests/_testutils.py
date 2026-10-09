@@ -302,8 +302,8 @@ def create_database(url: str) -> None:
     sa_url = make_url(url)
     engine = sa.create_engine(_get_default_url(sa_url))
     database_name = engine.dialect.identifier_preparer.quote_identifier(cast(str, sa_url.database))
-    with engine.begin() as tx:
-        tx.execute(sa.text(f"CREATE DATABASE {database_name}"))
+    with engine.connect() as conn:
+        conn.execute(sa.text(f"CREATE DATABASE {database_name}"))
     engine.dispose()
 
 
