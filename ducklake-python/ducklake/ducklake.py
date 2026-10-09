@@ -839,8 +839,8 @@ class Ducklake:
     def disconnect(self) -> None:
         """Disconnect from the catalog database, gracefully closing all underlying connections.
 
-        After calling this method, all subsequent operations on this :class:`Ducklake` instance (or
-        any :class:`Table` / :class:`Transaction` derived from it) will fail.
+        After calling this method, all subsequent operations on this :class:`Ducklake` instance
+        (or any :class:`Table` / :class:`Transaction` derived from it) will fail.
 
         This is normally not required because connections are released when the instance is garbage
         collected, but it is useful when you need to ensure that all connections are released

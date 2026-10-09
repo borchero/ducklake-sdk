@@ -351,9 +351,9 @@ def _reshape_existing(
 ) -> pl.Expr:
     """Reshape an expression for column so that it matches `target_dtype`.
 
-    This recursively handles nested renames and inserted fields for Struct/List types. `base` may
-    be any expression: `pl.col(name)` at the top level, `pl.element()` inside a `list.eval`, or
-    `<parent>.struct.field(name)` inside a struct.
+    This recursively handles nested renames and inserted fields for Struct/List types.
+    `base` may be any expression: `pl.col(name)` at the top level, `pl.element()` inside
+    a `list.eval`, or `<parent>.struct.field(name)` inside a struct.
     """
     if isinstance(column.data_type, typedefs.Struct):
         struct_dtype = cast(pl.Struct, target_dtype)
