@@ -444,7 +444,7 @@ class Table:
         Raises:
             ValueError: If a key is read-only and cannot be set.
 
-        See also:
+        See Also:
             :meth:`Ducklake.set_metadata` for setting metadata options at the global or schema
             scope.
         """

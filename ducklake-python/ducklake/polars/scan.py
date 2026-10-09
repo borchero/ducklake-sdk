@@ -349,8 +349,7 @@ def _reshape_existing(
     target_dtype: pl.DataType | pld.DataTypeClass,
     field_id_mapping: dict[int, str],
 ) -> pl.Expr:
-    """Reshape `base` (an expression producing a value whose source shape corresponds to `column`)
-    so that it matches `target_dtype`.
+    """Reshape an expression for column so that it matches `target_dtype`.
 
     This recursively handles nested renames and inserted fields for Struct/List types. `base` may
     be any expression: `pl.col(name)` at the top level, `pl.element()` inside a `list.eval`, or

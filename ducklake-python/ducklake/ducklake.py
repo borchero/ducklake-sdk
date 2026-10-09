@@ -578,18 +578,17 @@ class Ducklake:
     ) -> None:
         """Set one or more metadata options at the global or schema scope.
 
-        Provide options as keyword arguments. Pass `None` as a value to remove the option
-        from the metadata (i.e. revert it to its default).
-
         Args:
             schema: Optional schema name to scope the table-level options to. If not provided,
                 the options are set globally. Only valid for keys in
                 :class:`TableMetadataUpdate`.
+            options: Metadata options to set. When passing `None`, the option is removed from the
+                metadata, i.e., it is reverted to its default.
 
         Raises:
             ValueError: If a key is read-only and cannot be set.
 
-        See also:
+        See Also:
             :meth:`Table.set_metadata` for setting metadata options at the table scope.
         """
         for key, value in options.items():
