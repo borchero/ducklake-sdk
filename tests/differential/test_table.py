@@ -171,12 +171,11 @@ def test_match_reference_nested_types(
             "s": dl.Map(dl.Varchar(), dl.Int64()),
         },
     )
-    reference_duckdb_connection.execute("""
-        CREATE TABLE test (
-            l STRUCT(a BIGINT, b VARCHAR)[],
-            s MAP(VARCHAR, BIGINT)
-        )
-    """)
+    reference_duckdb_connection.execute("""CREATE TABLE test ( l STRUCT(a BIGINT, b VARCHAR)[],
+
+                                        s MAP(VARCHAR, BIGINT) )
+                                        """
+       )
 
     # Assert
     assert_ducklake_catalogs_equal(reference_catalog_url, catalog_url)

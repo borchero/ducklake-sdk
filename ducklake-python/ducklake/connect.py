@@ -141,7 +141,7 @@ URL_PATTERN = re.compile(
     (?:/(?P<database>[^\?]*))?
     (?:\?(?P<query>.*))?
     """
-                           ,
+       ,
     re.X,
 )
 

@@ -17,7 +17,7 @@ from sqlalchemy import make_url
 from ducklake._storage import AzureStorageOptions, S3StorageOptions, StorageOptions
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator
+    from collections.abc import Generator
     from pathlib import Path
 
     import ducklake as dl
