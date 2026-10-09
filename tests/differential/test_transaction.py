@@ -18,10 +18,15 @@ def test_match_reference_table_double_rename_and_alter(
         tx.table("test").rename("test_tmp")
         tx.table("test_tmp").rename("test2")
         tx.table("test2").add_column(dl.Column("y", dl.Varchar()))
+
     reference_duckdb_connection.execute("CREATE TABLE test (x BIGINT)")
     reference_duckdb_connection.execute(
-        """BEGIN; ALTER TABLE test RENAME TO test_tmp; ALTER TABLE test_tmp RENAME TO test2; ALTER
-        TABLE test2 ADD COLUMN y VARCHAR; COMMIT;"""
+        """BEGIN;
+        ALTER TABLE test RENAME TO test_tmp;
+        ALTER TABLE test_tmp RENAME TO test2;
+        ALTER TABLE test2 ADD COLUMN y VARCHAR;
+        COMMIT;
+        """
     )
 
     # Assert
@@ -40,9 +45,14 @@ def test_match_reference_create_and_delete(
         tx.create_table("test", {"x": dl.Int64()})
         tx.table("test").rename("test2")
         tx.delete_table("test2")
+
     reference_duckdb_connection.execute(
-        """BEGIN; CREATE TABLE test (x BIGINT); ALTER TABLE test RENAME TO test2; DROP TABLE test2;
-        COMMIT;"""
+        """BEGIN;
+        CREATE TABLE test (x BIGINT);
+        ALTER TABLE test RENAME TO test2;
+        DROP TABLE test2;
+        COMMIT;
+        """
     )
 
     # Assert
