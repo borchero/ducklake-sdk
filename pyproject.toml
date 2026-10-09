@@ -8,6 +8,7 @@ ignore = [
   "E501",  # https://docs.astral.sh/ruff/faq/#is-the-ruff-linter-compatible-with-black
   "N803",  # https://docs.astral.sh/ruff/rules/invalid-argument-name
   "N806",  # https://docs.astral.sh/ruff/rules/non-lowercase-variable-in-function
+  "PT01",  # https://docs.astral.sh/ruff/rules/#flake8-pytest-style
   "TC006", # https://docs.astral.sh/ruff/rules/runtime-cast-value/
   "TC007", # https://docs.astral.sh/ruff/rules/unquoted-type-alias/
 ]
@@ -29,6 +30,8 @@ select = [
   "N",
   # pyupgrade
   "UP",
+  # flake8-pytest-style
+  "PT",
 ]
 
 [tool.ruff.lint.isort]
@@ -37,6 +40,9 @@ known-first-party = ["ducklake"]
 [tool.ruff.format]
 indent-style = "space"
 quote-style = "double"
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = true
 
 [tool.docformatter]
 line-length = 99
