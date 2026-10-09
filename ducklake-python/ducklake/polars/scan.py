@@ -142,6 +142,8 @@ def scan_ducklake(
         )
     else:
         result = pl.LazyFrame(schema=target_schema)
+        if include_file_paths is not None:
+            result = result.with_columns(pl.lit(None, dtype=pl.String).alias(include_file_paths))
 
     # 4) If we had any inline data, we also want to include that in the scan result
     if scan_result.inline_data:
