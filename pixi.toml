@@ -26,7 +26,6 @@ jupyter = "*"
 # --------------------------------------------- LINT -------------------------------------------- #
 
 [feature.lint.dependencies]
-docformatter = "*"
 lefthook = "*"
 pre-commit-hooks = "*"
 prettier = "*"

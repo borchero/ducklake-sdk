@@ -122,6 +122,7 @@ class Transaction:
             sort_by: Optional sort configuration for the table.
             data_path: Optional data path for the table.
             tags: Optional tags to attach to the table.
+            if_exists: The strategy to apply if the table already exists.
 
         Returns:
             A :class:`TransactionTable` referring to the newly created table.
