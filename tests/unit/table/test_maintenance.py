@@ -68,7 +68,8 @@ def test_rewrite_data_files(ducklake: dl.Ducklake, random_table_name: str) -> No
     ducklake._duckdb_connection.execute(f"DELETE FROM {table.name} WHERE x < 9")
     files_before = table.scan().data_files
     assert len(files_before) == 1
-    assert files_before[0].delete_files is not None and len(files_before[0].delete_files) == 1
+    assert files_before[0].delete_files is not None
+    assert len(files_before[0].delete_files) == 1
 
     # Act
     result = table.rewrite_data_files(delete_threshold=0.5)
