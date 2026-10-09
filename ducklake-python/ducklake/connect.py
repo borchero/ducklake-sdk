@@ -165,7 +165,7 @@ class ConnectionArgs:
                 raise ValueError(f"Dialect '{dialect}' is currently not supported.")
 
             return ConnectionArgs(
-                dialect=dialect,  # ty: ignore[invalid-argument-type]
+                dialect=dialect,
                 username=(unquote(components["username"]) if components["username"] else None),
                 password=(unquote(components["password"]) if components["password"] else None),
                 host=components["ipv4host"] or components["ipv6host"],

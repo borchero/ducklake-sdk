@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import sys
 import warnings
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, Unpack, cast, overload
 
 from .table import Table
 from .transaction import Transaction
@@ -25,11 +24,6 @@ from .typedefs import (
     _serialize_metadata_value,
 )
 from .view import View
-
-if sys.version_info >= (3, 11):
-    from typing import Unpack
-else:
-    from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     import datetime as dt

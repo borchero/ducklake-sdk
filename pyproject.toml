@@ -54,13 +54,13 @@ fixture-parentheses = true
 "tests/**" = ["D"]
 
 [tool.ty.environment]
-python-version = "3.10"
+python-version = "3.11"
 
 [tool.ty.src]
 exclude = ["docs/"]
 
 [tool.ty.analysis]
-allowed-unresolved-imports = ["duckdb.**", "pyarrow.**", "sqlalchemy_utils.**"]
+allowed-unresolved-imports = ["duckdb.**", "pyarrow.**"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib --strict-markers -m 'not benchmark'"

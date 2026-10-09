@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import sys
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Literal, Unpack, overload
 
 from .typedefs import (
     ArrowStreamExportable,
@@ -21,11 +20,6 @@ from .typedefs import (
     WriteDataFile,
     _serialize_metadata_value,
 )
-
-if sys.version_info >= (3, 11):
-    from typing import Unpack
-else:
-    from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence

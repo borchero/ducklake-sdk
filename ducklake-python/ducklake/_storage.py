@@ -2,16 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 from urllib.parse import urlparse
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 if TYPE_CHECKING:
     import duckdb
