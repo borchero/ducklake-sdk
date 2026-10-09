@@ -5,6 +5,7 @@ line-length = 99
 
 [tool.ruff.lint]
 ignore = [
+  "D1",    # https://docs.astral.sh/ruff/rules/#pydocstyle-d
   "E501",  # https://docs.astral.sh/ruff/faq/#is-the-ruff-linter-compatible-with-black
   "N803",  # https://docs.astral.sh/ruff/rules/invalid-argument-name
   "N806",  # https://docs.astral.sh/ruff/rules/non-lowercase-variable-in-function
@@ -29,6 +30,8 @@ select = [
   "N",
   # pyupgrade
   "UP",
+  # pydocstyle
+  "D",
 ]
 
 [tool.ruff.lint.isort]
@@ -38,10 +41,11 @@ known-first-party = ["ducklake"]
 indent-style = "space"
 quote-style = "double"
 
-[tool.docformatter]
-line-length = 99
-wrap-descriptions = 99
-wrap-summaries = 99
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
 
 [tool.ty.environment]
 python-version = "3.10"

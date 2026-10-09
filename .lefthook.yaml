@@ -12,9 +12,6 @@ pre-commit:
         parallel: true
         jobs:
           # --------------------------------------- PYTHON -------------------------------------- #
-          - name: docformatter
-            glob: "*.{py,pyi}"
-            run: pixi run docformatter -i {staged_files}
           - name: ruff-lint
             glob: "*.{py,pyi}"
             run: pixi run ruff check --fix --exit-non-zero-on-fix --force-exclude
