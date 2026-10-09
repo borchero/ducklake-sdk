@@ -4,7 +4,7 @@ import json
 import os
 import uuid
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
@@ -301,8 +301,9 @@ def _row_sort_key(row: dict[str, Any]) -> tuple[tuple[int, str], ...]:
 def create_database(url: str) -> None:
     sa_url = make_url(url)
     engine = sa.create_engine(_get_default_url(sa_url))
+    database_name = engine.dialect.identifier_preparer.quote_identifier(cast(str, sa_url.database))
     with engine.begin() as tx:
-        tx.execute(sa.text(f"CREATE DATABASE {sa_url.database}"))
+        tx.execute(sa.text(f"CREATE DATABASE {database_name}"))
     engine.dispose()
 
 
@@ -326,8 +327,9 @@ def database_exists(url: str) -> bool:
 def drop_database(url: str) -> None:
     sa_url = make_url(url)
     engine = sa.create_engine(_get_default_url(sa_url))
+    database_name = engine.dialect.identifier_preparer.quote_identifier(cast(str, sa_url.database))
     with engine.begin() as tx:
-        tx.execute(sa.text(f"DROP DATABASE {sa_url.database}"))
+        tx.execute(sa.text(f"DROP DATABASE {database_name}"))
     engine.dispose()
 
 
