@@ -15,7 +15,7 @@ chrono = { workspace = true }
 ducklake = { workspace = true, features = ["aws", "azure", "gcp", "mysql", "postgres", "python", "sqlite"] }
 indexmap = { workspace = true }
 parquet = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "extension-module"] }
+pyo3 = { workspace = true, features = ["abi3-py311", "chrono", "extension-module"] }
 pyo3-arrow = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

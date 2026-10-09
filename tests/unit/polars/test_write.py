@@ -487,7 +487,8 @@ def test_write_parquet_inline_panics(
 def test_sink_many_tiny_files(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     """This test is meant to verify that inserting into a table succeeds when the number of file
     column stats causes a naïve query to fail due to exceeding the maximum number of bind
-    parameters."""
+    parameters.
+    """
     # Arrange
     num_columns = 100
     num_files = 100_000 // num_columns

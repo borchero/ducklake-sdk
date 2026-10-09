@@ -5,9 +5,11 @@ line-length = 99
 
 [tool.ruff.lint]
 ignore = [
+  "D1",    # https://docs.astral.sh/ruff/rules/#pydocstyle-d
   "E501",  # https://docs.astral.sh/ruff/faq/#is-the-ruff-linter-compatible-with-black
   "N803",  # https://docs.astral.sh/ruff/rules/invalid-argument-name
   "N806",  # https://docs.astral.sh/ruff/rules/non-lowercase-variable-in-function
+  "PT01",  # https://docs.astral.sh/ruff/rules/#flake8-pytest-style
   "TC006", # https://docs.astral.sh/ruff/rules/runtime-cast-value/
   "TC007", # https://docs.astral.sh/ruff/rules/unquoted-type-alias/
 ]
@@ -29,6 +31,10 @@ select = [
   "N",
   # pyupgrade
   "UP",
+  # pydocstyle
+  "D",
+  # flake8-pytest-style
+  "PT",
 ]
 
 [tool.ruff.lint.isort]
@@ -38,19 +44,23 @@ known-first-party = ["ducklake"]
 indent-style = "space"
 quote-style = "double"
 
-[tool.docformatter]
-line-length = 99
-wrap-descriptions = 99
-wrap-summaries = 99
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = true
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
 
 [tool.ty.environment]
-python-version = "3.10"
+python-version = "3.11"
 
 [tool.ty.src]
 exclude = ["docs/"]
 
 [tool.ty.analysis]
-allowed-unresolved-imports = ["duckdb.**", "pyarrow.**", "sqlalchemy_utils.**"]
+allowed-unresolved-imports = ["duckdb.**", "pyarrow.**"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib --strict-markers -m 'not benchmark'"

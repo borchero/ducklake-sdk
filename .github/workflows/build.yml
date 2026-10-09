@@ -114,7 +114,7 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
-          args: --out dist --release -i python3.10 -m ducklake-python/Cargo.toml
+          args: --out dist --release -i python3.11 -m ducklake-python/Cargo.toml
           manylinux: auto
           sccache: true
       - name: Check package

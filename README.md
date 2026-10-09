@@ -110,11 +110,12 @@ The Python SDK additionally provides:
 
 **Catalog Databases**
 
-| Database | Status                  |
-| -------- | ----------------------- |
-| SQLite   | ✅                      |
-| Postgres | ✅                      |
-| MySQL    | 🟧 (no data inlining\*) |
+| Database           | Status                  |
+| ------------------ | ----------------------- |
+| SQLite             | ✅                      |
+| Postgres           | ✅                      |
+| MySQL              | 🟧 (no data inlining\*) |
+| DuckDB (via Quack) | ❌                      |
 
 <sub>\*Data inlining for MySQL is not defined in the DuckLake specification.</sub>
 

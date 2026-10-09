@@ -86,9 +86,6 @@ jobs:
           - python-version: py311
             database: sqlite
             storage: local
-          - python-version: py310
-            database: sqlite
-            storage: local
           # Exercise the oldest and newest supported polars versions.
           - python-version: polars-minimal
             database: sqlite
