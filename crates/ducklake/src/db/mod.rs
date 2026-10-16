@@ -1,5 +1,6 @@
 mod arrow;
 mod dialects;
+mod options;
 #[cfg(feature = "postgres")]
 mod postgres_copy;
 pub(crate) mod sea_query_ext;
@@ -16,7 +17,7 @@ use sqlx::prelude::*;
 pub(crate) use types::chrono::UtcDateTime;
 pub(crate) use types::uuid::UuidText;
 
-use crate::{DucklakeError, DucklakeResult};
+use crate::{DatabaseOptions, DucklakeError, DucklakeResult};
 
 /* ------------------------------------------ DISPATCH ----------------------------------------- */
 
@@ -52,7 +53,7 @@ mod batch;
 
 /* -------------------------------------------- POOL ------------------------------------------- */
 
-/// Single-connection pool to a dynamic database backend (Postgres, MySQL, SQLite).
+/// Connection pool to a dynamic database backend (Postgres, MySQL, SQLite).
 #[derive(Clone)]
 pub(crate) struct Pool(AnyPool);
 
@@ -105,17 +106,12 @@ impl Pool {
         }
     }
 
-    pub(crate) async fn new(url: &str) -> DucklakeResult<Self> {
-        // NOTE: Choose 8 because this allows the highest concurrency query in this
-        //  repo to send all queries simultaneously.
-        #[cfg(any(feature = "postgres", feature = "mysql"))]
-        const POOL_SIZE: u32 = 8;
-
+    pub(crate) async fn new(url: &str, options: &DatabaseOptions) -> DucklakeResult<Self> {
         let pool = if url.starts_with("postgresql://") || url.starts_with("postgres://") {
             #[cfg(feature = "postgres")]
             {
-                let pool = sqlx::postgres::PgPoolOptions::new()
-                    .max_connections(POOL_SIZE)
+                let pool = options
+                    .pool_options::<sqlx::Postgres>(4)?
                     .connect(url)
                     .await?;
                 AnyPool::Postgres(pool)
@@ -125,10 +121,7 @@ impl Pool {
         } else if url.starts_with("mysql://") {
             #[cfg(feature = "mysql")]
             {
-                let pool = sqlx::mysql::MySqlPoolOptions::new()
-                    .max_connections(POOL_SIZE)
-                    .connect(url)
-                    .await?;
+                let pool = options.pool_options::<sqlx::MySql>(4)?.connect(url).await?;
                 AnyPool::MySql(pool)
             }
             #[cfg(not(feature = "mysql"))]
@@ -139,8 +132,8 @@ impl Pool {
                 use sqlx::sqlite::SqliteConnectOptions;
 
                 let connect_options = url.parse::<SqliteConnectOptions>()?.create_if_missing(true);
-                let pool = sqlx::sqlite::SqlitePoolOptions::new()
-                    .max_connections(1)
+                let pool = options
+                    .pool_options::<sqlx::Sqlite>(1)?
                     .connect_with(connect_options)
                     .await?;
                 AnyPool::Sqlite(pool)

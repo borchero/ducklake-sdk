@@ -31,6 +31,8 @@ pub enum DucklakeError {
     InvalidPartitions(String),
     #[error("invalid time zone '{0}'")]
     InvalidTimeZone(String),
+    #[error("invalid database options: {0}")]
+    InvalidDatabaseOptions(String),
     #[error("invalid partition transform: {0}")]
     InvalidPartitionTransform(String),
     #[error("invalid sort direction: {0}")]

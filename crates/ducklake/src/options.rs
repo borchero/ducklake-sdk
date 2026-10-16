@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 /* ------------------------------------------- CREATE ------------------------------------------ */
 
 /// Options for creating a new DuckLake instance.
@@ -6,6 +8,7 @@ pub struct CreateOptions {
     pub(crate) data_path: String,
     pub(crate) storage_options: Vec<(String, String)>,
     pub(crate) time_zone: chrono_tz::Tz,
+    pub(crate) database_options: DatabaseOptions,
 }
 
 impl CreateOptions {
@@ -16,6 +19,7 @@ impl CreateOptions {
             data_path: data_path.to_string(),
             storage_options: Vec::new(),
             time_zone: chrono_tz::UTC,
+            database_options: DatabaseOptions::default(),
         }
     }
 
@@ -47,6 +51,12 @@ impl CreateOptions {
         self.storage_options.extend(options);
         self
     }
+
+    /// Configure the catalog database connection pool.
+    pub fn with_database_options(mut self, options: DatabaseOptions) -> Self {
+        self.database_options = options;
+        self
+    }
 }
 
 /* ------------------------------------------ CONNECT ------------------------------------------ */
@@ -65,6 +75,7 @@ pub struct ConnectOptions {
     pub(crate) storage_options: Vec<(String, String)>,
     pub(crate) connection_type: ConnectionType,
     pub(crate) time_zone: chrono_tz::Tz,
+    pub(crate) database_options: DatabaseOptions,
 }
 
 impl ConnectOptions {
@@ -77,7 +88,16 @@ impl ConnectOptions {
             storage_options: Vec::new(),
             connection_type: ConnectionType::Latest,
             time_zone: chrono_tz::UTC,
+            database_options: DatabaseOptions::default(),
         }
+    }
+
+    /// Configure the catalog database connection pool.
+    ///
+    /// Invalid settings are rejected when connecting to the DuckLake, before opening a connection.
+    pub fn with_database_options(mut self, options: DatabaseOptions) -> Self {
+        self.database_options = options;
+        self
     }
 
     /// Set the time zone used to represent timezone-aware timestamps when reading data.
@@ -138,5 +158,38 @@ impl ConnectOptions {
     pub fn with_snapshot_timestamp(mut self, timestamp: chrono::DateTime<chrono::Utc>) -> Self {
         self.connection_type = ConnectionType::SnapshotTimestamp(timestamp);
         self
+    }
+}
+
+/* -------------------------------------- DATABASE OPTIONS ------------------------------------- */
+
+/// Connection pool settings for the catalog database.
+#[derive(Clone, Debug)]
+pub struct DatabaseOptions {
+    /// Maximum connections in the pool. `None` selects four for PostgreSQL/MySQL and one for
+    /// SQLite. Must be greater than zero.
+    pub max_connections: Option<u32>,
+    /// Minimum connections to maintain. Defaults to zero and must not exceed the maximum.
+    pub min_connections: u32,
+    /// Maximum time to acquire a connection, including connection establishment and health
+    /// checks. Defaults to 30 seconds. This does not limit query execution time.
+    pub acquire_timeout: Duration,
+    /// Close connections idle for longer than this duration, subject to periodic pool cleanup
+    /// and `min_connections`. Defaults to ten minutes. `None` disables idle expiry.
+    pub idle_timeout: Option<Duration>,
+    /// Maximum connection lifetime before recycling. Defaults to 30 minutes. `None` disables
+    /// recycling. Connections in use are not interrupted.
+    pub max_lifetime: Option<Duration>,
+}
+
+impl Default for DatabaseOptions {
+    fn default() -> Self {
+        Self {
+            max_connections: None,
+            min_connections: 0,
+            acquire_timeout: Duration::from_secs(30),
+            idle_timeout: Some(Duration::from_secs(10 * 60)),
+            max_lifetime: Some(Duration::from_secs(30 * 60)),
+        }
     }
 }

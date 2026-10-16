@@ -300,7 +300,9 @@ mod tests {
 
     #[rstest::fixture]
     async fn cache() -> SnapshotCache {
-        let pool = db::Pool::new("sqlite://:memory:").await.unwrap();
+        let pool = db::Pool::new("sqlite://:memory:", &Default::default())
+            .await
+            .unwrap();
         crate::spec::init_catalog(
             &pool,
             crate::spec::InitConfig {

@@ -299,7 +299,7 @@ mod tests {
     }
 
     async fn empty_transaction() -> Transaction {
-        crate::db::Pool::new("sqlite://:memory:")
+        crate::db::Pool::new("sqlite://:memory:", &Default::default())
             .await
             .unwrap()
             .begin()

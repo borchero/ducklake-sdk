@@ -9,6 +9,7 @@ except importlib.metadata.PackageNotFoundError as e:  # pragma: no cover
 
 from .connect import connect, create
 from .ducklake import Ducklake
+from .options import DatabaseOptions
 from .table import Table
 from .transaction import Transaction
 from .typedefs import (
@@ -70,6 +71,7 @@ __all__ = [
     "ColumnStats",
     "connect",
     "create",
+    "DatabaseOptions",
     "DataFileStatistics",
     "DataType",
     "Date",
