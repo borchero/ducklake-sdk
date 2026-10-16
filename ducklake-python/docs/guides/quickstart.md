@@ -25,6 +25,24 @@ To connect to an existing DuckLake, use {func}`ducklake.connect`:
 ducklake = dl.connect("sqlite:///metadata.sqlite")
 ```
 
+Both `create()` and `connect()` accept a {class}`ducklake.DatabaseOptions` typed dictionary to configure the catalog
+database pool. All keys are optional; omitted keys use the defaults:
+
+```python
+from datetime import timedelta
+
+ducklake = dl.connect(
+    "postgresql://user:password@localhost:5432/catalog",
+    database_options={
+        "max_connections": 4,
+        "min_connections": 0,
+        "acquire_timeout": timedelta(seconds=60),
+        "idle_timeout": timedelta(minutes=1),
+        "max_lifetime": timedelta(minutes=30),
+    },
+)
+```
+
 Timezone-aware timestamps are represented in UTC by default. Set a connection time zone to read them in another IANA
 time zone without changing the stored instants:
 

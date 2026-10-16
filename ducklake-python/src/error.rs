@@ -43,6 +43,7 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
         | InvalidSortDirection { .. }
         | InvalidNullOrder { .. }
         | InvalidTimeZone(_)
+        | InvalidDatabaseOptions(_)
         | ReadOnlyMetadata { .. }
         | SnapshotPinned
         | InvalidChanges(_)

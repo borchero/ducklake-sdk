@@ -1,6 +1,7 @@
 import datetime as dt
 from typing import Literal, TypeAlias
 
+from .options import DatabaseOptions
 from .typedefs import (
     ArrowSchemaExportable,
     ArrowStreamExportable,
@@ -34,6 +35,7 @@ def create(
     data_path: str,
     storage_options: list[tuple[str, str]],
     time_zone: str,
+    database_options: DatabaseOptions,
 ) -> PyDucklake: ...
 def connect(
     url: str,
@@ -43,6 +45,7 @@ def connect(
     readonly: bool,
     storage_options: list[tuple[str, str]],
     time_zone: str,
+    database_options: DatabaseOptions,
 ) -> PyDucklake: ...
 
 class PyDucklake:

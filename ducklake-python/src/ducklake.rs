@@ -2,6 +2,7 @@ use ducklake::{
     AuthorInfo,
     ConnectOptions,
     CreateOptions,
+    DatabaseOptions,
     DryRun,
     Ducklake,
     GlobalMetadata,
@@ -25,9 +26,11 @@ pub(crate) fn create(
     data_path: &str,
     storage_options: Vec<(String, String)>,
     time_zone: &str,
+    database_options: Wrap<DatabaseOptions>,
 ) -> PyResult<PyDucklake> {
     let options = CreateOptions::new(url, data_path)
         .with_storage_options(storage_options)
+        .with_database_options(database_options.0)
         .with_time_zone(time_zone)
         .map_err(error::into_pyerr)?;
     let ducklake = block_on(py, Ducklake::create(options)).map_err(error::into_pyerr)?;
@@ -45,12 +48,13 @@ pub(crate) fn connect(
     readonly: bool,
     storage_options: Vec<(String, String)>,
     time_zone: &str,
+    database_options: Wrap<DatabaseOptions>,
 ) -> PyResult<PyDucklake> {
-    let options = ConnectOptions::new(url)
+    let mut options = ConnectOptions::new(url)
         .with_migrate(migrate)
         .with_readonly(readonly)
-        .with_storage_options(storage_options);
-    let mut options = options
+        .with_storage_options(storage_options)
+        .with_database_options(database_options.0)
         .with_time_zone(time_zone)
         .map_err(error::into_pyerr)?;
     if let Some(id) = snapshot_id {

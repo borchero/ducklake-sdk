@@ -3,6 +3,7 @@ mod column_default;
 mod column_name;
 mod column_stats;
 mod data_type;
+mod database_options;
 mod global_metadata;
 mod nominal_enums;
 mod partition;

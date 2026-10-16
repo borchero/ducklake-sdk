@@ -84,7 +84,7 @@ impl Ducklake {
     /// [`Ducklake::connect`] instead.
     pub async fn create(options: CreateOptions) -> DucklakeResult<Self> {
         // Initialize the database pool and create the catalog schema if it doesn't exist
-        let pool = db::Pool::new(&options.url).await?;
+        let pool = db::Pool::new(&options.url, &options.database_options).await?;
         if pool
             .table_exists(&spec::ducklake_metadata::Table.to_string())
             .await?
@@ -119,7 +119,8 @@ impl Ducklake {
     /// Returns an error if the catalog database is not initialized yet. In this case, use
     /// [`Ducklake::create`] instead.
     pub async fn connect(options: ConnectOptions) -> DucklakeResult<Self> {
-        let pool = Self::init_catalog(&options.url, options.migrate).await?;
+        let pool =
+            Self::init_catalog(&options.url, options.migrate, &options.database_options).await?;
         let snapshot = match options.connection_type {
             ConnectionType::Latest => None,
             ConnectionType::SnapshotId(id) => Some(SnapshotInfo::load_for_id(&pool, id).await?),
@@ -151,9 +152,13 @@ impl Ducklake {
 
     /* ----------------------------------------- SETUP ----------------------------------------- */
 
-    async fn init_catalog(url: &str, migrate: bool) -> DucklakeResult<db::Pool> {
+    async fn init_catalog(
+        url: &str,
+        migrate: bool,
+        database_options: &DatabaseOptions,
+    ) -> DucklakeResult<db::Pool> {
         // Initialize the database pool and query the current catalog version to run migrations
-        let pool = db::Pool::new(url).await?;
+        let pool = db::Pool::new(url, database_options).await?;
         if !pool
             .table_exists(&spec::ducklake_metadata::Table.to_string())
             .await?
