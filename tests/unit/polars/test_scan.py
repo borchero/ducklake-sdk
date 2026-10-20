@@ -285,6 +285,74 @@ def test_scan_categorical(shared_ducklake: dl.Ducklake, random_table_name: str) 
 # --------------------------------------- INITIAL DEFAULTS -------------------------------------- #
 
 
+@pytest.mark.parametrize("reader", ["read_polars", "scan_polars"])
+@pytest.mark.parametrize(
+    "inline",
+    [
+        pytest.param(
+            True,
+            marks=pytest.mark.skip_config(
+                catalog="mysql", reason="Data inlining is not yet supported for MySQL."
+            ),
+            id="inline",
+        ),
+        pytest.param(False, id="file"),
+    ],
+)
+@pytest.mark.parametrize("write_after", [False, True], ids=["old_rows_only", "new_rows_too"])
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        pytest.param(pl.UInt32(), 7, id="scalar"),
+        pytest.param(pl.List(pl.String()), ["hello"], id="list"),
+        pytest.param(
+            pl.Struct({"key": pl.String(), "count": pl.UInt32()}),
+            {"key": "hello", "count": 7},
+            id="struct",
+        ),
+        pytest.param(
+            pl.List(pl.Struct({"key": pl.String(), "count": pl.UInt32()})),
+            [{"key": "hello", "count": 7}],
+            id="list_of_struct",
+        ),
+    ],
+)
+def test_added_column_is_null_for_existing_rows(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    dtype: pl.DataType,
+    value: object,
+    write_after: bool,
+    inline: bool,
+    reader: str,
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"id": dl.Int64()})
+    before = pl.DataFrame({"id": [0, 1]})
+    if inline:
+        table.write_polars(before)
+    else:
+        table.sink_polars(before.lazy())
+    table.add_column(dl.Schema(pl.Schema({"added": dtype})).columns[0])
+    expected = before.with_columns(pl.lit(None, dtype=dtype).alias("added"))
+    if write_after:
+        after = pl.DataFrame({"id": [2], "added": pl.Series([value], dtype=dtype)})
+        if inline:
+            table.write_polars(after)
+        else:
+            table.sink_polars(after.lazy())
+        expected = pl.concat([expected, after])
+
+    # Act
+    actual = table.read_polars() if reader == "read_polars" else table.scan_polars().collect()
+    scan = table.scan()
+
+    # Assert
+    assert bool(scan.inline_data) is inline
+    assert bool(scan.data_files) is not inline
+    assert_frame_equal(actual.sort("id"), expected)
+
+
 def test_initial_defaults(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
