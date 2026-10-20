@@ -397,21 +397,12 @@ def _reshape_existing(
 
 
 def _new_column_expression(column: Column, dtype: pl.DataType | pld.DataTypeClass) -> pl.Expr:
-    if isinstance(column.data_type, typedefs.Struct):
-        if column.initial_default is not None:
-            raise NotImplementedError("Initial defaults for struct columns are not supported")
-        struct_schema = cast(pl.Struct, dtype).to_schema()
-        return pl.struct(
-            _new_column_expression(field, struct_schema[field.name]).alias(field.name)
-            for field in column.data_type.fields
-        )
-    if isinstance(column.data_type, typedefs.List):
-        if column.initial_default is not None:
-            raise NotImplementedError("Initial defaults for list columns are not supported")
-        inner_dtype = cast(pl.List, dtype).inner
-        inner_expr = _new_column_expression(column.data_type.inner, inner_dtype)
-        return pl.concat_list([inner_expr]).alias(column.name)
-
     if column.initial_default is None:
         return pl.lit(None, dtype=dtype).alias(column.name)
+
+    if isinstance(column.data_type, typedefs.Struct):
+        raise NotImplementedError("Initial defaults for struct columns are not supported")
+    if isinstance(column.data_type, typedefs.List):
+        raise NotImplementedError("Initial defaults for list columns are not supported")
+
     return pl.lit(column.initial_default, dtype=dtype).alias(column.name)
