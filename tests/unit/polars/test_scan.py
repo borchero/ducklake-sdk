@@ -5,7 +5,7 @@ import pytest
 from polars.testing import assert_frame_equal
 
 import ducklake as dl
-from ducklake.polars.scan import _enum_statistics
+from ducklake.polars.scan import _enum_statistics, _new_column_expression
 
 
 def test_scan_single_file(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
@@ -283,6 +283,37 @@ def test_scan_categorical(shared_ducklake: dl.Ducklake, random_table_name: str) 
 
 
 # --------------------------------------- INITIAL DEFAULTS -------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("column", "dtype", "type_name"),
+    [
+        pytest.param(
+            dl.Column("added", dl.Struct({"key": dl.Varchar()}), initial_default={"key": "hello"}),
+            pl.Struct({"key": pl.String()}),
+            "struct",
+            id="struct",
+        ),
+        pytest.param(
+            dl.Column("added", dl.List(dl.Varchar()), initial_default=["hello"]),
+            pl.List(pl.String()),
+            "list",
+            id="list",
+        ),
+    ],
+)
+def test_nested_initial_defaults_are_not_supported(
+    column: dl.Column, dtype: pl.DataType, type_name: str
+) -> None:
+    # Arrange
+    expected_message = f"Initial defaults for {type_name} columns are not supported"
+
+    # Act
+    with pytest.raises(NotImplementedError) as exc_info:
+        _new_column_expression(column, dtype)
+
+    # Assert
+    assert str(exc_info.value) == expected_message
 
 
 @pytest.mark.parametrize("reader", ["read_polars", "scan_polars"])
