@@ -5,7 +5,7 @@ import pytest
 from polars.testing import assert_frame_equal
 
 import ducklake as dl
-from ducklake.polars.scan import _enum_statistics
+from ducklake.polars.scan import _enum_statistics, _new_column_expression
 
 
 def test_scan_single_file(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
@@ -283,6 +283,105 @@ def test_scan_categorical(shared_ducklake: dl.Ducklake, random_table_name: str) 
 
 
 # --------------------------------------- INITIAL DEFAULTS -------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("column", "dtype", "type_name"),
+    [
+        pytest.param(
+            dl.Column("added", dl.Struct({"key": dl.Varchar()}), initial_default={"key": "hello"}),
+            pl.Struct({"key": pl.String()}),
+            "struct",
+            id="struct",
+        ),
+        pytest.param(
+            dl.Column("added", dl.List(dl.Varchar()), initial_default=["hello"]),
+            pl.List(pl.String()),
+            "list",
+            id="list",
+        ),
+    ],
+)
+def test_nested_initial_defaults_are_not_supported(
+    column: dl.Column, dtype: pl.DataType, type_name: str
+) -> None:
+    # Arrange
+    expected_message = f"Initial defaults for {type_name} columns are not supported"
+
+    # Act
+    with pytest.raises(NotImplementedError) as exc_info:
+        _new_column_expression(column, dtype)
+
+    # Assert
+    assert str(exc_info.value) == expected_message
+
+
+@pytest.mark.parametrize("reader", ["read_polars", "scan_polars"])
+@pytest.mark.parametrize(
+    "inline",
+    [
+        pytest.param(
+            True,
+            marks=pytest.mark.skip_config(
+                catalog="mysql", reason="Data inlining is not yet supported for MySQL."
+            ),
+            id="inline",
+        ),
+        pytest.param(False, id="file"),
+    ],
+)
+@pytest.mark.parametrize("write_after", [False, True], ids=["old_rows_only", "new_rows_too"])
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        pytest.param(pl.UInt32(), 7, id="scalar"),
+        pytest.param(pl.List(pl.String()), ["hello"], id="list"),
+        pytest.param(
+            pl.Struct({"key": pl.String(), "count": pl.UInt32()}),
+            {"key": "hello", "count": 7},
+            id="struct",
+        ),
+        pytest.param(
+            pl.List(pl.Struct({"key": pl.String(), "count": pl.UInt32()})),
+            [{"key": "hello", "count": 7}],
+            id="list_of_struct",
+        ),
+    ],
+)
+def test_added_column_is_null_for_existing_rows(
+    shared_ducklake: dl.Ducklake,
+    random_table_name: str,
+    dtype: pl.DataType,
+    value: object,
+    write_after: bool,
+    inline: bool,
+    reader: str,
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"id": dl.Int64()})
+    before = pl.DataFrame({"id": [0, 1]})
+    if inline:
+        table.write_polars(before)
+    else:
+        table.sink_polars(before.lazy())
+    table.add_column(dl.Schema(pl.Schema({"added": dtype})).columns[0])
+    expected = before.with_columns(pl.lit(None, dtype=dtype).alias("added"))
+    if write_after:
+        after = pl.DataFrame({"id": [2], "added": pl.Series([value], dtype=dtype)})
+        if inline:
+            table.write_polars(after)
+        else:
+            table.sink_polars(after.lazy())
+        expected = pl.concat([expected, after])
+
+    # Act
+    actual = table.read_polars() if reader == "read_polars" else table.scan_polars().collect()
+    scan = table.scan()
+
+    # Assert
+    assert bool(scan.inline_data) is inline
+    assert bool(scan.data_files) is not inline
+    assert_frame_equal(actual.sort("id"), expected)
 
 
 def test_initial_defaults(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
