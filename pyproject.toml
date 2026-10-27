@@ -62,6 +62,9 @@ exclude = ["docs/"]
 [tool.ty.analysis]
 allowed-unresolved-imports = ["duckdb.**", "pyarrow.**"]
 
+[tool.rumdl]
+line-length = 120
+
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib --strict-markers -m 'not benchmark'"
 filterwarnings = [
