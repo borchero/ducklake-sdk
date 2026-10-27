@@ -37,10 +37,10 @@ pre-commit:
           # ---------------------------------------- MISC --------------------------------------- #
           - name: rumdl
             glob: "*.md"
-            run: pixi {run} rumdl check --fix {staged_files}
+            run: pixi run rumdl check --fix {staged_files}
           - name: yamlfmt
             glob: "*.{yml,yaml}"
-            run: pixi {run} yamlfmt {staged_files}
+            run: pixi run yamlfmt {staged_files}
           - name: taplo
             glob: "*.toml"
             run: pixi run taplo format {staged_files}
