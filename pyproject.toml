@@ -65,6 +65,9 @@ allowed-unresolved-imports = ["duckdb.**", "pyarrow.**"]
 [tool.rumdl]
 line-length = 120
 
+[tool.tombi]
+schema.enabled = false
+
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib --strict-markers -m 'not benchmark'"
 filterwarnings = [
