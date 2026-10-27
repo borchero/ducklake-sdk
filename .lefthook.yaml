@@ -37,13 +37,13 @@ pre-commit:
           # ---------------------------------------- MISC --------------------------------------- #
           - name: rumdl
             glob: "*.md"
-            run: pixi {run} rumdl check --fix {staged_files}
+            run: pixi run rumdl check --fix {staged_files}
           - name: yamlfmt
             glob: "*.{yml,yaml}"
-            run: pixi {run} yamlfmt {staged_files}
+            run: pixi run yamlfmt {staged_files}
           - name: tombi
             glob: "*.toml"
-            run: pixi {run} tombi format --offline {staged_files}
+            run: pixi run tombi format --offline {staged_files}
           - name: trailing-whitespace-fixer
             glob: "*"
             run: pixi run trailing-whitespace-fixer {staged_files}
