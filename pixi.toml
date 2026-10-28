@@ -31,7 +31,7 @@ pre-commit-hooks = "*"
 ruff = "*"
 rumdl = "*"
 sqlfluff = "*"
-taplo = "*"
+tombi = "*"
 ty = "*"
 typos = "*"
 yamlfmt = "*"
@@ -114,6 +114,7 @@ python-build = "*"
 setuptools-scm = "*"
 twine = "*"
 wheel = "*"
+
 [feature.build-py.target.unix.dependencies]
 sed = "*"
 
@@ -166,6 +167,7 @@ python = "=3.14"
 
 [feature.ducklake]
 platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
+
 [feature.ducklake.dependencies]
 duckdb-cli = "*"
 sqlite = "*"

@@ -41,15 +41,15 @@ uuid = "1.23"
 ducklake = { path = "crates/ducklake", version = "0.0.0" }
 ducklake-macros = { path = "crates/ducklake-macros", version = "0.0.0" }
 
-[profile.release]
-codegen-units = 1
-lto = true
-strip = "symbols"
-
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
 unreachable_pub = "deny"
 
 [workspace.lints.clippy]
 print_stderr = "warn"
 print_stdout = "warn"
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = "symbols"

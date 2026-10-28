@@ -41,9 +41,9 @@ pre-commit:
           - name: yamlfmt
             glob: "*.{yml,yaml}"
             run: pixi run yamlfmt {staged_files}
-          - name: taplo
+          - name: tombi
             glob: "*.toml"
-            run: pixi run taplo format {staged_files}
+            run: pixi run tombi format --offline {staged_files}
           - name: trailing-whitespace-fixer
             glob: "*"
             run: pixi run trailing-whitespace-fixer {staged_files}
