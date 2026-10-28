@@ -120,7 +120,7 @@ table.sink_polars(lf)
 ```
 
 For DuckDB users, you can write Arrow-compatible objects via {meth}`~ducklake.Table.write` or pass relations directly.
-See the [API reference](../api/table/index) for the full set of methods.
+See the [API reference](../api/table/index) for the full set of methods. <!-- rumdl-disable-line -->
 
 ## Reading Data
 

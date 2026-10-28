@@ -14,7 +14,7 @@ cargo add ducklake
 ```
 
 By default, only the SQLite catalog backend is enabled. To use a different catalog database or a cloud storage backend,
-enable the relevant feature flags (see [Cargo features](#cargo-features) below).
+enable the relevant feature flags.
 
 ## Quick Start
 
