@@ -10,14 +10,14 @@ disable-model-invocation: true
 When adding a new spec version, start by updating the `crates/ducklake/src/spec` folder for the new version.
 Afterwards, the remainder of the codebase should be updated s.t. `cargo check` runs successfully.
 
-# Instructions
+## Instructions
 
 Follow these steps to add support for a new version of the DuckLake specification in the Rust SDK:
 
 1. Extract the version of the new specification to support from the user query. Add the new version as the last element
    to the `SUPPORTED_SPEC_VERSIONS`.
 2. Find the relevant migrations in the official DuckDB ducklake implementation at
-   https://raw.githubusercontent.com/duckdb/ducklake/main/src/storage/ducklake_metadata_manager.cpp. The relevant
+   <https://raw.githubusercontent.com/duckdb/ducklake/main/src/storage/ducklake_metadata_manager.cpp>. The relevant
    migration is the one where `ExecuteMigration` is called with the previous latest supported spec version and the new
    one.
 3. Update all entity definitions in `entities.rs` in line with the new specification. This especially includes adding
@@ -30,10 +30,10 @@ Follow these steps to add support for a new version of the DuckLake specificatio
    `crate::spec::entities` as this renders migrations useless once the entities are updated.
 5. Update `init.rs` with newly available entities and, if necessary, new defaults. Whether the latter is necessary
    depends on whether the contents of `InitializeDuckLake` in
-   https://raw.githubusercontent.com/duckdb/ducklake/main/src/storage/ducklake_metadata_manager.cpp differs from what
+   <https://raw.githubusercontent.com/duckdb/ducklake/main/src/storage/ducklake_metadata_manager.cpp> differs from what
    is currently implemented.
 6. Update the constants in `metadata.rs` to match the descriptions and available options in
-   https://raw.githubusercontent.com/duckdb/ducklake/main/src/functions/ducklake_options.cpp. Update the remainder of
+   <https://raw.githubusercontent.com/duckdb/ducklake/main/src/functions/ducklake_options.cpp>. Update the remainder of
    the codebase to support new options for reading and writing global, schema-level, and table-level metadata. Make
    sure to skip experimental options.
 

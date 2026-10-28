@@ -1,8 +1,0 @@
-{
-  "singleQuote": false,
-  "bracketSpacing": true,
-  "printWidth": 119,
-  "proseWrap": "always",
-  "endOfLine": "auto",
-  "tabWidth": 2
-}

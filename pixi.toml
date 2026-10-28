@@ -28,12 +28,13 @@ jupyter = "*"
 [feature.lint.dependencies]
 lefthook = "*"
 pre-commit-hooks = "*"
-prettier = "*"
 ruff = "*"
+rumdl = "*"
 sqlfluff = "*"
 taplo = "*"
 ty = "*"
 typos = "*"
+yamlfmt = "*"
 
 [feature.lint.tasks]
 lefthook-install = "lefthook install pre-commit"

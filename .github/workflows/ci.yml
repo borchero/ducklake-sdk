@@ -153,9 +153,7 @@ jobs:
           AWS_ACCESS_KEY_ID: rustfsadmin
           AWS_SECRET_ACCESS_KEY: rustfsadmin
           STORAGE_EMULATOR_HOST: http://localhost:4443
-          GOOGLE_SERVICE_ACCOUNT_KEY:
-            '{"gcs_base_url": "http://localhost:4443", "disable_oauth": true, "client_email": "", "private_key_id": "",
-            "private_key": ""}'
+          GOOGLE_SERVICE_ACCOUNT_KEY: '{"gcs_base_url": "http://localhost:4443", "disable_oauth": true, "client_email": "", "private_key_id": "", "private_key": ""}'
           AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
           AZURE_STORAGE_ACCOUNT_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
           AZURE_STORAGE_ENDPOINT: http://localhost:10000/devstoreaccount1

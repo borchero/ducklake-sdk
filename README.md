@@ -1,10 +1,10 @@
-<div align="center">
+<div align="center"> <!-- rumdl-disable-line -->
 
-  <h3 align="center">
-  <code>ducklake-sdk</code> — Native SDKs for <a href="https://ducklake.select">DuckLake</a>
+  <h3 align="center"> <!-- rumdl-disable-line -->
+  <code>ducklake-sdk</code> — Native SDKs for <a href="https://ducklake.select">DuckLake</a> <!-- rumdl-disable-line -->
   </h3>
 
-  <p align="center">
+  <p align="center"> <!-- rumdl-disable-line -->
     Read and write DuckLake tables from Rust and Python - no DuckDB required.
   </p>
 
@@ -36,13 +36,12 @@ All language SDKs are built on the same Rust core, which bundles the implementat
 [![docs.rs](https://img.shields.io/docsrs/ducklake?logo=docsdotrs&logoColor=white&style=flat-square&label=docs.rs)](https://docs.rs/ducklake)
 [![codecov](https://codecov.io/gh/borchero/ducklake-sdk/graph/badge.svg?component=rust&token=A2h8NFb4Bx)](https://codecov.io/gh/borchero/ducklake-sdk/tree/main?components%5B0%5D=Rust)
 
-<!-- prettier-ignore -->
 > [!WARNING]
 > This is _not_ an official SDK released by DuckLabs.
 
 ## Getting Started
 
-**Python**
+**Python** <!-- rumdl-disable-line -->
 
 ```bash
 pip install ducklake-sdk            # core
@@ -50,7 +49,7 @@ pip install "ducklake-sdk[polars]"  # Polars integration
 pip install "ducklake-sdk[arrow]"   # Arrow + DuckDB integration
 ```
 
-**Rust**
+**Rust** <!-- rumdl-disable-line -->
 
 ```bash
 cargo add ducklake
@@ -108,7 +107,7 @@ The Python SDK additionally provides:
 
 ### Compatibility Matrix
 
-**Catalog Databases**
+**Catalog Databases** <!-- rumdl-disable-line -->
 
 | Database           | Status                  |
 | ------------------ | ----------------------- |
@@ -117,9 +116,9 @@ The Python SDK additionally provides:
 | MySQL              | 🟧 (no data inlining\*) |
 | DuckDB (via Quack) | ❌                      |
 
-<sub>\*Data inlining for MySQL is not defined in the DuckLake specification.</sub>
+<sub>\*Data inlining for MySQL is not defined in the DuckLake specification.</sub> <!-- rumdl-disable-line -->
 
-**Storage Backends**
+**Storage Backends** <!-- rumdl-disable-line -->
 
 | Backend              | Status |
 | -------------------- | ------ |
@@ -128,7 +127,7 @@ The Python SDK additionally provides:
 | Google Cloud Storage | ✅     |
 | Azure Blob Storage   | ✅     |
 
-**DuckLake Specification Versions**
+**DuckLake Specification Versions** <!-- rumdl-disable-line -->
 
 | Version | Status                  |
 | ------- | ----------------------- |
@@ -142,7 +141,6 @@ See the DuckLake [release calendar](https://ducklake.select/release_calendar) fo
 
 ## Project Status
 
-<!-- prettier-ignore -->
 > [!NOTE]
 > This project is in **alpha**. It will move to beta once the full specification is implemented, and to stable once
 > all relevant limitations have been addressed. Expect occasional breaking changes until then.
@@ -165,8 +163,8 @@ See the DuckLake [release calendar](https://ducklake.select/release_calendar) fo
 - [ ] Some maintenance operations are dispatched to DuckDB rather than implemented natively.
 - [ ] Performance of polars reads and writes can be optimized further:
   - Writes currently require reading the file footer after the file has already been written (see also
-    https://github.com/pola-rs/polars/issues/27226)
-  - Reads currently suffer from suboptimal footer reads (see also https://github.com/pola-rs/polars/issues/27227)
+    <https://github.com/pola-rs/polars/issues/27226>)
+  - Reads currently suffer from suboptimal footer reads (see also <https://github.com/pola-rs/polars/issues/27227>)
 
 ## Contributing
 
