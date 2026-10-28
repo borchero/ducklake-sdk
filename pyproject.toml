@@ -66,6 +66,9 @@ allowed-unresolved-imports = ["duckdb.**", "pyarrow.**"]
 exclude = [".github/PULL_REQUEST_TEMPLATE.md"]
 line-length = 120
 
+[tool.rumdl.per-file-flavor]
+"ducklake-python/docs/**/*.md" = "myst"
+
 [tool.tombi]
 schema.enabled = false
 
