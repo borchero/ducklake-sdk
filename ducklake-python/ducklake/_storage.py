@@ -97,6 +97,7 @@ class S3StorageOptions(StorageOptions):
     endpoint_url: str | None = None
     access_key_id: str | None = None
     secret_access_key: str | None = None
+    session_token: str | None = None
     region: str | None = None
 
     @classmethod
@@ -105,6 +106,7 @@ class S3StorageOptions(StorageOptions):
             endpoint_url=os.getenv("AWS_ENDPOINT_URL") or os.getenv("AWS_ENDPOINT"),
             access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            session_token=os.getenv("AWS_SESSION_TOKEN"),
             region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
         )
 
@@ -114,6 +116,7 @@ class S3StorageOptions(StorageOptions):
             endpoint_url=options.get("aws_endpoint_url"),
             access_key_id=options.get("aws_access_key_id"),
             secret_access_key=options.get("aws_secret_access_key"),
+            session_token=options.get("aws_session_token"),
             region=options.get("aws_region"),
         )
 
@@ -125,6 +128,8 @@ class S3StorageOptions(StorageOptions):
             options["aws_access_key_id"] = self.access_key_id
         if self.secret_access_key is not None:
             options["aws_secret_access_key"] = self.secret_access_key
+        if self.session_token is not None:
+            options["aws_session_token"] = self.session_token
         if self.region is not None:
             options["aws_region"] = self.region
         return options
@@ -148,6 +153,8 @@ class S3StorageOptions(StorageOptions):
             options.append(f"KEY_ID '{self.access_key_id}'")
         if self.secret_access_key is not None:
             options.append(f"SECRET '{self.secret_access_key}'")
+        if self.session_token is not None:
+            options.append(f"SESSION_TOKEN '{self.session_token}'")
         if self.region is not None:
             options.append(f"REGION '{self.region}'")
 

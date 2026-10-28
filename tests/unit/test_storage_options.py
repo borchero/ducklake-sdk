@@ -1,4 +1,5 @@
 import pytest
+from pytest_mock import MockerFixture
 
 from ducklake._storage import (
     AzureStorageOptions,
@@ -15,6 +16,7 @@ def clean_aws_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "AWS_ENDPOINT",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
         "AWS_REGION",
         "AWS_DEFAULT_REGION",
     ]:
@@ -52,6 +54,7 @@ def test_s3_options_from_env(
     monkeypatch.setenv("AWS_ENDPOINT_URL", "https://s3.example.com")
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "key")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("AWS_SESSION_TOKEN", "token")
     monkeypatch.setenv("AWS_REGION", "us-east-1")
 
     # Act
@@ -61,6 +64,7 @@ def test_s3_options_from_env(
     assert options.endpoint_url == "https://s3.example.com"
     assert options.access_key_id == "key"
     assert options.secret_access_key == "secret"
+    assert options.session_token == "token"
     assert options.region == "us-east-1"
 
 
@@ -96,6 +100,7 @@ def test_s3_options_from_dict() -> None:
             "aws_endpoint_url": "https://s3.example.com",
             "aws_access_key_id": "key",
             "aws_secret_access_key": "secret",
+            "aws_session_token": "token",
             "aws_region": "us-east-1",
             "ignored_key": "value",
         }
@@ -105,6 +110,7 @@ def test_s3_options_from_dict() -> None:
     assert options.endpoint_url == "https://s3.example.com"
     assert options.access_key_id == "key"
     assert options.secret_access_key == "secret"
+    assert options.session_token == "token"
     assert options.region == "us-east-1"
 
 
@@ -132,6 +138,27 @@ def test_s3_options_merge_overrides_only_when_set() -> None:
     assert merged.access_key_id == "user_key"
     assert merged.region == "env_region"
     assert merged.secret_access_key is None
+
+
+@pytest.mark.parametrize("token", [None, "temporary-session-token"])
+def test_s3_options_apply_session_token_to_duckdb(
+    token: str | None, mocker: MockerFixture
+) -> None:
+    # Arrange
+    options = S3StorageOptions(
+        access_key_id="key", secret_access_key="secret", session_token=token
+    )
+    connection = mocker.Mock()
+
+    # Act
+    options.apply_to_duckdb_connection(connection)
+
+    # Assert
+    token_option = "" if token is None else f", SESSION_TOKEN '{token}'"
+    connection.execute.assert_any_call(
+        "CREATE OR REPLACE SECRET s3_credentials "
+        f"(TYPE S3, KEY_ID 'key', SECRET 'secret'{token_option});"
+    )
 
 
 # ------------------------------------- GCSStorageOptions --------------------------------------- #
