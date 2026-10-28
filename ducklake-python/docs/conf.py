@@ -94,7 +94,7 @@ autodoc_default_options = {
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "polars": ("https://docs.pola.rs/py-polars/html/", None),
-    "duckdb": ("https://duckdb.org/docs/current/clients/python/reference/", None),
+    "duckdb": ("https://duckdb.org/docs/1.5/clients/python/reference/", None),
     "pyarrow": ("https://arrow.apache.org/docs/", None),
     "sqlalchemy": ("https://docs.sqlalchemy.org/en/20/", None),
 }
