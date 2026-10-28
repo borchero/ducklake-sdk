@@ -1,6 +1,6 @@
 # User Guide
 
-```{toctree}
+```text {toctree}
 :maxdepth: 2
 :hidden:
 

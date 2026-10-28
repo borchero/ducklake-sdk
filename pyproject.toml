@@ -63,6 +63,7 @@ exclude = ["docs/"]
 allowed-unresolved-imports = ["duckdb.**", "pyarrow.**"]
 
 [tool.rumdl]
+exclude = [".github/PULL_REQUEST_TEMPLATE.md"]
 line-length = 120
 
 [tool.tombi]

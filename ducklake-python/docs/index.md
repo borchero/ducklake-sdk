@@ -6,7 +6,7 @@ an open table format for lakehouses, backed by a SQL catalog database and Parque
 It is built on top of a Rust implementation of the DuckLake specification and exposes first-class integrations with
 [DuckDB](https://duckdb.org), [Polars](https://pola.rs), and [Apache Arrow](https://arrow.apache.org).
 
-```{warning}
+```text {warning}
 This is *not* an official SDK released by the DuckDB Foundation.
 The `ducklake` name on PyPI was reserved by the DuckDB Foundation, hence the package is
 distributed as `ducklake-sdk` on PyPI but importable as `ducklake`.
@@ -52,7 +52,7 @@ table.sink_polars(lf)
 lf = table.scan_polars()
 ```
 
-```{toctree}
+```text {toctree}
 :maxdepth: 2
 :hidden:
 
