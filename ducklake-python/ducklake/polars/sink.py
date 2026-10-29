@@ -4,7 +4,6 @@ from typing import Literal, overload
 
 import polars as pl
 import polars.datatypes as pld
-import polars_hash  # noqa: F401
 from polars._typing import EngineType
 from polars.io.partition import FileProviderArgs, SinkedPathsCallbackArgs
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
@@ -308,18 +307,18 @@ def _apply_bucket_partition(
 
 
 def _create_bucket_partition(expr: pl.Expr, dtype: pl.DataType, num_buckets: int) -> pl.Expr:
-    # `.bytes`/`.nchash` are namespaces registered on `pl.Expr` by `polars_hash`
-    # at import time, so static type checkers cannot see them
     match dtype:
-        case pl.Boolean() | pl.Int8() | pl.Int16() | pl.Int32() | pl.Date() | pl.Datetime():
-            expr = expr.cast(pl.Int64).bytes.to_le()  # ty: ignore[unresolved-attribute]
+        case pl.Boolean() | pl.Date() | pl.Datetime():
+            # NOTE: DuckLake hashes the physical value, preserving the timestamp's time unit.
+            #  `_mm3_hash` otherwise normalizes timestamps to microseconds for Iceberg.
+            expr = expr.cast(pl.Int64)
         case pl.Float32() | pl.Float64():
             expr = expr.cast(pl.Float64)
             # Normalize all zeros to +0.0 to get rid of -0.0
-            expr = pl.when(expr == 0.0).then(0.0).otherwise(expr).bytes.to_le()  # ty: ignore[unresolved-attribute]
-        case pl.Int64():
-            expr = expr.bytes.to_le()  # ty: ignore[unresolved-attribute]
-        case pl.String() | pl.Binary():
+            expr = pl.when(expr == 0.0).then(0.0).otherwise(expr)
+            # NOTE: `_mm3_hash` does not support floats
+            expr = expr.reinterpret(dtype=pl.Int64)
+        case pl.Int8() | pl.Int16() | pl.Int32() | pl.Int64() | pl.String() | pl.Binary():
             pass
         case _:
             raise NotImplementedError(
@@ -328,7 +327,7 @@ def _create_bucket_partition(expr: pl.Expr, dtype: pl.DataType, num_buckets: int
                 "binary, date, and datetime columns are currently supported."
             )
 
-    return (expr.nchash.murmur32(seed=0) & 0x7FFFFFFF) % num_buckets  # ty: ignore[unresolved-attribute]
+    return (expr._mm3_hash() & 0x7FFFFFFF) % num_buckets
 
 
 # ------------------------------------------ CALLBACKS ------------------------------------------ #
