@@ -28,6 +28,31 @@ def test_scan_single_file(shared_ducklake: dl.Ducklake, random_table_name: str) 
     assert_frame_equal(lf, scanned)
 
 
+@pytest.mark.parametrize("missing_size", [False, True])
+def test_scan_source_sizes(
+    scan_table: dl.Table, mocker: MockerFixture, missing_size: bool
+) -> None:
+    # Arrange
+    first = pl.DataFrame({"x": range(100)})
+    second = pl.DataFrame({"x": range(100, 300)})
+    scan_table.sink_polars(first.lazy())
+    scan_table.sink_polars(second.lazy())
+    scan_result = scan_table.scan()
+    sizes = [file.statistics.file_size_bytes for file in scan_result.data_files]
+    assert len(sizes) == 2 and all(size is not None for size in sizes)
+    if missing_size:
+        scan_result.data_files[1].statistics.file_size_bytes = None
+    mocker.patch.object(scan_table, "scan", return_value=scan_result)
+    scan_parquet = mocker.spy(pl, "scan_parquet")
+
+    # Act
+    actual = scan_table.scan_polars().collect()
+
+    # Assert
+    assert scan_parquet.call_args.kwargs["_source_sizes"] == (None if missing_size else sizes)
+    assert_frame_equal(actual, pl.concat([first, second]), check_row_order=False)
+
+
 def test_read_polars(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
