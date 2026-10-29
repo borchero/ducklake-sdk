@@ -180,6 +180,11 @@ def _scan_ducklake(
 
     # 3) Then, we create the lazy frame by scanning all data files
     if scan_result.data_files:
+        source_sizes = [
+            size
+            for data_file in scan_result.data_files
+            if (size := data_file.statistics.file_size_bytes) is not None
+        ]
         result = pl.scan_parquet(
             # --- Files ---
             [data_file.path for data_file in scan_result.data_files],
@@ -204,6 +209,9 @@ def _scan_ducklake(
             _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
             _table_statistics=table_statistics,
             _row_count=(physical_rows, deleted_rows),
+            _source_sizes=(
+                source_sizes if len(source_sizes) == len(scan_result.data_files) else None
+            ),
         )
     else:
         result = pl.LazyFrame(schema=target_schema)
