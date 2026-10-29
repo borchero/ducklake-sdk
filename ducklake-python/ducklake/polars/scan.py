@@ -3,12 +3,15 @@ from __future__ import annotations
 import tempfile
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import polars as pl
 import polars.datatypes as pld
+import polars.exceptions as plexc
 import polars.selectors as cs
+from polars.lazyframe.resolver import LazyFrameResolver, ResolvedLazyFrameProps
 
 from ducklake import typedefs
 from ducklake._native import arrow_schema_field_ids
@@ -16,20 +19,103 @@ from ducklake.table import Table
 from ducklake.view import View
 
 if TYPE_CHECKING:
-    from ducklake.typedefs import Column, ScanDataFile, Schema
+    from polars.lazyframe.resolver import FilterExpr
+
+    from ducklake.typedefs import Column, ScanDataFile, ScanResult, Schema
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
+
+# ------------------------------------------ PUBLIC API ----------------------------------------- #
 
 
 def scan_ducklake(
     table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
 ) -> pl.LazyFrame:
-    cache_path = Path(tempfile.mkdtemp())
+    return DuckLakeScanResolver(
+        table=table,
+        include_file_paths=include_file_paths,
+        time_zone=table._time_zone if time_zone is None else time_zone,
+    ).lazy()
 
-    # 1) First, we read all relevant data from the table. We first scan, then get the
-    #    schema because this ensures that the schema is up-to-date.
-    scan_result = table.scan()
-    schema = table.schema
+
+def read_ducklake(
+    table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
+) -> pl.DataFrame:
+    return scan_ducklake(
+        table, include_file_paths=include_file_paths, time_zone=time_zone
+    ).collect(optimizations=pl.QueryOptFlags._eager())
+
+
+# ---------------------------------------- SCAN RESOLVER ---------------------------------------- #
+
+
+@dataclass(kw_only=True)
+class DuckLakeScanResolver(LazyFrameResolver):
+    table: Table
+    include_file_paths: str | None
+    time_zone: str
+    _schema: Schema | None = field(default=None, init=False, repr=False)
+
+    def schema(self) -> pl.Schema:
+        # Cache the schema upon access
+        if self._schema is None:
+            self._schema = self.table.schema
+
+        # Translate to polars schema
+        schema = pl.Schema(
+            {
+                name: _convert_datetime_time_zone(dtype, self.time_zone)
+                for name, dtype in pl.Schema(self._schema).items()
+            }
+        )
+        if self.include_file_paths is not None:
+            if self.include_file_paths in schema:
+                raise plexc.DuplicateError(
+                    f"File path column {self.include_file_paths!r} already exists in the table"
+                )
+            schema[self.include_file_paths] = pl.String
+        return schema
+
+    def resolve_lazyframe(
+        self,
+        *,
+        projection: list[str] | None,
+        limit: int | None,
+        filters: list[FilterExpr],
+        filter_columns: list[str],
+        filter_drop_columns_idx: int | None,
+        existing_resolved_version_key: str | None,
+    ) -> tuple[pl.LazyFrame, ResolvedLazyFrameProps]:
+        # Scan and ensure that the schema has not been changed. This reads from the catalog
+        # database.
+        scan_result = self.table.scan()
+        schema = self.table.schema
+        if self._schema is not None and schema != self._schema:
+            raise plexc.SchemaError(
+                "DuckLake table schema changed after the scan was planned; create a new scan"
+            )
+
+        # Translate the metadata into parquet scans.
+        result = _scan_ducklake(
+            self.table,
+            scan_result,
+            schema,
+            include_file_paths=self.include_file_paths,
+            time_zone=self.time_zone,
+        )
+        # NOTE: `version_key=""` disables caching on re-evaluation
+        return result, ResolvedLazyFrameProps(version_key="")
+
+
+def _scan_ducklake(
+    table: Table,
+    scan_result: ScanResult,
+    schema: Schema,
+    *,
+    include_file_paths: str | None,
+    time_zone: str,
+) -> pl.LazyFrame:
+    cache_path = Path(tempfile.mkdtemp())
 
     # 2) Then, we have to build all the inputs for the scan
     # 2.1) Deletion files: DuckLake's deletion files are the same as the ones used by Iceberg.
@@ -144,24 +230,17 @@ def scan_ducklake(
             result = pl.concat([result, inline_lf])
 
     # 5) Represent timezone-aware timestamps in the requested connection or per-read time zone.
-    result_time_zone = table._time_zone if time_zone is None else time_zone
     result = result.with_columns(
-        pl.col(name).cast(_convert_datetime_time_zone(dtype, result_time_zone))
+        pl.col(name).cast(_convert_datetime_time_zone(dtype, time_zone))
         for name, dtype in target_schema.items()
     )
 
     return result
 
 
-def read_ducklake(
-    table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
-) -> pl.DataFrame:
-    return scan_ducklake(
-        table, include_file_paths=include_file_paths, time_zone=time_zone
-    ).collect(optimizations=pl.QueryOptFlags._eager())
-
-
-# -------------------------------------------- VIEWS -------------------------------------------- #
+# ----------------------------------------------------------------------------------------------- #
+#                                              VIEWS                                              #
+# ----------------------------------------------------------------------------------------------- #
 
 
 def scan_view(view: View) -> pl.LazyFrame:
@@ -204,7 +283,9 @@ def read_view(view: View) -> pl.DataFrame:
     return scan_view(view).collect(optimizations=pl.QueryOptFlags._eager())
 
 
-# -------------------------------------------- UTILS -------------------------------------------- #
+# ----------------------------------------------------------------------------------------------- #
+#                                              UTILS                                              #
+# ----------------------------------------------------------------------------------------------- #
 
 
 def _column_statistics(

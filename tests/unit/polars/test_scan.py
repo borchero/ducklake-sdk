@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 import datetime as dt
+from threading import Barrier
+from typing import TYPE_CHECKING
 
 import polars as pl
 import pytest
@@ -6,6 +10,9 @@ from polars.testing import assert_frame_equal
 
 import ducklake as dl
 from ducklake.polars.scan import _enum_statistics, _new_column_expression
+
+if TYPE_CHECKING:
+    from pytest_mock import MockerFixture
 
 
 def test_scan_single_file(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
@@ -454,3 +461,82 @@ def test_initial_defaults_inline_only(
         }
     )
     assert_frame_equal(expected, table.scan_polars(), check_row_order=False)
+
+
+# ----------------------------------------- DEFERRED SCANS --------------------------------------- #
+
+
+@pytest.fixture()
+def scan_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> dl.Table:
+    return shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+
+
+def test_scan_defers_file_metadata(scan_table: dl.Table, mocker: MockerFixture) -> None:
+    # Arrange
+    scan = mocker.spy(scan_table, "scan")
+
+    # Act
+    query = scan_table.scan_polars(include_file_paths="path")
+    schema = query.collect_schema()
+    query.explain(optimized=False)
+
+    # Assert
+    scan.assert_not_called()
+    assert schema == pl.Schema({"x": pl.Int64, "path": pl.String})
+
+
+@pytest.mark.parametrize("historical", [False, True])
+def test_scan_collection_respects_snapshot(
+    scan_table: dl.Table, shared_ducklake: dl.Ducklake, historical: bool
+) -> None:
+    # Arrange
+    table = scan_table
+    if historical:
+        snapshot = shared_ducklake.get_latest_snapshot().id
+        table = shared_ducklake.at(snapshot).table(scan_table.name)
+    query = table.scan_polars()
+    data = pl.DataFrame({"x": [1]})
+    expected = data.clear() if historical else data
+
+    # Act
+    scan_table.sink_polars(data.lazy())
+    first = query.collect()
+    scan_table.sink_polars(data.lazy())
+    second = query.collect()
+
+    # Assert
+    assert_frame_equal(first, expected)
+    assert_frame_equal(second, pl.concat([expected, expected]))
+
+
+def test_scan_rejects_changed_schema(scan_table: dl.Table) -> None:
+    # Arrange
+    query = scan_table.scan_polars()
+    query.collect_schema()
+
+    # Act
+    scan_table.rename_column("x", "y")
+
+    # Assert
+    with pytest.raises(pl.exceptions.SchemaError, match="schema changed"):
+        query.collect()
+
+
+def test_scan_resolves_metadata_in_parallel(scan_table: dl.Table, mocker: MockerFixture) -> None:
+    # Arrange
+    barrier = Barrier(2, timeout=10)
+    original_scan = scan_table.scan
+
+    def synchronized_scan() -> dl.ScanResult:
+        barrier.wait()
+        return original_scan()
+
+    scan = mocker.patch.object(scan_table, "scan", side_effect=synchronized_scan)
+    query = pl.concat([scan_table.scan_polars(), scan_table.scan_polars()])
+
+    # Act
+    actual = query.collect()
+
+    # Assert
+    assert scan.call_count == 2
+    assert_frame_equal(actual, pl.DataFrame(schema={"x": pl.Int64}))
