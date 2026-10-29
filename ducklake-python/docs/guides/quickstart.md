@@ -37,6 +37,7 @@ ducklake = dl.connect(
         "max_connections": 4,
         "min_connections": 0,
         "acquire_timeout": timedelta(seconds=60),
+        "test_before_acquire": True,
         "idle_timeout": timedelta(minutes=1),
         "max_lifetime": timedelta(minutes=30),
     },

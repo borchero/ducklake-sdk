@@ -35,6 +35,7 @@ impl DatabaseOptions {
             .max_connections(max_connections)
             .min_connections(self.min_connections)
             .acquire_timeout(self.acquire_timeout)
+            .test_before_acquire(self.test_before_acquire)
             .idle_timeout(self.idle_timeout)
             .max_lifetime(self.max_lifetime))
     }

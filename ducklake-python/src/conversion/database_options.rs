@@ -16,6 +16,7 @@ impl FromPyObject<'_, '_> for Wrap<DatabaseOptions> {
                 "max_connections" => options.max_connections = value.extract()?,
                 "min_connections" => options.min_connections = value.extract()?,
                 "acquire_timeout" => options.acquire_timeout = value.extract()?,
+                "test_before_acquire" => options.test_before_acquire = value.extract()?,
                 "idle_timeout" => options.idle_timeout = value.extract()?,
                 "max_lifetime" => options.max_lifetime = value.extract()?,
                 _ => {
