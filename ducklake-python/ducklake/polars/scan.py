@@ -21,8 +21,6 @@ if TYPE_CHECKING:
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
-_POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
-
 
 def scan_ducklake(
     table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
@@ -51,10 +49,7 @@ def scan_ducklake(
             iceberg_position_deletes[i].append(str(write_path))
             inline_delete_count += df.height
 
-    if _POLARS_VERSION >= (1, 44):
-        deletion_files = ("iceberg", (dict(iceberg_position_deletes), {}))
-    else:
-        deletion_files = ("iceberg-position-delete", dict(iceberg_position_deletes))
+    deletion_files = ("iceberg", (dict(iceberg_position_deletes), {}))
 
     # 2.2) Row counts
     physical_rows = sum(data_file.statistics.num_rows for data_file in scan_result.data_files)
@@ -74,28 +69,13 @@ def scan_ducklake(
         for col in schema.columns
         if col.initial_default is not None and col.field_id is not None
     ]
-    if _POLARS_VERSION >= (1, 43):
-        # polars 1.43 introduced a dedicated slot for per-column initial defaults, passed as a
-        # 2-tuple of `(identity_transformed_values, initial_defaults)`.
-        default_values = (
-            {},
-            {
-                col.field_id: pl.Series([col.initial_default], dtype=target_schema[col.name])
-                for col in columns_with_defaults
-            },
-        )
-    else:
-        # Older polars only exposes the per-file `identity_transformed_values` slot, so the
-        # constant default has to be repeated once per data file.
-        default_values = {
-            col.field_id: pl.repeat(
-                col.initial_default,
-                len(scan_result.data_files),
-                dtype=target_schema[col.name],
-                eager=True,
-            )
+    default_values = (
+        {},
+        {
+            col.field_id: pl.Series([col.initial_default], dtype=target_schema[col.name])
             for col in columns_with_defaults
-        }
+        },
+    )
 
     # 2.4) Statistics
     stat_len = pl.Series(

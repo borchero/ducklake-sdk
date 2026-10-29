@@ -20,8 +20,6 @@ PARTITION_COLUMN_PREFIX = "__ducklake_partition__"
 # NOTE: This is taken from the polars Iceberg implementation
 ESTIMATED_COMPRESSION_RATIO = 4
 
-_POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
-
 
 @overload
 def sink_ducklake(
@@ -94,11 +92,6 @@ def sink_ducklake(
     sinked_paths_callback = partial(
         _sinked_paths_callback, table, file_generator.base_path, partition_value_cache
     )
-    callback_kwargs = (
-        {"sinked_paths_callback": sinked_paths_callback}
-        if _POLARS_VERSION >= (1, 44)
-        else {"_sinked_paths_callback": sinked_paths_callback}
-    )
     return lf.sink_parquet(  # ty: ignore[no-matching-overload]
         target,
         storage_options=table._storage_options.to_dict(),
@@ -111,7 +104,7 @@ def sink_ducklake(
         optimizations=optimizations or DEFAULT_QUERY_OPT_FLAGS,
         lazy=lazy,
         arrow_schema=table.schema,
-        **callback_kwargs,
+        sinked_paths_callback=sinked_paths_callback,
     )
 
 
