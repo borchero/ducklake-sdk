@@ -523,6 +523,20 @@ async fn delete_expired_catalog_objects(tx: &mut db::Transaction) -> DucklakeRes
         }};
     );
 
+    macro_rules! delete_scoped_metadata(
+        ($scope:literal, $ref_table:ident, $column:ident) => {{
+            let query = Query::delete()
+                .from_table(ducklake_metadata::Table)
+                .and_where(ducklake_metadata::Column::Scope.col().eq($scope))
+                .and_where(condition_not_exists_in_reference(
+                    (ducklake_metadata::Table, ducklake_metadata::Column::ScopeId),
+                    ($ref_table::Table, $ref_table::Column::$column),
+                ))
+                .take();
+            tx.execute(&query).await?;
+        }};
+    );
+
     // First, we delete from catalog tables
     delete_from_catalog_table!(ducklake_schema);
     delete_from_catalog_table!(ducklake_tag);
@@ -541,6 +555,10 @@ async fn delete_expired_catalog_objects(tx: &mut db::Transaction) -> DucklakeRes
         ducklake_data_file,
         DataFileId
     );
+
+    // Options are not versioned: retain them until every version of their object is gone.
+    delete_scoped_metadata!("table", ducklake_table, TableId);
+    delete_scoped_metadata!("schema", ducklake_schema, SchemaId);
 
     Ok(())
 }
