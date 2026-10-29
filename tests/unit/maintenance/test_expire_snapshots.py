@@ -2,6 +2,8 @@ import datetime as dt
 import time
 
 import polars as pl
+import pytest
+import sqlalchemy as sa
 
 import ducklake as dl
 
@@ -16,7 +18,7 @@ def test_expire_snapshots_dry_run(ducklake: dl.Ducklake, random_table_name: str)
 
     # Act
     result = ducklake.expire_snapshots(
-        older_than=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1), dry_run=True
+        older_than=dt.datetime.now(dt.UTC) + dt.timedelta(days=1), dry_run=True
     )
 
     # Assert
@@ -35,9 +37,7 @@ def test_expire_snapshots(ducklake: dl.Ducklake, random_table_name: str) -> None
     assert len(snapshots_before) > 1
 
     # Act
-    result = ducklake.expire_snapshots(
-        older_than=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
-    )
+    result = ducklake.expire_snapshots(older_than=dt.datetime.now(dt.UTC) + dt.timedelta(days=1))
 
     # Assert
     assert len(result) == len(snapshots_before) - 1
@@ -93,3 +93,32 @@ def test_no_expire_global_metadata(ducklake: dl.Ducklake, random_table_name: str
     assert len(expired) == 0
     assert len(ducklake.list_snapshots()) == 2
     assert ducklake.get_latest_snapshot().id == 1
+
+
+@pytest.mark.parametrize("expiration", ["all", "retain_snapshot", "dry_run"])
+def test_expire_scoped_metadata(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, expiration: str
+) -> None:
+    # Arrange
+    ducklake.set_metadata(data_inlining_row_limit=100)
+    ducklake.set_metadata(data_inlining_row_limit=101, schema="main")
+    ducklake.create_schema("expired")
+    ducklake.set_metadata(data_inlining_row_limit=102, schema="expired")
+    table = ducklake.create_table(("expired", "table"), {"x": dl.Int64()})
+    table.set_metadata(data_inlining_row_limit=103)
+    retained_snapshot = ducklake.get_latest_snapshot().id
+    ducklake.delete_schema("expired", cascade=True)
+    versions = [snapshot.id for snapshot in ducklake.list_snapshots()]
+    if expiration == "retain_snapshot":
+        versions.remove(retained_snapshot)
+    metadata = sa.text("SELECT value FROM ducklake_metadata")
+    with catalog_engine.connect() as connection:
+        metadata_before = set(connection.execute(metadata).scalars())
+
+    # Act
+    ducklake.expire_snapshots(versions=versions, dry_run=expiration == "dry_run")
+
+    # Assert
+    expected = metadata_before - {"102", "103"} if expiration == "all" else metadata_before
+    with catalog_engine.connect() as connection:
+        assert set(connection.execute(metadata).scalars()) == expected
