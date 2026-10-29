@@ -1,4 +1,3 @@
-import re
 import warnings
 from functools import partial
 from typing import Literal, overload

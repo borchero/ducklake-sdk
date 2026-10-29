@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import tempfile
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
@@ -115,7 +114,7 @@ def scan_ducklake(
             ),
             # --- Optimization ---
             _column_mapping=("iceberg-column-mapping", schema),
-            _deletion_files=deletion_files,  # ty: ignore[invalid-argument-type]
+            _deletion_files=deletion_files,
             _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
             _table_statistics=table_statistics,
             _row_count=(physical_rows, deleted_rows),
