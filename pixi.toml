@@ -54,7 +54,7 @@ mysqlclient = "*"
 postgresql = "*"
 psycopg = "*"
 pytest = ">=9"
-pytest-codspeed = ">=5,<6"
+pytest-codspeed = ">=5"
 pytest-cov = "*"
 pytest-mock = "*"
 sqlalchemy = ">=2"
@@ -162,6 +162,9 @@ python = "=3.13"
 [feature.py314.dependencies]
 python = "=3.14"
 
+[feature.py315.dependencies]
+python = "=3.15"
+
 # ------------------------------------------- DUCKLAKE ------------------------------------------ #
 
 [feature.ducklake]
@@ -196,7 +199,18 @@ duckdb-cli = "=1.5.3"
 # ----------------------------------------------------------------------------------------------- #
 
 [environments]
-default = ["build-py", "dev", "ducklake", "install-py", "lint", "optionals", "polars-latest", "test-py", "test-rs"]
+default = [
+  "build-py",
+  "dev",
+  "ducklake",
+  "install-py",
+  "lint",
+  "optionals",
+  "polars-latest",
+  "py315",
+  "test-py",
+  "test-rs",
+]
 
 build = { features = ["build-py", "install-py"], no-default-feature = true }
 docs = { features = ["docs-py", "install-py", "optionals"] }
@@ -204,13 +218,14 @@ test-py311 = ["install-py", "optionals", "py311", "test-py", "test-rs"]
 test-py312 = ["install-py", "optionals", "py312", "test-py", "test-rs"]
 test-py313 = ["install-py", "optionals", "py313", "test-py", "test-rs"]
 test-py314 = ["install-py", "optionals", "py314", "test-py", "test-rs"]
-test-py314-minimal = ["install-py", "py314", "test-py-minimal"]
+test-py315 = ["install-py", "optionals", "py315", "test-py", "test-rs"]
+test-py315-minimal = ["install-py", "py315", "test-py-minimal"]
 test-rs = { features = ["test-rs"], no-default-feature = true }
 
 # Polars compatibility environments: exercise the oldest and newest supported polars versions.
-nightly = ["install-py", "nightly", "optionals", "py314", "test-py", "test-rs"]
-test-polars-latest = ["install-py", "optionals", "polars-latest", "py314", "test-py", "test-rs"]
-test-polars-minimal = ["install-py", "optionals", "polars-minimal", "py314", "test-py", "test-rs"]
+nightly = ["install-py", "nightly", "optionals", "py315", "test-py", "test-rs"]
+test-polars-latest = ["install-py", "optionals", "polars-latest", "py315", "test-py", "test-rs"]
+test-polars-minimal = ["install-py", "optionals", "polars-minimal", "py315", "test-py", "test-rs"]
 
 ducklake-v0-1 = { features = ["ducklake", "ducklake-v0-1"], no-default-feature = true }
 ducklake-v0-2 = { features = ["ducklake", "ducklake-v0-2"], no-default-feature = true }

@@ -73,10 +73,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [py314]
+        python-version: [py315]
         database: [sqlite, postgres, mysql]
         storage: [local, s3, gcs, azure]
         include:
+          - python-version: py314
+            database: sqlite
+            storage: local
           - python-version: py313
             database: sqlite
             storage: local
@@ -153,7 +156,9 @@ jobs:
           AWS_ACCESS_KEY_ID: rustfsadmin
           AWS_SECRET_ACCESS_KEY: rustfsadmin
           STORAGE_EMULATOR_HOST: http://localhost:4443
-          GOOGLE_SERVICE_ACCOUNT_KEY: '{"gcs_base_url": "http://localhost:4443", "disable_oauth": true, "client_email": "", "private_key_id": "", "private_key": ""}'
+          GOOGLE_SERVICE_ACCOUNT_KEY:
+            '{"gcs_base_url": "http://localhost:4443", "disable_oauth": true, "client_email": "", "private_key_id": "",
+            "private_key": ""}'
           AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
           AZURE_STORAGE_ACCOUNT_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
           AZURE_STORAGE_ENDPOINT: http://localhost:10000/devstoreaccount1
@@ -167,7 +172,7 @@ jobs:
           use_oidc: true
 
   unit-tests-py-minimal:
-    name: Unit Tests (py314 - sqlite - local - Minimal Dependencies)
+    name: Unit Tests (py315 - sqlite - local - Minimal Dependencies)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -177,7 +182,7 @@ jobs:
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
-          environments: test-py314-minimal
+          environments: test-py315-minimal
           activate-environment: true
       - name: Install Rust
         run: rustup show
@@ -189,7 +194,7 @@ jobs:
         run: pixi run pytest -v tests/unit/test_minimal.py
 
   unit-tests-py-release:
-    name: Unit Tests (py314 - sqlite - local - Release Build)
+    name: Unit Tests (py315 - sqlite - local - Release Build)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -199,7 +204,7 @@ jobs:
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
-          environments: test-py314
+          environments: test-py315
           activate-environment: true
       - name: Install Rust
         run: rustup show
@@ -211,7 +216,7 @@ jobs:
         run: pixi run test-py -v
 
   unit-tests-py-windows:
-    name: Unit Tests (py314 - sqlite - local - Windows)
+    name: Unit Tests (py315 - sqlite - local - Windows)
     runs-on: windows-latest
     permissions:
       contents: read
@@ -221,7 +226,7 @@ jobs:
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
-          environments: test-py314
+          environments: test-py315
           activate-environment: true
       - name: Install Rust
         run: rustup show
@@ -257,7 +262,7 @@ jobs:
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
-          environments: test-py314
+          environments: test-py315
           activate-environment: true
       - name: Install Rust
         run: rustup show
