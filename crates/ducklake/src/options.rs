@@ -174,6 +174,8 @@ pub struct DatabaseOptions {
     /// Maximum time to acquire a connection, including connection establishment and health
     /// checks. Defaults to 30 seconds. This does not limit query execution time.
     pub acquire_timeout: Duration,
+    /// Check idle connections for liveness before acquiring them. Defaults to true.
+    pub test_before_acquire: bool,
     /// Close connections idle for longer than this duration, subject to periodic pool cleanup
     /// and `min_connections`. Defaults to ten minutes. `None` disables idle expiry.
     pub idle_timeout: Option<Duration>,
@@ -188,6 +190,7 @@ impl Default for DatabaseOptions {
             max_connections: None,
             min_connections: 0,
             acquire_timeout: Duration::from_secs(30),
+            test_before_acquire: true,
             idle_timeout: Some(Duration::from_secs(10 * 60)),
             max_lifetime: Some(Duration::from_secs(30 * 60)),
         }

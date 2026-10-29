@@ -17,6 +17,8 @@ class DatabaseOptions(TypedDict, total=False):
     #: Maximum time to acquire a connection, including connection establishment and health
     #: checks. Defaults to 30 seconds.
     acquire_timeout: dt.timedelta
+    #: Check idle connections for liveness before acquiring them. Defaults to `True`.
+    test_before_acquire: bool
     #: Close idle connections during periodic pool cleanup, subject to `min_connections`.
     #: Defaults to ten minutes. `None` disables idle expiry.
     idle_timeout: dt.timedelta | None
