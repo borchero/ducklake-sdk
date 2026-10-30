@@ -368,6 +368,21 @@ impl<'a> Transaction<'a> {
         let table_info = table.info();
         let schema_columns = table_info.schema.columns_by_id();
 
+        let encrypted = self.metadata.encrypted();
+        if data_files
+            .iter()
+            .any(|file| file.data_file.encryption_key.is_some() != encrypted)
+        {
+            return Err(DucklakeError::InvalidChanges(
+                if encrypted {
+                    "cannot register an unencrypted file in an encrypted catalog"
+                } else {
+                    "cannot register an encrypted file in an unencrypted catalog"
+                }
+                .to_string(),
+            ));
+        }
+
         // Ensure that statistics are available for all data files
         let mut data_files = data_files;
         let paths = data_files

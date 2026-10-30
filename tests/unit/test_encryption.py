@@ -164,6 +164,52 @@ def test_register_encrypted_file_with_wrong_key(
     assert encrypted_table.scan().data_files == []
 
 
+@pytest.mark.parametrize(
+    ("encrypted", "error"),
+    [
+        (False, "cannot register an encrypted file in an unencrypted catalog"),
+        (True, "cannot register an unencrypted file in an encrypted catalog"),
+    ],
+)
+def test_register_files_rejects_mismatched_encryption(
+    shared_ducklake: dl.Ducklake,
+    encrypted_lake: dl.Ducklake,
+    random_table_name: str,
+    tmp_path: Path,
+    encrypted: bool,
+    error: str,
+) -> None:
+    # Arrange
+    lake = encrypted_lake if encrypted else shared_ducklake
+    table = lake.create_table(random_table_name, {"x": dl.Int64()})
+    snapshot = lake.get_latest_snapshot().id
+    key = b"k" * 32
+    files = []
+    for i, file_encrypted in enumerate([encrypted, not encrypted]):
+        path = str(tmp_path / f"file_{i}.parquet")
+        pl.DataFrame({"x": [i]}).write_parquet(
+            path,
+            arrow_schema=table.schema,
+            encryption=pl.ParquetEncryptionProperties(footer_key=key) if file_encrypted else None,
+        )
+        files.append(
+            dl.WriteDataFile(
+                path,
+                encryption_key=base64.b64encode(key).decode("ascii") if file_encrypted else None,
+                statistics=dl.DataFileStatistics(num_rows=1),
+            )
+        )
+
+    # Act
+    with lake.transaction() as tx:
+        with pytest.raises(ValueError, match=error):
+            tx.table(random_table_name).write_data_files(files)
+
+    # Assert
+    assert table.scan().data_files == []
+    assert lake.get_latest_snapshot().id == snapshot
+
+
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
 def test_encrypted_scan_tracks_new_keys_and_inline_data(encrypted_table: dl.Table) -> None:
     # Arrange
