@@ -61,7 +61,7 @@ pub(crate) async fn init_catalog(pool: &db::Pool, config: Config) -> DucklakeRes
 }
 
 async fn populate(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     data_path: &str,
     encrypted: bool,
 ) -> DucklakeResult<()> {

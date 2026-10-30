@@ -57,7 +57,7 @@ impl TransactionChanges {
     /// Persist the collected changes in dependency order within a single transaction.
     pub(super) async fn persist(
         self,
-        tx: &mut db::Transaction,
+        tx: &mut db::Transaction<'_>,
         state: &mut CommitState<'_>,
     ) -> DucklakeResult<()> {
         let snapshot_id = state.snapshot_id();
@@ -213,7 +213,7 @@ impl TransactionChanges {
 /* ------------------------------------------ DELETION ----------------------------------------- */
 
 async fn retire_rows<C: IntoIden + Copy, const K: usize>(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     snapshot_id: i64,
     table: impl IntoIden,
     keys: [C; K],
@@ -233,7 +233,7 @@ async fn retire_rows<C: IntoIden + Copy, const K: usize>(
 /* ---------------------------------------- PERSISTENCE ---------------------------------------- */
 
 async fn persist_table_renames(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     snapshot_id: i64,
     renames: HashMap<i64, String>,
 ) -> DucklakeResult<()> {
@@ -258,7 +258,7 @@ async fn persist_table_renames(
 
 #[allow(clippy::too_many_arguments)]
 async fn persist_tags<K: Clone, E: InsertableEntity, C: IntoIden + Copy, const N: usize>(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     snapshot_id: i64,
     table: impl IntoIden,
     keys: [C; N],
@@ -301,7 +301,7 @@ async fn persist_tags<K: Clone, E: InsertableEntity, C: IntoIden + Copy, const N
     Ok(())
 }
 
-async fn persist_files(tx: &mut db::Transaction, files: FileChanges) -> DucklakeResult<()> {
+async fn persist_files(tx: &mut db::Transaction<'_>, files: FileChanges) -> DucklakeResult<()> {
     tx.insert_entities(files.data_files).await?;
     tx.insert_entities(files.partition_values).await?;
     tx.insert_entities(files.column_stats).await?;
@@ -319,7 +319,7 @@ async fn persist_files(tx: &mut db::Transaction, files: FileChanges) -> Ducklake
 }
 
 async fn persist_inline_data(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     tables: HashMap<i64, crate::Schema>,
     data: HashMap<i64, Vec<arrow_array::RecordBatch>>,
     schema_version: i64,
@@ -393,7 +393,7 @@ async fn persist_inline_data(
 
 /// Persist the final statistics once, even when a table was written multiple times.
 async fn persist_statistics(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     state: &mut CommitState<'_>,
     written_columns: HashMap<i64, HashSet<i64>>,
 ) -> DucklakeResult<()> {

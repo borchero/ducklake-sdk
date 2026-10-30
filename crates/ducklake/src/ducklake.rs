@@ -99,8 +99,10 @@ impl Ducklake {
         spec::init_catalog(&pool, config).await?;
 
         // Create the ducklake instance
+        let mut conn = pool.acquire().await?;
         Self::new(
             pool,
+            &mut conn,
             None,
             false,
             options.storage_options,
@@ -120,17 +122,20 @@ impl Ducklake {
     /// Returns an error if the catalog database is not initialized yet. In this case, use
     /// [`Ducklake::create`] instead.
     pub async fn connect(options: ConnectOptions) -> DucklakeResult<Self> {
-        let pool =
+        let (pool, mut conn) =
             Self::init_catalog(&options.url, options.migrate, &options.database_options).await?;
         let snapshot = match options.connection_type {
             ConnectionType::Latest => None,
-            ConnectionType::SnapshotId(id) => Some(SnapshotInfo::load_for_id(&pool, id).await?),
+            ConnectionType::SnapshotId(id) => {
+                Some(SnapshotInfo::load_for_id(&mut conn, id).await?)
+            }
             ConnectionType::SnapshotTimestamp(timestamp) => {
-                Some(SnapshotInfo::load_for_timestamp(&pool, timestamp).await?)
+                Some(SnapshotInfo::load_for_timestamp(&mut conn, timestamp).await?)
             }
         };
         Self::new(
             pool,
+            &mut conn,
             snapshot,
             options.readonly,
             options.storage_options,
@@ -157,20 +162,20 @@ impl Ducklake {
         url: &str,
         migrate: bool,
         database_options: &DatabaseOptions,
-    ) -> DucklakeResult<db::Pool> {
+    ) -> DucklakeResult<(db::Pool, db::Connection)> {
         // Initialize the database pool and query the current catalog version to run migrations
         let pool = db::Pool::new(url, database_options).await?;
-        if !pool
-            .table_exists(&spec::ducklake_metadata::Table.to_string())
-            .await?
-        {
-            return Err(DucklakeError::CatalogNotInitialized);
-        }
+        let mut conn = pool.acquire().await?;
 
         // NOTE: We do not load the full metadata here but only the version field to not rely on
         //  the current schema of the ducklake_metadata table. This allows to correctly read this
         //  field for older versions of the catalog (e.g. DuckLake v0.1).
-        let version = get_version(&pool).await?;
+        let version = match get_version(&mut conn).await {
+            Err(error) if conn.dialect().is_table_not_found_error(&error) => {
+                return Err(DucklakeError::CatalogNotInitialized);
+            }
+            result => result?,
+        };
         if !spec::SUPPORTED_VERSIONS.contains(&version.as_str()) {
             return Err(DucklakeError::UnsupportedVersion(version));
         }
@@ -180,13 +185,14 @@ impl Ducklake {
                 spec::LATEST_VERSION.to_string(),
             ));
         }
-        spec::migrate_catalog(&pool, &version).await?;
+        spec::migrate_catalog(&mut conn, &version).await?;
 
-        Ok(pool)
+        Ok((pool, conn))
     }
 
     async fn new(
         pool: db::Pool,
+        conn: &mut db::Connection,
         travel_snapshot: Option<SnapshotInfo>,
         readonly: bool,
         storage_options: Vec<(String, String)>,
@@ -195,8 +201,8 @@ impl Ducklake {
         let has_travel_snapshot = travel_snapshot.is_some();
 
         // Initialize the caches
-        let snapshot_cache = SnapshotCache::new(pool.clone(), travel_snapshot).await?;
-        let metadata_cache = MetadataCache::new(pool.clone()).await?;
+        let snapshot_cache = SnapshotCache::new(pool.clone(), conn, travel_snapshot).await?;
+        let metadata_cache = MetadataCache::new(pool.clone(), conn).await?;
 
         // Determine the access mode
         let mode = if has_travel_snapshot {
@@ -226,7 +232,8 @@ impl Ducklake {
 impl Ducklake {
     /// Connect to the DuckLake at the provided snapshot ID.
     pub async fn at_snapshot_id(&self, snapshot_id: i64) -> DucklakeResult<Self> {
-        let snapshot_info = SnapshotInfo::load_for_id(self.conn.pool(), snapshot_id).await?;
+        let mut conn = self.conn.pool().acquire().await?;
+        let snapshot_info = SnapshotInfo::load_for_id(&mut conn, snapshot_id).await?;
         self.at_snapshot(snapshot_info)
     }
 
@@ -235,7 +242,8 @@ impl Ducklake {
         &self,
         timestamp: chrono::DateTime<chrono::Utc>,
     ) -> DucklakeResult<Self> {
-        let snapshot_info = SnapshotInfo::load_for_timestamp(self.conn.pool(), timestamp).await?;
+        let mut conn = self.conn.pool().acquire().await?;
+        let snapshot_info = SnapshotInfo::load_for_timestamp(&mut conn, timestamp).await?;
         self.at_snapshot(snapshot_info)
     }
 
@@ -759,7 +767,7 @@ impl DucklakeConnection {
 /*                                            QUERIES                                            */
 /* --------------------------------------------------------------------------------------------- */
 
-async fn get_version(pool: &db::Pool) -> DucklakeResult<String> {
+async fn get_version(conn: &mut db::Connection) -> DucklakeResult<String> {
     let query = Query::select()
         .column(ducklake_metadata::Column::Value)
         .from(ducklake_metadata::Table)
@@ -769,7 +777,7 @@ async fn get_version(pool: &db::Pool) -> DucklakeResult<String> {
                 .eq(spec::metadata::VERSION),
         )
         .to_owned();
-    let version: (String,) = pool.fetch_one(&query).await?;
+    let version: (String,) = conn.fetch_one(&query).await?;
     Ok(version.0)
 }
 

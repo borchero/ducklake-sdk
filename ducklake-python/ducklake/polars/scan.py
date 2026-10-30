@@ -199,6 +199,9 @@ def _scan_data_files(
     position_deletes: dict[int, list[str]] | None = None,
     deleted_rows: int = 0,
 ) -> pl.LazyFrame:
+    source_sizes = [
+        size for file in data_files if (size := file.statistics.file_size_bytes) is not None
+    ]
     return pl.scan_parquet(
         # --- Files ---
         [file.path for file in data_files],
@@ -225,6 +228,7 @@ def _scan_data_files(
         _default_values=("iceberg", ({}, _initial_defaults(schema))),
         _table_statistics=_table_statistics(data_files, schema),
         _row_count=(sum(file.statistics.num_rows for file in data_files), deleted_rows),
+        _source_sizes=source_sizes if len(source_sizes) == len(data_files) else None,
     )
 
 

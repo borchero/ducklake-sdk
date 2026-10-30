@@ -17,7 +17,7 @@ use super::postgres_copy;
 use super::{AnyTransaction, Dialect, RowType, SqlConvertible, Transaction, log_sql};
 use crate::DucklakeResult;
 
-impl Transaction {
+impl Transaction<'_> {
     /// Delete rows matching non-null keys.
     pub(crate) async fn delete_rows<C: IntoIden + Copy, const K: usize>(
         &mut self,
@@ -298,7 +298,7 @@ mod tests {
         }
     }
 
-    async fn empty_transaction() -> Transaction {
+    async fn empty_transaction() -> Transaction<'static> {
         crate::db::Pool::new("sqlite://:memory:", &Default::default())
             .await
             .unwrap()
@@ -307,7 +307,7 @@ mod tests {
             .unwrap()
     }
 
-    async fn tag_table(rows: impl IntoIterator<Item = DucklakeTag>) -> Transaction {
+    async fn tag_table(rows: impl IntoIterator<Item = DucklakeTag>) -> Transaction<'static> {
         let mut tx = empty_transaction().await;
         tx.execute(&sea_query::Table::create_entity::<DucklakeTag>(
             tx.dialect(),
@@ -318,7 +318,7 @@ mod tests {
         tx
     }
 
-    async fn stored_tags(tx: &mut Transaction) -> Vec<DucklakeTag> {
+    async fn stored_tags(tx: &mut Transaction<'_>) -> Vec<DucklakeTag> {
         tx.fetch_all(
             &Query::select()
                 .column(Asterisk)
@@ -338,7 +338,7 @@ mod tests {
             .collect()
     }
 
-    async fn batch_tag_table() -> Transaction {
+    async fn batch_tag_table() -> Transaction<'static> {
         tag_table(
             (0..257)
                 .map(|id| tag(id, "selected", "original"))
