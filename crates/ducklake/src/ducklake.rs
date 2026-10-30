@@ -94,6 +94,7 @@ impl Ducklake {
 
         let config = spec::InitConfig {
             data_path: options.data_path,
+            encrypted: options.encrypted,
         };
         spec::init_catalog(&pool, config).await?;
 

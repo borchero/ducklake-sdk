@@ -15,6 +15,7 @@ macro_rules! create_table {
 #[derive(Default)]
 pub(crate) struct Config {
     pub data_path: String,
+    pub encrypted: bool,
 }
 
 /// Initialize a new catalog database with the most up-to-date DuckLake schema.
@@ -52,14 +53,18 @@ pub(crate) async fn init_catalog(pool: &db::Pool, config: Config) -> DucklakeRes
     create_table!(tx, DucklakeFileVariantStats);
 
     // Populate the table
-    populate(&mut tx, &config.data_path).await?;
+    populate(&mut tx, &config.data_path, config.encrypted).await?;
 
     // Commit all changes
     tx.commit().await?;
     Ok(())
 }
 
-async fn populate(tx: &mut db::Transaction, data_path: &str) -> DucklakeResult<()> {
+async fn populate(
+    tx: &mut db::Transaction,
+    data_path: &str,
+    encrypted: bool,
+) -> DucklakeResult<()> {
     // Basic metadata
     tx.insert_entities([
         DucklakeMetadata {
@@ -85,7 +90,7 @@ async fn populate(tx: &mut db::Transaction, data_path: &str) -> DucklakeResult<(
         },
         DucklakeMetadata {
             key: metadata::ENCRYPTED.to_string(),
-            value: "false".to_string(),
+            value: encrypted.to_string(),
             scope: None,
             scope_id: None,
         },

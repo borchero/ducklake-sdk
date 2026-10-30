@@ -20,6 +20,7 @@ def create(
     catalog_url: str | sa.URL,
     *,
     data_path: str,
+    encrypted: bool = False,
     storage_options: dict[str, str] | None = None,
     time_zone: str = "UTC",
     database_options: DatabaseOptions | None = None,
@@ -35,6 +36,8 @@ def create(
         data_path: The root path where data files should be stored. This may be a local path
             (including NFS paths) or a cloud storage path for S3, GCS, or Azure Blob Storage.
             See also: https://ducklake.select/docs/stable/duckdb/usage/choosing_storage.
+        encrypted: Whether Parquet files written to this catalog must be encrypted.
+            Encryption keys are generated for writes and stored in the catalog.
         storage_options: Optional dictionary of storage options. These may be provided to connect
             to cloud storage services. If not provided, storage options will be inferred from
             environment variables.
@@ -58,6 +61,7 @@ def create(
         list(storage_option_set.to_dict().items()),
         time_zone,
         database_options if database_options is not None else {},
+        encrypted,
     )
     return Ducklake._from_pyducklake(pyducklake, connection_args, storage_option_set)
 

@@ -14,6 +14,7 @@ impl<'py> IntoPyObject<'py> for Wrap<GlobalMetadata> {
         let dl = ducklake_module(py).bind(py);
         let cls = dl.getattr("GlobalMetadata")?;
         let kwargs = PyDict::new(py);
+        kwargs.set_item("encrypted", self.0.encrypted)?;
         kwargs.set_item("data_path", self.0.data_path)?;
         cls.call((), Some(&kwargs))
     }

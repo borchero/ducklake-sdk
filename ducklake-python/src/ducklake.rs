@@ -27,8 +27,10 @@ pub(crate) fn create(
     storage_options: Vec<(String, String)>,
     time_zone: &str,
     database_options: Wrap<DatabaseOptions>,
+    encrypted: bool,
 ) -> PyResult<PyDucklake> {
     let options = CreateOptions::new(url, data_path)
+        .with_encrypted(encrypted)
         .with_storage_options(storage_options)
         .with_database_options(database_options.0)
         .with_time_zone(time_zone)

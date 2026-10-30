@@ -195,6 +195,7 @@ async fn scan_table_inner(
         let file_id = fetched_data_file.data_file_id;
         file_partition_ids.push((file_id, fetched_data_file.partition_id));
 
+        let encryption_key = fetched_data_file.encryption_key.clone();
         let (data_file, statistics) = parsing::parse_data_file(
             fetched_data_file,
             column_stats_by_file_id.get(&file_id),
@@ -214,6 +215,7 @@ async fn scan_table_inner(
 
         result.push(crate::ScanDataFile {
             path: data_file,
+            encryption_key,
             statistics,
             delete_files,
             inline_deletes: inline_deletes_by_file_id

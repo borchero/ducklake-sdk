@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import tempfile
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
@@ -115,127 +116,213 @@ def _scan_ducklake(
     include_file_paths: str | None,
     time_zone: str,
 ) -> pl.LazyFrame:
-    cache_path = Path(tempfile.mkdtemp())
+    frames: list[pl.LazyFrame] = []
+    data_files = scan_result.data_files
+    if data_files:
+        # All files share encryption status, but each encrypted file has its own key.
+        if data_files[0].encryption_key is not None:
+            # NOTE: We process each encrypted file individually as they potentially carry separate
+            #  encryption keys.
+            frames += [
+                _scan_encrypted_file(table, file, schema, include_file_paths=include_file_paths)
+                for file in data_files
+            ]
+        else:
+            lf = _scan_unencrypted_files(
+                table, data_files, schema, include_file_paths=include_file_paths
+            )
+            frames.append(lf)
 
-    # 2) Then, we have to build all the inputs for the scan
-    # 2.1) Deletion files: DuckLake's deletion files are the same as the ones used by Iceberg.
-    #      For inlined deletions, we need to currently create separate files
-    iceberg_position_deletes: defaultdict[int, list[str]] = defaultdict(list)
-    inline_delete_count = 0
-    for i, data_file in enumerate(scan_result.data_files):
-        if data_file.delete_files:
-            iceberg_position_deletes[i].extend([file.path for file in data_file.delete_files])
-        if data_file.inline_deletes is not None:
-            # TODO: Writing to a temp directory here is an ugly workaround. Instead, we should be
-            #  able to apply these inline deletes in-memory
-            df = pl.DataFrame({"file_path": data_file.path, "pos": data_file.inline_deletes})
-            write_path = cache_path / f"inline_deletes_{i}.parquet"
-            df.write_parquet(write_path)
-            iceberg_position_deletes[i].append(str(write_path))
-            inline_delete_count += df.height
-
-    deletion_files = ("iceberg", (dict(iceberg_position_deletes), {}))
-
-    # 2.2) Row counts
-    physical_rows = sum(data_file.statistics.num_rows for data_file in scan_result.data_files)
-    deleted_rows = (
-        sum(
-            sum(delete_file.num_deletes for delete_file in data_file.delete_files)
-            for data_file in scan_result.data_files
+    for inline_data in scan_result.inline_data:
+        frames.append(
+            _scan_inline_data(inline_data, schema, include_file_paths=include_file_paths)
         )
-        + inline_delete_count
+
+    if frames:
+        result = pl.concat(frames)
+    else:
+        result = pl.LazyFrame(schema=pl.Schema(schema))
+        if include_file_paths is not None:
+            result = result.with_columns(pl.lit(None, dtype=pl.String).alias(include_file_paths))
+
+    return result.with_columns(
+        pl.col(name).cast(_convert_datetime_time_zone(dtype, time_zone))
+        for name, dtype in pl.Schema(schema).items()
     )
 
-    # 2.3) Schema and defaults. DuckLake's column-level defaults map to Iceberg's per-column
-    #      `initial-default`, which is applied wherever a column is missing from a data file.
+
+def _scan_encrypted_file(
+    table: Table,
+    data_file: ScanDataFile,
+    schema: Schema,
+    *,
+    include_file_paths: str | None,
+) -> pl.LazyFrame:
+    if not data_file.delete_files and data_file.inline_deletes is None:
+        return _scan_data_files(table, [data_file], schema, include_file_paths=include_file_paths)
+
+    # NOTE: The Iceberg deletion-file interface cannot accept decryption keys. Scan exactly one
+    #  data file and apply all its deletes together against the original physical positions.
+    row_index = "__ducklake_row_index"
+    result = _scan_data_files(
+        table, [data_file], schema, include_file_paths=include_file_paths, row_index=row_index
+    )
+    deletes = _scan_delete_positions(table, data_file, row_index=row_index)
+    return result.join(deletes, on=row_index, how="anti", maintain_order="left").drop(row_index)
+
+
+def _scan_unencrypted_files(
+    table: Table,
+    data_files: list[ScanDataFile],
+    schema: Schema,
+    *,
+    include_file_paths: str | None,
+) -> pl.LazyFrame:
+    position_deletes, deleted_rows = _prepare_position_deletes(data_files)
+    return _scan_data_files(
+        table,
+        data_files,
+        schema,
+        include_file_paths=include_file_paths,
+        position_deletes=position_deletes,
+        deleted_rows=deleted_rows,
+    )
+
+
+def _scan_data_files(
+    table: Table,
+    data_files: list[ScanDataFile],
+    schema: Schema,
+    *,
+    include_file_paths: str | None,
+    row_index: str | None = None,
+    position_deletes: dict[int, list[str]] | None = None,
+    deleted_rows: int = 0,
+) -> pl.LazyFrame:
+    return pl.scan_parquet(
+        # --- Files ---
+        [file.path for file in data_files],
+        glob=False,
+        hive_partitioning=False,
+        include_file_paths=include_file_paths,
+        storage_options=table._storage_options.to_dict(),
+        decryption=_decryption_properties(data_files[0].encryption_key),
+        row_index_name=row_index,
+        # --- Schema ---
+        schema=pl.Schema(schema),
+        missing_columns="insert",
+        extra_columns="ignore",
+        cast_options=pl.ScanCastOptions(
+            integer_cast="upcast",
+            float_cast="upcast",
+            missing_struct_fields="insert",
+            extra_struct_fields="ignore",
+            categorical_to_string="allow",
+        ),
+        # --- Optimization ---
+        _column_mapping=("iceberg-column-mapping", schema),
+        _deletion_files=("iceberg", (position_deletes or {}, {})),
+        _default_values=("iceberg", ({}, _initial_defaults(schema))),
+        _table_statistics=_table_statistics(data_files, schema),
+        _row_count=(sum(file.statistics.num_rows for file in data_files), deleted_rows),
+    )
+
+
+def _scan_inline_data(
+    inline_data: typedefs.ArrowArrayExportable,
+    schema: Schema,
+    *,
+    include_file_paths: str | None,
+) -> pl.LazyFrame:
     target_schema = pl.Schema(schema)
-    columns_with_defaults = [
-        col
+    result = (
+        pl.LazyFrame(inline_data)
+        .pipe(
+            _align_schema,
+            ducklake_schema=schema,
+            polars_schema=target_schema,
+            field_id_mapping=arrow_schema_field_ids(inline_data),
+        )
+        .match_to_schema(target_schema, integer_cast="upcast", float_cast="upcast")
+    )
+    if include_file_paths is not None:
+        result = result.with_columns(pl.lit(None, dtype=pl.String).alias(include_file_paths))
+    return result
+
+
+def _scan_delete_positions(
+    table: Table, data_file: ScanDataFile, *, row_index: str
+) -> pl.LazyFrame:
+    # Keep decrypted positions in memory, including inline deletes, without temporary files.
+    deletes = [
+        pl.scan_parquet(
+            file.path,
+            glob=False,
+            storage_options=table._storage_options.to_dict(),
+            decryption=_decryption_properties(file.encryption_key),
+        ).select(pl.col("pos").cast(pl.get_index_type()).alias(row_index))
+        for file in data_file.delete_files
+    ]
+    if data_file.inline_deletes is not None:
+        deletes.append(
+            pl.LazyFrame({row_index: data_file.inline_deletes}).select(
+                pl.col(row_index).cast(pl.get_index_type())
+            )
+        )
+    return pl.concat(deletes)
+
+
+def _prepare_position_deletes(data_files: list[ScanDataFile]) -> tuple[dict[int, list[str]], int]:
+    # DuckLake's Parquet deletion files use Iceberg's positional-delete format.
+    position_deletes: defaultdict[int, list[str]] = defaultdict(list)
+    deleted_rows = 0
+    for i, data_file in enumerate(data_files):
+        for delete_file in data_file.delete_files:
+            position_deletes[i].append(delete_file.path)
+            deleted_rows += delete_file.num_deletes
+        if data_file.inline_deletes is not None:
+            # TODO: Polars currently needs inline deletes written to a temporary file.
+            df = pl.DataFrame({"file_path": data_file.path, "pos": data_file.inline_deletes})
+            write_path = Path(tempfile.mkdtemp()) / f"inline_deletes_{i}.parquet"
+            df.write_parquet(write_path)
+            position_deletes[i].append(str(write_path))
+            deleted_rows += df.height
+    return dict(position_deletes), deleted_rows
+
+
+def _initial_defaults(schema: Schema) -> dict[int, pl.Series]:
+    # DuckLake defaults map to Iceberg's initial-default for missing Parquet columns.
+    target_schema = pl.Schema(schema)
+    return {
+        col.field_id: pl.Series([col.initial_default], dtype=target_schema[col.name])
         for col in schema.columns
         if col.initial_default is not None and col.field_id is not None
-    ]
-    default_values = (
-        {},
-        {
-            col.field_id: pl.Series([col.initial_default], dtype=target_schema[col.name])
-            for col in columns_with_defaults
-        },
-    )
+    }
 
-    # 2.4) Statistics
-    stat_len = pl.Series(
-        [file.statistics.num_rows for file in scan_result.data_files], dtype=pl.get_index_type()
-    )
-    statistics = {"len": stat_len}
+
+def _table_statistics(data_files: list[ScanDataFile], schema: Schema) -> pl.DataFrame:
+    target_schema = pl.Schema(schema)
+    statistics = {
+        "len": pl.Series(
+            [file.statistics.num_rows for file in data_files], dtype=pl.get_index_type()
+        )
+    }
     for column in schema.columns:
         if column.field_id is None:
             continue
         minimum, maximum, null_count = _column_statistics(
-            column, target_schema[column.name], scan_result.data_files
+            column, target_schema[column.name], data_files
         )
         statistics[f"{column.name}_min"] = minimum
         statistics[f"{column.name}_max"] = maximum
         statistics[f"{column.name}_nc"] = null_count
-    table_statistics = pl.DataFrame(statistics)
+    return pl.DataFrame(statistics)
 
-    # 3) Then, we create the lazy frame by scanning all data files
-    if scan_result.data_files:
-        result = pl.scan_parquet(
-            # --- Files ---
-            [data_file.path for data_file in scan_result.data_files],
-            glob=False,
-            hive_partitioning=False,
-            include_file_paths=include_file_paths,
-            storage_options=table._storage_options.to_dict(),
-            # --- Schema ---
-            schema=target_schema,
-            missing_columns="insert",
-            extra_columns="ignore",
-            cast_options=pl.ScanCastOptions(
-                integer_cast="upcast",
-                float_cast="upcast",
-                missing_struct_fields="insert",
-                extra_struct_fields="ignore",
-                categorical_to_string="allow",
-            ),
-            # --- Optimization ---
-            _column_mapping=("iceberg-column-mapping", schema),
-            _deletion_files=deletion_files,
-            _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
-            _table_statistics=table_statistics,
-            _row_count=(physical_rows, deleted_rows),
-        )
-    else:
-        result = pl.LazyFrame(schema=target_schema)
-        if include_file_paths is not None:
-            result = result.with_columns(pl.lit(None, dtype=pl.String).alias(include_file_paths))
 
-    # 4) If we had any inline data, we also want to include that in the scan result
-    if scan_result.inline_data:
-        for inline_data in scan_result.inline_data:
-            inline_lf = (
-                pl.LazyFrame(inline_data)
-                .pipe(
-                    _align_schema,
-                    ducklake_schema=schema,
-                    polars_schema=target_schema,
-                    field_id_mapping=arrow_schema_field_ids(inline_data),
-                )
-                .match_to_schema(target_schema, integer_cast="upcast", float_cast="upcast")
-            )
-            if include_file_paths is not None:
-                inline_lf = inline_lf.with_columns(
-                    pl.lit(None, dtype=pl.String).alias(include_file_paths)
-                )
-            result = pl.concat([result, inline_lf])
-
-    # 5) Represent timezone-aware timestamps in the requested connection or per-read time zone.
-    result = result.with_columns(
-        pl.col(name).cast(_convert_datetime_time_zone(dtype, time_zone))
-        for name, dtype in target_schema.items()
-    )
-
-    return result
+def _decryption_properties(key: str | None) -> pl.ParquetDecryptionProperties | None:
+    if key is None:
+        return None
+    return pl.ParquetDecryptionProperties(footer_key=base64.b64decode(key, validate=True))
 
 
 # ----------------------------------------------------------------------------------------------- #

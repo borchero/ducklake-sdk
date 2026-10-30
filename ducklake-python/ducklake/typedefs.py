@@ -49,6 +49,8 @@ class GlobalMetadata(TypedDict):
 
     #: Root data path for the catalog (always ends with '/').
     data_path: str
+    #: Whether Parquet files written to the catalog must be encrypted.
+    encrypted: bool
 
 
 # ---------------------------------------- TABLE METADATA --------------------------------------- #
@@ -574,7 +576,10 @@ Value: TypeAlias = Union[
 
 
 class WriteDataFile:
-    """A new data file to be registered with a table."""
+    """A new data file to be registered with a table.
+
+    For encrypted files, supply the base64-encoded catalog encryption key.
+    """
 
     def __init__(
         self,
@@ -582,10 +587,12 @@ class WriteDataFile:
         *,
         statistics: DataFileStatistics | None = None,
         partition_values: Mapping[str, Value] | None = None,
+        encryption_key: str | None = None,
     ) -> None:
         self.path = path
         self.statistics = statistics
         self.partition_values = dict(partition_values) if partition_values else {}
+        self.encryption_key = encryption_key
 
     def __repr__(self) -> str:
         return (
@@ -679,8 +686,10 @@ class DeleteFile:
         *,
         file_size_bytes: int | None = None,
         footer_size_bytes: int | None = None,
+        encryption_key: str | None = None,
     ) -> None:
         self.path = path
+        self.encryption_key = encryption_key
         self.num_deletes = num_deletes
         self.file_size_bytes = file_size_bytes
         self.footer_size_bytes = footer_size_bytes
@@ -703,8 +712,11 @@ class ScanDataFile:
         statistics: DataFileStatistics,
         delete_files: list[DeleteFile],
         inline_deletes: ArrowArrayExportable | None,
+        *,
+        encryption_key: str | None = None,
     ) -> None:
         self.path = path
+        self.encryption_key = encryption_key
         self.statistics = statistics
         self.delete_files = delete_files
         self.inline_deletes = inline_deletes

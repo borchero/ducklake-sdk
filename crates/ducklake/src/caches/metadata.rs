@@ -41,6 +41,8 @@ pub(crate) struct Metadata {
 pub struct GlobalMetadata {
     /// Root data path for the catalog (always ends with '/').
     pub data_path: String,
+    /// Whether Parquet files written to this catalog must be encrypted.
+    pub encrypted: bool,
 }
 
 /// Resolved metadata configuration for a single table, combining global, schema-level, and
@@ -147,9 +149,16 @@ impl Metadata {
             .unwrap_or_default()
     }
 
+    pub(crate) fn encrypted(&self) -> bool {
+        self.global
+            .get(spec::metadata::ENCRYPTED)
+            .is_some_and(|s| s == "true")
+    }
+
     pub(crate) fn global_metadata(&self) -> GlobalMetadata {
         GlobalMetadata {
             data_path: self.data_path().to_string(),
+            encrypted: self.encrypted(),
         }
     }
 

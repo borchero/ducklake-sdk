@@ -253,10 +253,11 @@ impl<'a> Transaction<'a> {
 
 impl<'tx, 'a> TransactionTable<'tx, 'a> {
     /// Write data files to the table by invoking the provided closure with the table metadata
-    /// and a path generator. The data files returned by the closure are committed to the table.
+    /// and a path generator, followed by the catalog encryption flag. The data files returned by
+    /// the closure are committed to the table.
     pub async fn write_data<F>(
         &mut self,
-        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator) -> F,
+        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator, bool) -> F,
     ) -> DucklakeResult<()>
     where
         F: Future<Output = DucklakeResult<Vec<crate::WriteDataFile>>>,
@@ -264,10 +265,11 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
         self.tx.write_table_data(&self.name, write_fn).await
     }
 
-    /// Get the table metadata, a path generator, and whether the current schema supports inlining.
+    /// Get the table metadata, a path generator, whether the current schema supports inlining,
+    /// and whether the catalog requires encrypted writes.
     pub fn get_write_info(
         &self,
-    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool)> {
+    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool, bool)> {
         self.tx.get_table_write_info(&self.name)
     }
 
@@ -298,13 +300,13 @@ impl<'a> Transaction<'a> {
     async fn write_table_data<F>(
         &mut self,
         table_name: &TableName,
-        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator) -> F,
+        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator, bool) -> F,
     ) -> DucklakeResult<()>
     where
         F: Future<Output = DucklakeResult<Vec<crate::WriteDataFile>>>,
     {
-        let (metadata, generator, _) = self.get_table_write_info(table_name)?;
-        let data_files = write_fn(metadata, generator).await?;
+        let (metadata, generator, _, encrypted) = self.get_table_write_info(table_name)?;
+        let data_files = write_fn(metadata, generator, encrypted).await?;
         self.write_table_data_files(table_name, data_files).await
     }
 
@@ -312,7 +314,7 @@ impl<'a> Transaction<'a> {
     fn get_table_write_info(
         &self,
         table_name: &TableName,
-    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool)> {
+    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool, bool)> {
         // Derive data path
         let table = self.catalog().table(table_name)?;
         let data_path = table.data_path(&self.metadata.data_path());
@@ -327,7 +329,12 @@ impl<'a> Transaction<'a> {
         // Construct result
         let generator = utils::DataFilePathGenerator::new(data_path, metadata.hive_file_pattern);
         let supports_inlining = self.pool.dialect().supports_data_inlining(&table.schema());
-        Ok((metadata, generator, supports_inlining))
+        Ok((
+            metadata,
+            generator,
+            supports_inlining,
+            self.metadata.encrypted(),
+        ))
     }
 
     #[visibility_if(feature = "python", pub)]
@@ -379,6 +386,7 @@ impl<'a> Transaction<'a> {
                             io::parquet::read_file_statistics(
                                 path.resolve()?,
                                 Some(storage_options),
+                                data_file.data_file.encryption_key.as_deref(),
                             )
                             .await
                         }
@@ -395,6 +403,7 @@ impl<'a> Transaction<'a> {
             .map(|((data_file, path), stats)| {
                 let commit_data_file = CommitDataFile {
                     path,
+                    encryption_key: data_file.data_file.encryption_key,
                     num_rows: stats.num_rows,
                     file_size_bytes: stats.file_size_bytes,
                     footer_size_bytes: stats.footer_size_bytes,
@@ -448,6 +457,7 @@ impl<'a> Transaction<'a> {
                         .map(|delete_file| {
                             Ok(super::CommitDeleteFile {
                                 path: delete_file.path.parse()?,
+                                encryption_key: delete_file.encryption_key,
                                 num_deletes: delete_file.num_deletes,
                                 file_size_bytes: delete_file.file_size_bytes,
                                 footer_size_bytes: delete_file.footer_size_bytes,

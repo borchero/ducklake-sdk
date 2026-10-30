@@ -67,14 +67,13 @@ impl AsyncFileReader for ObjectStoreReader {
 
     fn get_metadata<'a>(
         &'a mut self,
-        _options: Option<&'a ArrowReaderOptions>,
+        options: Option<&'a ArrowReaderOptions>,
     ) -> BoxFuture<'a, ParquetResult<Arc<ParquetMetaData>>> {
         // Bounded range requests (rather than suffix requests) are supported by all backends.
         let file_size = self.file_size;
         async move {
-            // FIXME: Enable `.with_arrow_reader_options(options)` once removing the
-            // `patch.crates-io` section in `Cargo.toml`.
             let metadata = ParquetMetaDataReader::new()
+                .with_arrow_reader_options(options)
                 .load_and_finish(self, file_size)
                 .await?;
             Ok(Arc::new(metadata))

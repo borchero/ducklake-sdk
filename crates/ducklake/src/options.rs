@@ -6,6 +6,7 @@ use std::time::Duration;
 pub struct CreateOptions {
     pub(crate) url: String,
     pub(crate) data_path: String,
+    pub(crate) encrypted: bool,
     pub(crate) storage_options: Vec<(String, String)>,
     pub(crate) time_zone: chrono_tz::Tz,
     pub(crate) database_options: DatabaseOptions,
@@ -17,10 +18,17 @@ impl CreateOptions {
         Self {
             url: url.to_string(),
             data_path: data_path.to_string(),
+            encrypted: false,
             storage_options: Vec::new(),
             time_zone: chrono_tz::UTC,
             database_options: DatabaseOptions::default(),
         }
+    }
+
+    /// Set whether Parquet files written to this catalog must be encrypted (default: false).
+    pub fn with_encrypted(mut self, encrypted: bool) -> Self {
+        self.encrypted = encrypted;
+        self
     }
 
     /// Set the time zone used to represent timezone-aware timestamps when reading data.

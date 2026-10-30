@@ -307,6 +307,7 @@ mod tests {
             &pool,
             crate::spec::InitConfig {
                 data_path: "file:///tmp/ducklake-cache-test/".to_string(),
+                ..Default::default()
             },
         )
         .await
