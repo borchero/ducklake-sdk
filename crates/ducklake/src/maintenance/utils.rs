@@ -12,7 +12,7 @@ pub(super) struct LookupTableHandle {
 
 impl LookupTableHandle {
     pub(super) async fn new(
-        tx: &mut db::Transaction,
+        tx: &mut db::Transaction<'_>,
         name: &str,
         ids: &[i64],
     ) -> DucklakeResult<Self> {
@@ -41,7 +41,7 @@ impl LookupTableHandle {
             .into()
     }
 
-    pub(super) async fn drop(self, tx: &mut db::Transaction) -> DucklakeResult<()> {
+    pub(super) async fn drop(self, tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
         let query = Table::drop().table(self.name).take();
         tx.execute(&query).await?;
         Ok(())

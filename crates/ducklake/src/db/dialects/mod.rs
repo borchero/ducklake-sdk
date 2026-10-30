@@ -39,6 +39,17 @@ pub(crate) enum Dialect {
 }
 
 impl Dialect {
+    pub(super) fn begin_statement(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::Postgres => "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ",
+            #[cfg(feature = "mysql")]
+            Self::MySql => "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ; START TRANSACTION",
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite => "BEGIN IMMEDIATE",
+        }
+    }
+
     /// Whether this catalog backend can store the entire schema in an inline data table.
     pub(crate) fn supports_data_inlining(&self, schema: &crate::Schema) -> bool {
         let max_columns = match self {

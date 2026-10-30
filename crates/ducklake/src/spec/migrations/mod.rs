@@ -55,15 +55,15 @@ impl Migrations {
         }
     }
 
-    async fn migrate(&self, pool: &db::Pool) -> DucklakeResult<()> {
-        let mut tx = pool.begin().await?;
+    async fn migrate(&self, conn: &mut db::Connection) -> DucklakeResult<()> {
+        let mut tx = conn.begin().await?;
         self.migrate_tables(&mut tx).await?;
         set_version(&mut tx, self.version()).await?;
         tx.commit().await?;
         Ok(())
     }
 
-    async fn migrate_tables(&self, tx: &mut db::Transaction) -> DucklakeResult<()> {
+    async fn migrate_tables(&self, tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
         use Migrations::*;
         match self {
             V0_2 => v0_2::migrate(tx).await,
@@ -74,7 +74,7 @@ impl Migrations {
     }
 }
 
-async fn set_version(tx: &mut db::Transaction, version: &str) -> DucklakeResult<()> {
+async fn set_version(tx: &mut db::Transaction<'_>, version: &str) -> DucklakeResult<()> {
     execute_migration!(
         tx,
         Query::update()
@@ -88,12 +88,15 @@ async fn set_version(tx: &mut db::Transaction, version: &str) -> DucklakeResult<
 /* ----------------------------------------- MIGRATION ----------------------------------------- */
 
 /// Migrate the catalog database to the most up-to-date DuckLake schema.
-pub(crate) async fn migrate_catalog(pool: &db::Pool, current_version: &str) -> DucklakeResult<()> {
+pub(crate) async fn migrate_catalog(
+    conn: &mut db::Connection,
+    current_version: &str,
+) -> DucklakeResult<()> {
     let current_semver = current_version.parse::<DucklakeVersion>()?;
     for migration in Migrations::iter() {
         let migration_semver = migration.version().parse::<DucklakeVersion>()?;
         if migration_semver > current_semver {
-            migration.migrate(pool).await?;
+            migration.migrate(conn).await?;
         }
     }
     Ok(())
