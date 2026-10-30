@@ -318,7 +318,7 @@ impl<'a> Transaction<'a> {
     }
 
     async fn finalize_commit(
-        tx: &mut db::Transaction,
+        tx: &mut db::Transaction<'_>,
         state: &CommitState<'_>,
         applied_changes: &AppliedChangeSet,
         table_ids_with_schema_changes: &[i64],

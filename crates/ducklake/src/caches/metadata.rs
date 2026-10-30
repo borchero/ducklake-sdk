@@ -12,8 +12,8 @@ pub(crate) struct MetadataCache {
 }
 
 impl MetadataCache {
-    pub(crate) async fn new(pool: db::Pool) -> DucklakeResult<Self> {
-        let metadata = Metadata::load(&pool).await?;
+    pub(crate) async fn new(pool: db::Pool, conn: &mut db::Connection) -> DucklakeResult<Self> {
+        let metadata = Metadata::load(conn).await?;
         Ok(Self {
             pool,
             metadata: RwLock::new(Arc::new(metadata)),
@@ -88,12 +88,12 @@ const DEFAULT_DELETE_OLDER_THAN: Interval = Interval {
 /* -------------------------------------------- LOAD ------------------------------------------- */
 
 impl Metadata {
-    async fn load(pool: &db::Pool) -> DucklakeResult<Self> {
+    async fn load(conn: &mut db::Connection) -> DucklakeResult<Self> {
         let query = Query::select()
             .column(Asterisk)
             .from(ducklake_metadata::Table)
             .to_owned();
-        let entries = pool.fetch_all(&query).await?;
+        let entries = conn.fetch_all(&query).await?;
         Ok(Self::new(entries))
     }
 

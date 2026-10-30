@@ -59,7 +59,7 @@ pub(crate) async fn init_catalog(pool: &db::Pool, config: Config) -> DucklakeRes
     Ok(())
 }
 
-async fn populate(tx: &mut db::Transaction, data_path: &str) -> DucklakeResult<()> {
+async fn populate(tx: &mut db::Transaction<'_>, data_path: &str) -> DucklakeResult<()> {
     // Basic metadata
     tx.insert_entities([
         DucklakeMetadata {

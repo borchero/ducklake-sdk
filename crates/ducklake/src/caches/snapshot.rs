@@ -21,13 +21,14 @@ pub(crate) struct SnapshotCache {
 impl SnapshotCache {
     pub(crate) async fn new(
         pool: db::Pool,
+        conn: &mut db::Connection,
         snapshot_info: Option<SnapshotInfo>,
     ) -> DucklakeResult<Self> {
         let catalog_cache = CatalogCache::new(pool.clone());
         let table_stats_cache = TableStatsCache::new(pool.clone());
         let snapshot_info = match snapshot_info {
             Some(snapshot_info) => snapshot_info,
-            None => SnapshotInfo::load_latest(&pool).await?,
+            None => SnapshotInfo::load_latest(conn).await?,
         };
         let current = Arc::new(Snapshot::new(
             snapshot_info,
@@ -46,7 +47,7 @@ impl SnapshotCache {
     /* ------------------------------------------ GET ------------------------------------------ */
 
     pub(crate) async fn get_latest(&self) -> DucklakeResult<Arc<Snapshot>> {
-        let snapshot_info = SnapshotInfo::load_latest(&self.pool).await?;
+        let snapshot_info = SnapshotInfo::load_latest(&mut self.pool.acquire().await?).await?;
         let snapshot = self.insert_snapshot(snapshot_info);
         Ok(snapshot)
     }
@@ -170,7 +171,7 @@ pub(crate) struct SnapshotInfo {
 }
 
 impl SnapshotInfo {
-    async fn load_latest(pool: &db::Pool) -> DucklakeResult<Self> {
+    async fn load_latest(conn: &mut db::Connection) -> DucklakeResult<Self> {
         // Read the latest snapshot
         let query = Query::select()
             .column(Asterisk)
@@ -181,27 +182,30 @@ impl SnapshotInfo {
             )
             .limit(1)
             .to_owned();
-        let snapshot: DucklakeSnapshot = pool.fetch_one(&query).await?;
+        let snapshot: DucklakeSnapshot = conn.fetch_one(&query).await?;
 
         // Translate into snapshot struct
         Ok(snapshot.into())
     }
 
-    pub(crate) async fn load_for_id(pool: &db::Pool, snapshot_id: i64) -> DucklakeResult<Self> {
+    pub(crate) async fn load_for_id(
+        conn: &mut db::Connection,
+        snapshot_id: i64,
+    ) -> DucklakeResult<Self> {
         // Read the snapshot for the given ID
         let query = Query::select()
             .column(Asterisk)
             .from(ducklake_snapshot::Table)
             .and_where(ducklake_snapshot::Column::SnapshotId.col().eq(snapshot_id))
             .to_owned();
-        let snapshot: DucklakeSnapshot = pool.fetch_one(&query).await?;
+        let snapshot: DucklakeSnapshot = conn.fetch_one(&query).await?;
 
         // Translate into snapshot struct
         Ok(snapshot.into())
     }
 
     pub(crate) async fn load_for_timestamp(
-        pool: &db::Pool,
+        conn: &mut db::Connection,
         timestamp: chrono::DateTime<chrono::Utc>,
     ) -> DucklakeResult<Self> {
         // Read the most recent snapshot at the provided timestamp
@@ -215,7 +219,7 @@ impl SnapshotInfo {
             )
             .limit(1)
             .to_owned();
-        let snapshot: DucklakeSnapshot = pool.fetch_one(&query).await?;
+        let snapshot: DucklakeSnapshot = conn.fetch_one(&query).await?;
 
         // Translate into snapshot struct
         Ok(snapshot.into())
@@ -311,7 +315,8 @@ mod tests {
         )
         .await
         .unwrap();
-        SnapshotCache::new(pool, None).await.unwrap()
+        let mut conn = pool.acquire().await.unwrap();
+        SnapshotCache::new(pool, &mut conn, None).await.unwrap()
     }
 
     #[rstest::rstest]
