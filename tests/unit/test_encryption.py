@@ -164,6 +164,7 @@ def test_register_encrypted_file_with_wrong_key(
     assert encrypted_table.scan().data_files == []
 
 
+@pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
 def test_encrypted_scan_tracks_new_keys_and_inline_data(encrypted_table: dl.Table) -> None:
     # Arrange
     scan = encrypted_table.scan_polars()
