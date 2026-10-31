@@ -34,6 +34,7 @@ impl<'py> IntoPyObject<'py> for Wrap<ScanDeleteFile> {
         let dl = ducklake_module(py).bind(py);
         let cls = dl.getattr("DeleteFile")?;
         let kwargs = PyDict::new(py);
+        kwargs.set_item("encryption_key", self.0.encryption_key)?;
         kwargs.set_item("file_size_bytes", self.0.file_size_bytes)?;
         kwargs.set_item("footer_size_bytes", self.0.footer_size_bytes)?;
         cls.call((self.0.path, self.0.num_deletes), Some(&kwargs))
@@ -60,7 +61,12 @@ impl<'py> IntoPyObject<'py> for Wrap<ScanDataFile> {
             .inline_deletes
             .as_ref()
             .map(|array| ArrowPyArray::from_array_ref(array.clone()));
-        cls.call1((self.0.path, statistics, delete_files, inline_deletes))
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("encryption_key", self.0.encryption_key)?;
+        cls.call(
+            (self.0.path, statistics, delete_files, inline_deletes),
+            Some(&kwargs),
+        )
     }
 }
 

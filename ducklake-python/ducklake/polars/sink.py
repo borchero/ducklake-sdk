@@ -1,3 +1,5 @@
+import base64
+import secrets
 import warnings
 from functools import partial
 from typing import Literal, overload
@@ -51,7 +53,14 @@ def sink_ducklake(
 ) -> pl.LazyFrame | None:
     # 1) First, we need to read metadata information about the table to know how to write it. This
     #    also makes sure that the table metadata is up-to-date.
-    table_metadata, file_generator, _ = table._get_write_info()
+    table_metadata, file_generator, _, encrypted = table._get_write_info()
+    encryption_key = secrets.token_bytes(32) if encrypted else None
+    encryption = (
+        pl.ParquetEncryptionProperties(footer_key=encryption_key)
+        if encryption_key is not None
+        else None
+    )
+    catalog_key = base64.b64encode(encryption_key).decode("ascii") if encryption_key else None
 
     # 2) Then, we prepare the lazy frame contents
     lf = lf.pipe(_prepare_frame, table)
@@ -88,7 +97,7 @@ def sink_ducklake(
     #    committing the new data files to the Ducklake. This allows to perform the entire
     #    operation lazily if requested.
     sinked_paths_callback = partial(
-        _sinked_paths_callback, table, file_generator.base_path, partition_value_cache
+        _sinked_paths_callback, table, file_generator.base_path, partition_value_cache, catalog_key
     )
     return lf.sink_parquet(  # ty: ignore[no-matching-overload]
         target,
@@ -102,6 +111,7 @@ def sink_ducklake(
         optimizations=optimizations or DEFAULT_QUERY_OPT_FLAGS,
         lazy=lazy,
         arrow_schema=table.schema,
+        encryption=encryption,
         sinked_paths_callback=sinked_paths_callback,
     )
 
@@ -119,7 +129,7 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
             "allowed as inlining of categorical data is not yet supported."
         )
 
-    table_metadata, _, supports_inlining = table._get_write_info()
+    table_metadata, _, supports_inlining, _ = table._get_write_info()
     inline_limit = table_metadata["data_inlining_row_limit"]
     would_inline = inline_limit > 0 and df.height <= inline_limit
     if would_inline and supports_inlining:
@@ -352,6 +362,7 @@ def _sinked_paths_callback(
     table: Table | TransactionTable,
     base_path: str,
     partition_value_cache: dict[str, pl.DataFrame],
+    encryption_key: str | None,
     args: SinkedPathsCallbackArgs,
 ) -> None:
     new_data_files: list[WriteDataFile] = []
@@ -365,6 +376,7 @@ def _sinked_paths_callback(
         partitions = partition_value_cache[relative_path]
         data_file = WriteDataFile(
             path=relative_path,
+            encryption_key=encryption_key,
             partition_values={
                 name.removeprefix(PARTITION_COLUMN_PREFIX): value
                 for name, value in partitions.row(0, named=True).items()

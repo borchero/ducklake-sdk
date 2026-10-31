@@ -171,6 +171,11 @@ impl Ducklake {
                 "the source and target must be different DuckLake catalogs".to_string(),
             ));
         }
+        if self.metadata().encrypted != target.metadata().encrypted {
+            return Err(DucklakeError::InvalidTableTransfer(
+                "the source and target catalogs must use the same encryption setting".to_string(),
+            ));
+        }
         if !copy_files {
             let mut seen = std::collections::HashSet::with_capacity(tables.len());
             if !tables.iter().all(|transfer| seen.insert(transfer.table.id)) {
@@ -232,7 +237,7 @@ impl Ducklake {
             tx.create_schema(&name.schema, None, IfExistsStrategy::Skip)?;
             let mut table = tx.create_transfer_table(name.clone(), info, retired_columns)?;
 
-            let (_, generator, _) = table.get_write_info()?;
+            let (_, generator, _, _) = table.get_write_info()?;
             let mut data_files = Vec::with_capacity(scan.result.data_files.len());
             for (data_file, metadata) in scan
                 .result
@@ -263,6 +268,7 @@ impl Ducklake {
                 data_files.push(crate::transaction::TransferDataFile {
                     data_file: WriteDataFile {
                         path,
+                        encryption_key: data_file.encryption_key,
                         statistics: Some(data_file.statistics),
                         partition_values: None,
                     },

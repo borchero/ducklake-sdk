@@ -200,9 +200,9 @@ impl PyTransactionTable {
 
     fn get_write_info(
         &mut self,
-    ) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator, bool)> {
+    ) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator, bool, bool)> {
         let table = self.table.clone();
-        let (metadata, generator, supports_inlining) = self
+        let (metadata, generator, supports_inlining, encrypted) = self
             .tx()
             .get_table_write_info(&table)
             .map_err(error::into_pyerr)?;
@@ -210,6 +210,7 @@ impl PyTransactionTable {
             metadata.into(),
             PyDataFilePathGenerator::new(generator),
             supports_inlining,
+            encrypted,
         ))
     }
 

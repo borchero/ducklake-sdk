@@ -93,6 +93,8 @@ pub enum DucklakeError {
     UnsupportedUrlScheme(String),
     #[error("unsupported Arrow data type: {0}")]
     UnsupportedArrowDataType(String),
+    #[error("encryption key must be valid base64")]
+    InvalidEncryptionKey,
     #[error("parquet error: {0}")]
     Parquet(#[from] parquet::errors::ParquetError),
     #[error("object store error: {0}")]

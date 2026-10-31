@@ -80,6 +80,7 @@ pub(super) fn parse_delete_file(
     let path = io::DucklakePath::new(&delete_file.path.clone(), delete_file.path_is_relative);
     crate::ScanDeleteFile {
         path: base_path.join(&path).to_string(),
+        encryption_key: delete_file.encryption_key.clone(),
         num_deletes: delete_file.delete_count.unwrap_or_default() as usize,
         file_size_bytes: delete_file.file_size_bytes.map(|s| s as usize),
         footer_size_bytes: delete_file.footer_size.map(|s| s as usize),

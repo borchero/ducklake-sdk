@@ -57,6 +57,7 @@ impl FromPyObject<'_, '_> for Wrap<WriteDataFile> {
 
         Ok(Wrap(WriteDataFile {
             path,
+            encryption_key: ob.getattr("encryption_key")?.extract()?,
             statistics,
             partition_values,
         }))

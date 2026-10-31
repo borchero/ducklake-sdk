@@ -141,7 +141,7 @@ class Table:
             [WriteDataFile(f) if isinstance(f, str) else f for f in files]
         )
 
-    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator, bool]:
+    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator, bool, bool]:
         return self._pytable.get_write_info()
 
     def _write_inline_data(self, data: ArrowStreamExportable) -> None:

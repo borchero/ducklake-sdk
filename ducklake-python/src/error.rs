@@ -45,6 +45,7 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
         | InvalidTimeZone(_)
         | InvalidDatabaseOptions(_)
         | ReadOnlyMetadata { .. }
+        | InvalidEncryptionKey
         | SnapshotPinned
         | InvalidChanges(_)
         | InvalidTableTransfer(_) => PyValueError::new_err(error.to_string()),

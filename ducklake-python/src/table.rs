@@ -170,13 +170,14 @@ impl PyTable {
     pub fn get_write_info(
         &self,
         py: Python,
-    ) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator, bool)> {
-        let (metadata, generator, supports_inlining) =
+    ) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator, bool, bool)> {
+        let (metadata, generator, supports_inlining, encrypted) =
             block_on(py, self.0.get_write_info()).map_err(error::into_pyerr)?;
         Ok((
             metadata.into(),
             PyDataFilePathGenerator::new(generator),
             supports_inlining,
+            encrypted,
         ))
     }
 
