@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::caches::{SnapshotInfo, TableStats};
-use crate::catalog::{Catalog, ColumnRef, SchemaRef, TableRef, ViewRef};
+use crate::catalog::{Catalog, ColumnRef, MacroRef, SchemaRef, TableRef, ViewRef};
 use crate::spec::DucklakeSnapshot;
 use crate::{DucklakeResult, db};
 
@@ -73,6 +73,17 @@ impl<'a> CommitState<'a> {
         let id = self.catalog_id();
         let Ok(mut view) = self.catalog.to_mut().view_mut(view_ref);
         view.resolve_id(id);
+        id
+    }
+
+    /// Obtain or allocate the ID for a macro.
+    pub(crate) fn macro_id(&mut self, macro_ref: MacroRef) -> i64 {
+        if let Some(id) = self.catalog.macro_(macro_ref).into_ok().id() {
+            return id;
+        }
+        let id = self.catalog_id();
+        let Ok(mut macro_) = self.catalog.to_mut().macro_mut(macro_ref);
+        macro_.resolve_id(id);
         id
     }
 

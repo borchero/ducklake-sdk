@@ -28,6 +28,12 @@ API Reference
 
         Read query results and inspect view definitions.
 
+    .. grid-item-card:: Macros
+        :link: macro/index
+        :link-type: doc
+
+        Create, inspect, and delete scalar and table macros.
+
 .. grid::
 
     .. grid-item-card:: Transactions
@@ -70,6 +76,8 @@ API Reference
     ducklake/index
     table/index
     view/index
+
+    macro/index
     transaction/index
     types/index
     errors/index

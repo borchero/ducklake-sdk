@@ -1,4 +1,5 @@
 mod data;
+mod macro_;
 mod name;
 mod partition;
 mod schema;
@@ -7,6 +8,7 @@ mod tag;
 mod value;
 
 pub use data::*;
+pub use macro_::{MacroImplementation, MacroParameter, MacroType};
 pub use name::{ColumnName, IntoColumnName, TableName};
 pub(crate) use partition::Partition;
 pub use partition::{PartitionColumn, PartitionTransform};

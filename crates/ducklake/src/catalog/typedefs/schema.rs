@@ -10,5 +10,6 @@ pub(in crate::catalog) struct CatalogSchema {
     pub name: String,
     pub tables: HashMap<String, ArenaIdx>,
     pub views: HashMap<String, ArenaIdx>,
+    pub macros: HashMap<(String, crate::MacroType), ArenaIdx>,
     pub path: io::DucklakePath,
 }

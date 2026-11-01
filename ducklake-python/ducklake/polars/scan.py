@@ -344,7 +344,7 @@ def _scan_view(view: View, ancestors: frozenset[typedefs.TableName]) -> pl.LazyF
     if name in ancestors:
         raise ValueError(f"cyclic view reference involving {name}")
 
-    sql, pytables, pyviews = view._pyview.polars_query()
+    sql, pytables, pyviews = view._pyview.polars_definition()
     frames = {
         alias: Table._from_pytable(
             pytable, view._duckdb_connection_fn, view._storage_options, view._time_zone

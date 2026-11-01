@@ -12,7 +12,7 @@ use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
 use crate::utils::runtime::block_on;
-use crate::{PyTable, PyTransaction, PyView, error};
+use crate::{PyMacro, PyTable, PyTransaction, PyView, error};
 
 #[pyclass]
 pub struct PyDucklake(Ducklake);
@@ -306,6 +306,55 @@ impl PyDucklake {
     pub fn list_views(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyView>> {
         block_on(py, self.0.list_views(schema.as_deref()))
             .map(|views| views.into_iter().map(PyView::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn create_macro(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::TableName>,
+        macro_type: &str,
+        implementations: Vec<crate::macro_::PyMacroImplementation>,
+        if_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<PyMacro> {
+        let macro_type = macro_type.parse().map_err(error::into_pyerr)?;
+        let implementations = crate::macro_::macro_implementations_from_python(implementations);
+        block_on(
+            py,
+            self.0
+                .create_macro(name.0, macro_type, implementations, if_exists.0),
+        )
+        .map(PyMacro::new)
+        .map_err(error::into_pyerr)
+    }
+
+    pub fn macro_(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::TableName>,
+        macro_type: &str,
+    ) -> PyResult<PyMacro> {
+        let macro_type = macro_type.parse().map_err(error::into_pyerr)?;
+        block_on(py, self.0.macro_(name.0, macro_type))
+            .map(PyMacro::new)
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn list_macros(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyMacro>> {
+        block_on(py, self.0.list_macros(schema.as_deref()))
+            .map(|macros| macros.into_iter().map(PyMacro::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn delete_macro(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::TableName>,
+        macro_type: &str,
+        if_not_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<()> {
+        let macro_type = macro_type.parse().map_err(error::into_pyerr)?;
+        block_on(py, self.0.delete_macro(name.0, macro_type, if_not_exists.0))
             .map_err(error::into_pyerr)
     }
 

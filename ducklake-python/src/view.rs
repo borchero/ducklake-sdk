@@ -43,11 +43,11 @@ impl PyView {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn polars_query(
+    pub fn polars_definition(
         &self,
         py: Python,
     ) -> PyResult<(String, Vec<(String, PyTable)>, Vec<(String, PyView)>)> {
-        let definition = block_on(py, self.0.definition()).map_err(error::into_pyerr)?;
+        let definition = block_on(py, self.0.expanded_definition()).map_err(error::into_pyerr)?;
         let (sql, tables, views) = normalize_query(definition);
         Ok((
             sql,

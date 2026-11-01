@@ -16,3 +16,8 @@ def random_table_name() -> str:
 @pytest.fixture()
 def random_view_name() -> str:
     return "view_" + str(uuid.uuid4()).replace("-", "")
+
+
+@pytest.fixture()
+def random_macro_name() -> str:
+    return "macro_" + str(uuid.uuid4()).replace("-", "")

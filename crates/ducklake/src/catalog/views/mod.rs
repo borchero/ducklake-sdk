@@ -2,10 +2,12 @@ use crate::catalog::Catalog;
 use crate::{DucklakeError, DucklakeResult};
 
 mod column;
+mod macro_;
 mod schema;
 mod table;
 mod view;
 
+pub(crate) use macro_::MacroView;
 pub(crate) use schema::SchemaView;
 pub(crate) use table::TableView;
 pub(crate) use view::ViewView;

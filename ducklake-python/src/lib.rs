@@ -5,12 +5,14 @@ use pyo3::prelude::*;
 mod conversion;
 mod ducklake;
 mod error;
+mod macro_;
 mod table;
 mod transaction;
 mod utils;
 mod view;
 
 use ducklake::PyDucklake;
+use macro_::PyMacro;
 use table::PyTable;
 use transaction::{PyTransaction, PyTransactionTable};
 use view::PyView;
@@ -21,7 +23,7 @@ mod ducklake_module {
     #[pymodule_export]
     use super::ducklake::{connect, create};
     #[pymodule_export]
-    use super::{PyDucklake, PyTable, PyTransaction, PyTransactionTable, PyView};
+    use super::{PyDucklake, PyMacro, PyTable, PyTransaction, PyTransactionTable, PyView};
     #[pymodule_export]
     use crate::error::{
         AlreadyExistsError,

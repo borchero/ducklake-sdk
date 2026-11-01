@@ -15,6 +15,9 @@ pub(super) struct TransactionChanges {
     pub new_schemas: Vec<DucklakeSchema>,
     pub new_tables: Vec<DucklakeTable>,
     pub new_views: Vec<DucklakeView>,
+    pub new_macros: Vec<DucklakeMacro>,
+    pub new_macro_impls: Vec<DucklakeMacroImpl>,
+    pub new_macro_parameters: Vec<DucklakeMacroParameters>,
     pub new_columns: Vec<DucklakeColumn>,
     pub new_partition_info: Vec<DucklakePartitionInfo>,
     pub new_partition_columns: Vec<DucklakePartitionColumn>,
@@ -25,6 +28,7 @@ pub(super) struct TransactionChanges {
     pub dropped_schemas: HashSet<i64>,
     pub dropped_tables: HashSet<i64>,
     pub dropped_views: HashSet<i64>,
+    pub dropped_macros: HashSet<i64>,
     pub detached_tables: HashSet<i64>,
     pub renamed_tables: HashMap<i64, String>,
     pub retired_partition_tables: HashSet<i64>,
@@ -111,6 +115,7 @@ impl TransactionChanges {
         );
         retire!(ducklake_schema, SchemaId, self.dropped_schemas.iter());
         retire!(ducklake_view, ViewId, self.dropped_views.iter());
+        retire!(ducklake_macro, MacroId, self.dropped_macros.iter());
         retire!(ducklake_column, TableId, self.dropped_tables.iter());
         retire!(ducklake_column_tag, TableId, self.dropped_tables.iter());
         retire!(ducklake_data_file, TableId, self.dropped_tables.iter());
@@ -148,6 +153,9 @@ impl TransactionChanges {
         persist_table_renames(tx, snapshot_id, self.renamed_tables).await?;
         tx.insert_entities(self.new_tables).await?;
         tx.insert_entities(self.new_views).await?;
+        tx.insert_entities(self.new_macros).await?;
+        tx.insert_entities(self.new_macro_impls).await?;
+        tx.insert_entities(self.new_macro_parameters).await?;
         tx.insert_entities(self.new_columns).await?;
         tx.insert_entities(self.new_partition_info).await?;
         tx.insert_entities(self.new_partition_columns).await?;

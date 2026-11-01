@@ -1,6 +1,7 @@
 mod changes;
 mod commit_state;
 mod executors;
+mod macro_;
 mod schema;
 mod table;
 mod transaction_changes;
@@ -149,6 +150,33 @@ impl<'a> Transaction<'a> {
                 );
             }
             Ok(views)
+        }
+    }
+
+    /// List all macros in the transaction-local catalog, optionally restricted to a schema.
+    pub fn list_macros(
+        &self,
+        schema: Option<&str>,
+    ) -> DucklakeResult<Vec<(TableName, crate::MacroType)>> {
+        if let Some(schema) = schema {
+            Ok(self
+                .catalog
+                .schema(schema)?
+                .list_macros()
+                .into_iter()
+                .map(|macro_| (macro_.name().clone(), macro_.macro_type()))
+                .collect())
+        } else {
+            let mut macros = Vec::new();
+            for schema in self.catalog.list_schemas() {
+                macros.extend(
+                    schema
+                        .list_macros()
+                        .into_iter()
+                        .map(|macro_| (macro_.name().clone(), macro_.macro_type())),
+                );
+            }
+            Ok(macros)
         }
     }
 
