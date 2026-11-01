@@ -29,5 +29,5 @@ def create_default_macro(
 @pytest.fixture()
 def macro_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> dl.Table:
     table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
-    table.write_polars(pl.DataFrame({"x": [1, 2, 3]}))
+    table.sink_polars(pl.LazyFrame({"x": [1, 2, 3]}))
     return table
