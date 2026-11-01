@@ -13,9 +13,9 @@ pytestmark = pytest.mark.skip_config(
 # -------------------------------------------- DUCKDB ------------------------------------------- #
 
 
-def test_scan_duckdb(ducklake: dl.Ducklake, random_table_name: str) -> None:
+def test_scan_duckdb(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
-    table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
     num_rows = table.metadata["data_inlining_row_limit"] * 2
     lf = pl.LazyFrame({"x": range(num_rows)})
 
@@ -28,9 +28,9 @@ def test_scan_duckdb(ducklake: dl.Ducklake, random_table_name: str) -> None:
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
-def test_scan_duckdb_inline(ducklake: dl.Ducklake, random_table_name: str) -> None:
+def test_scan_duckdb_inline(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
-    table = ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
     num_rows = table.metadata["data_inlining_row_limit"]
     df = pl.DataFrame({"x": range(num_rows)})
 

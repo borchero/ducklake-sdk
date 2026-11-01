@@ -53,11 +53,11 @@ def test_create_overloaded_macro(shared_ducklake: dl.Ducklake, random_macro_name
     macro = shared_ducklake.create_macro(random_macro_name, implementations)
     result = connection.execute(
         f"SELECT {random_macro_name}(41::INTEGER), {random_macro_name}('hi'::VARCHAR)"
-    ).fetchone()
+    ).fetchall()
 
     # Assert
     assert macro.implementations == implementations
-    assert result == (42, "hi!")
+    assert result == [(42, "hi!")]
 
 
 def test_list_macros_filters_schema(
@@ -145,14 +145,14 @@ def test_scalar_and_table_macros_with_same_name_are_independent(
     ]
     macro_types = {macro.macro_type for macro in matching}
     shared_ducklake.delete_macro(random_macro_name)
-    table_result = connection.execute(f"SELECT * FROM {random_macro_name}()").fetchone()
+    table_result = connection.execute(f"SELECT * FROM {random_macro_name}()").fetchall()
 
     # Assert
     assert macro_types == {"scalar", "table"}
     assert shared_ducklake.get_macro(random_macro_name, macro_type="table").macro_type == "table"
     with pytest.raises(dlexc.NotFoundError):
         shared_ducklake.get_macro(random_macro_name)
-    assert table_result == (42,)
+    assert table_result == [(42,)]
 
 
 def test_sdk_loads_duckdb_scalar_and_table_macros_with_same_name(
@@ -357,10 +357,10 @@ def test_macro_blob_defaults(
     create_default_macro("a\\xAAb", "blob")
 
     # Act
-    result = shared_ducklake._duckdb_connection.execute(f"SELECT {random_macro_name}()").fetchone()
+    result = shared_ducklake._duckdb_connection.execute(f"SELECT {random_macro_name}()").fetchall()
 
     # Assert
-    assert result == (b"a\xaab",)
+    assert result == [(b"a\xaab",)]
 
 
 @pytest.mark.parametrize(
