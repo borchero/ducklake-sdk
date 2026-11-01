@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from contextlib import nullcontext
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 import polars as pl
@@ -299,6 +300,8 @@ def test_polars_macro_resolution_is_case_insensitive_and_falls_back_to_main(
         ("0", "boolean", False),
         ("2024-01-02", "date", date(2024, 1, 2)),
         ("42", "int32", 42),
+        ("1", "int8", 1),
+        ("0", "decimal(2,2)", Decimal("0")),
     ],
 )
 def test_macro_defaults_match_duckdb_and_polars(
@@ -315,14 +318,34 @@ def test_macro_defaults_match_duckdb_and_polars(
     view = shared_ducklake.create_view(random_view_name, f"SELECT {random_macro_name}()")
 
     # Act
-    duckdb_result = shared_ducklake._duckdb_connection.execute(
-        f"SELECT * FROM {view.name}"
-    ).fetchone()
-    polars_result = view.read_polars().item()
+    duckdb_result = shared_ducklake._duckdb_connection.execute(f"SELECT * FROM {view.name}").pl()
+    polars_result = view.read_polars()
 
     # Assert
-    assert duckdb_result == (expected,)
-    assert polars_result == expected
+    assert_frame_equal(polars_result, duckdb_result)
+    assert polars_result.item() == expected
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_polars_macro_preserves_column_name(
+    shared_ducklake: dl.Ducklake,
+    random_macro_name: str,
+    random_view_name: str,
+    nested: bool,
+) -> None:
+    # Arrange
+    shared_ducklake.create_macro(random_macro_name, "value", ["value"])
+    query = f"SELECT {random_macro_name}(x) FROM (SELECT 42 AS x)"
+    if nested:
+        query = f'SELECT "{random_macro_name}(x)" FROM ({query})'
+    view = shared_ducklake.create_view(random_view_name, query)
+
+    # Act
+    actual = view.read_polars()
+    expected = shared_ducklake._duckdb_connection.execute(f"SELECT * FROM {view.name}").pl()
+
+    # Assert
+    assert_frame_equal(actual, expected)
 
 
 def test_macro_blob_defaults(

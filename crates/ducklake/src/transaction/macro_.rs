@@ -234,7 +234,11 @@ fn validate_default_value(data_type: &str, value: &str) -> DucklakeResult<()> {
             {
                 let fractional_digits = value.scale();
                 let mantissa_digits = value.mantissa().unsigned_abs().to_string().len() as u32;
-                let integer_digits = mantissa_digits.saturating_sub(fractional_digits);
+                let integer_digits = if value.is_zero() {
+                    0
+                } else {
+                    mantissa_digits.saturating_sub(fractional_digits)
+                };
                 if fractional_digits > u32::from(scale)
                     || integer_digits > u32::from(precision - scale)
                 {

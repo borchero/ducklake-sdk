@@ -7,7 +7,10 @@ use sqlparser::ast::{
     FunctionArg,
     FunctionArgExpr,
     FunctionArguments,
+    Ident,
     ObjectName,
+    Select,
+    SelectItem,
     SetExpr,
     Statement,
     TableAlias,
@@ -222,6 +225,22 @@ impl<'a> MacroExpander<'a> {
 impl VisitorMut for MacroExpander<'_> {
     type Break = String;
 
+    fn pre_visit_select(&mut self, select: &mut Select) -> ControlFlow<Self::Break> {
+        for item in &mut select.projection {
+            if let SelectItem::UnnamedExpr(expression) = item {
+                let original = expression.clone();
+                VisitMut::visit(expression, self)?;
+                if *expression != original {
+                    *item = SelectItem::ExprWithAlias {
+                        expr: expression.clone(),
+                        alias: Ident::with_quote('"', original.to_string()),
+                    };
+                }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
     fn post_visit_expr(&mut self, expression: &mut Expr) -> ControlFlow<Self::Break> {
         let Expr::Function(function) = expression else {
             return ControlFlow::Continue(());
@@ -374,6 +393,10 @@ fn default_expression(parameter: &MacroParameter, dialect: &str) -> Option<Expr>
         return parse_scalar_macro_expression(default, dialect).ok();
     }
     let data_type = crate::DataType::parse_primitive(&parameter.default_value_type).ok()?;
+    let sql_type = match data_type {
+        crate::DataType::Int8 => "TINYINT".to_string(),
+        _ => data_type.to_string(),
+    };
     let literal = match parameter.default_value_type.as_str() {
         "varchar" => format!("'{}'", default.replace('\'', "''")),
         _ if default == crate::spec::literals::NULL_STRING => default.clone(),
@@ -384,7 +407,7 @@ fn default_expression(parameter: &MacroParameter, dialect: &str) -> Option<Expr>
         },
         _ => format!("'{}'", default.replace('\'', "''")),
     };
-    parse_scalar_macro_expression(&format!("CAST({literal} AS {data_type})"), dialect).ok()
+    parse_scalar_macro_expression(&format!("CAST({literal} AS {sql_type})"), dialect).ok()
 }
 
 /// Visitor collecting catalog relations while tracking the CTEs visible in each query scope.

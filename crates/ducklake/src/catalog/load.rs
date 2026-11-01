@@ -46,13 +46,28 @@ impl Catalog {
         let tables_query = snapshot_query!(ducklake_table, snapshot_id);
         let views_query = snapshot_query!(ducklake_view, snapshot_id);
         let macros_query = snapshot_query!(ducklake_macro, snapshot_id);
+        let active_macro_ids = macros_query
+            .clone()
+            .clear_selects()
+            .column(ducklake_macro::Column::MacroId)
+            .to_owned();
         let macro_impls_query = Query::select()
             .column(Asterisk)
             .from(ducklake_macro_impl::Table)
+            .and_where(
+                ducklake_macro_impl::Column::MacroId
+                    .col()
+                    .in_subquery(active_macro_ids.clone()),
+            )
             .to_owned();
         let macro_parameters_query = Query::select()
             .column(Asterisk)
             .from(ducklake_macro_parameters::Table)
+            .and_where(
+                ducklake_macro_parameters::Column::MacroId
+                    .col()
+                    .in_subquery(active_macro_ids),
+            )
             .to_owned();
         let columns_query = snapshot_query!(ducklake_column, snapshot_id);
         let tags_query = snapshot_query!(ducklake_tag, snapshot_id);
