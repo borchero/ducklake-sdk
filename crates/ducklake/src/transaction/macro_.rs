@@ -273,3 +273,89 @@ fn is_macro_blob(value: &str) -> bool {
     }
     true
 }
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{CreateOptions, Ducklake, MacroImplementation, MacroParameter};
+
+    #[rstest]
+    #[case(MacroType::Scalar, "x + 1")]
+    #[case(MacroType::Table, "SELECT x + 1")]
+    #[tokio::test]
+    async fn test_macro_transactions(#[case] macro_type: MacroType, #[case] sql: &str) {
+        // Arrange
+        let lake = Ducklake::create(CreateOptions::new(
+            "sqlite://:memory:",
+            "file:///tmp/macros/",
+        ))
+        .await
+        .unwrap();
+        let implementation = MacroImplementation::new(
+            sql,
+            vec![
+                MacroParameter::new("x")
+                    .with_type("int32")
+                    .with_default("1", "int32"),
+            ],
+        );
+        let mut tx = lake.transaction().await.unwrap();
+
+        // Act
+        tx.create_macro(
+            "m",
+            macro_type,
+            vec![implementation.clone()],
+            IfExistsStrategy::Fail,
+        )
+        .unwrap();
+
+        // Assert
+        let expected = vec![("main.m".parse().unwrap(), macro_type)];
+        assert_eq!(tx.list_macros(None).unwrap(), expected);
+        assert_eq!(tx.list_macros(Some("main")).unwrap(), expected);
+        assert!(lake.list_macros(None).await.unwrap().is_empty());
+        tx.commit().await.unwrap();
+        let macro_ = lake.macro_("m", macro_type).await.unwrap();
+        assert_eq!(
+            macro_.implementations().await.unwrap(),
+            vec![implementation]
+        );
+
+        // Arrange
+        let mut first = lake.transaction().await.unwrap();
+        let mut second = lake.transaction().await.unwrap();
+        first
+            .delete_macro("m", macro_type, IfExistsStrategy::Fail)
+            .unwrap();
+        second
+            .delete_macro("m", macro_type, IfExistsStrategy::Fail)
+            .unwrap();
+
+        // Act
+        first.commit().await.unwrap();
+        let result = second.commit().await;
+
+        // Assert
+        assert!(matches!(result, Err(DucklakeError::TransactionConflict(_))));
+        assert!(lake.list_macros(None).await.unwrap().is_empty());
+    }
+
+    #[rstest]
+    #[case(MacroParameter::new("x").with_default("1", "unknown"))]
+    #[case(MacroParameter { default_value_type: "int32".into(), ..MacroParameter::new("x") })]
+    #[case(MacroParameter::new("x").with_type("decimal(2,3)"))]
+    #[case(MacroParameter::new("x").with_default("1", "decimal(2,2)"))]
+    #[case(MacroParameter::new("x").with_default("1 day", "interval"))]
+    #[case(MacroParameter::new("x").with_default("\\xZZ", "blob"))]
+    fn test_invalid_parameter(#[case] mut parameter: MacroParameter) {
+        // Act
+        let result = normalize_parameter(&mut parameter);
+
+        // Assert
+        assert!(matches!(result, Err(DucklakeError::InvalidMacro { .. })));
+    }
+}
