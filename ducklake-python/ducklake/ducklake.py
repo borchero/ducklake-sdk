@@ -4,6 +4,7 @@ import warnings
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, Unpack, cast, overload
 
+from .macro import Macro, MacroImplementation, MacroParameter, MacroType
 from .table import Table
 from .transaction import Transaction
 from .typedefs import (
@@ -415,8 +416,8 @@ class Ducklake:
 
         Args:
             name: The fully qualified name of the new view.
-            sql: The SQL ``SELECT`` query defining the view. This must be a single ``SELECT``
-                query; do not provide a ``CREATE VIEW`` statement.
+            sql: The SQL `SELECT` query defining the view. This must be a single `SELECT`
+                query; do not provide a `CREATE VIEW` statement.
             column_aliases: Optional explicit names for the view's output columns.
             tags: Optional tags to attach to the view.
             if_exists: The strategy to apply if a view with the same name already exists.
@@ -515,7 +516,7 @@ class Ducklake:
             target: The DuckLake to copy the tables into.
 
         Returns:
-            The newly created tables, in the same order as ``tables``.
+            The newly created tables, in the same order as `tables`.
         """
         transfers: list[tuple[str | tuple[str, str] | None, PyTable]] = (
             [(name, table._pytable) for name, table in tables.items()]
@@ -543,7 +544,7 @@ class Ducklake:
             target: The DuckLake to move the tables into.
 
         Returns:
-            The newly created tables, in the same order as ``tables``.
+            The newly created tables, in the same order as `tables`.
         """
         transfers: list[tuple[str | tuple[str, str] | None, PyTable]] = (
             [(name, table._pytable) for name, table in tables.items()]
@@ -552,6 +553,102 @@ class Ducklake:
         )
         pytables = self._pyducklake.move_tables(transfers, target._pyducklake)
         return [target._wrap_table(pytable) for pytable in pytables]
+
+    # ------------------------------------------ MACROS ----------------------------------------- #
+
+    def create_macro(
+        self,
+        name: str | tuple[str, str] | TableName,
+        sql: str | Sequence[MacroImplementation],
+        parameters: Sequence[str | MacroParameter] = (),
+        *,
+        macro_type: MacroType = "scalar",
+        if_exists: Literal["fail", "skip"] = "fail",
+    ) -> Macro:
+        """Create a scalar or table macro in the catalog.
+
+        Args:
+            name: The fully qualified name of the new macro.
+            sql: A SQL expression/query, or a sequence of implementations for an overloaded macro.
+            parameters: Parameters for the convenient single-implementation form. Pass
+                :class:`MacroParameter` values for typed or default parameters.
+            macro_type: Whether the macro returns a scalar value or a table.
+            if_exists: The strategy to apply if a macro with the same name already exists.
+                "fail" raises an error, while "skip" leaves the catalog unchanged.
+
+        Returns:
+            The newly created :class:`Macro`.
+        """
+        if isinstance(sql, str):
+            implementations = [MacroImplementation(sql, parameters)]
+        else:
+            if parameters:
+                raise ValueError(
+                    "parameters must be specified on each implementation for overloaded macros"
+                )
+            implementations = list(sql)
+        native_implementations = [
+            (
+                implementation.dialect,
+                implementation.sql,
+                [
+                    (
+                        parameter.name,
+                        parameter.data_type,
+                        parameter.default_value,
+                        parameter.default_value_type,
+                    )
+                    for parameter in implementation.parameters
+                ],
+            )
+            for implementation in implementations
+        ]
+        pymacro = self._pyducklake.create_macro(
+            name,
+            macro_type,
+            native_implementations,
+            if_exists,
+        )
+        return Macro._from_pymacro(pymacro)
+
+    def delete_macro(
+        self,
+        name: str | tuple[str, str] | TableName,
+        *,
+        macro_type: MacroType = "scalar",
+        if_not_exists: Literal["fail", "skip"] = "fail",
+    ) -> None:
+        """Delete an existing macro from the catalog.
+
+        Args:
+            name: The name of the macro to delete. The schema defaults to "main".
+            macro_type: Which macro namespace to delete from: "scalar" or "table".
+            if_not_exists: The strategy to apply if the macro or its schema does not exist.
+                "fail" raises a :class:`~ducklake.exceptions.NotFoundError`, while "skip"
+                leaves the catalog unchanged.
+
+        Raises:
+            NotFoundError: If the macro does not exist and `if_not_exists` is "fail".
+        """
+        self._pyducklake.delete_macro(name, macro_type, if_not_exists)
+
+    def get_macro(
+        self,
+        name: str | tuple[str, str] | TableName,
+        *,
+        macro_type: MacroType = "scalar",
+    ) -> Macro:
+        """Read a scalar or table macro from the catalog.
+
+        Args:
+            name: The fully qualified macro name.
+            macro_type: Which macro namespace to read. Scalar and table macros may share a name.
+        """
+        return Macro._from_pymacro(self._pyducklake.macro_(name, macro_type))
+
+    def list_macros(self, schema: str | None = None) -> list[Macro]:
+        """List macros in the catalog, optionally restricted to a schema."""
+        return [Macro._from_pymacro(macro) for macro in self._pyducklake.list_macros(schema)]
 
     # ----------------------------------------- METADATA ---------------------------------------- #
 

@@ -442,6 +442,59 @@ impl Ducklake {
             .collect()
     }
 
+    /// Get a handle to the macro with the provided name.
+    pub async fn macro_(
+        &self,
+        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        macro_type: MacroType,
+    ) -> DucklakeResult<Macro> {
+        let name = name.try_into().map_err(|error| error.into())?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
+        let catalog = snapshot.catalog().await?;
+        Ok(self
+            .maybe_macro_from_catalog(catalog, &name, macro_type)?
+            .unwrap())
+    }
+
+    fn maybe_macro_from_catalog(
+        &self,
+        catalog: &Catalog,
+        name: &TableName,
+        macro_type: MacroType,
+    ) -> DucklakeResult<Option<Macro>> {
+        if catalog.schema(&name.schema)?.id().is_none() {
+            return Ok(None);
+        }
+        let Some(macro_id) = catalog.macro_((name, macro_type))?.id() else {
+            return Ok(None);
+        };
+        Ok(Some(Macro::new(self.conn.clone(), macro_id)))
+    }
+
+    /// List all macros in the catalog, optionally restricted to a specific schema.
+    pub async fn list_macros(&self, schema: Option<&str>) -> DucklakeResult<Vec<Macro>> {
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
+        let catalog = snapshot.catalog().await?;
+        let macros = if let Some(schema) = schema {
+            self.list_macros_in_schema(catalog.schema(schema)?)
+        } else {
+            catalog
+                .list_schemas()
+                .into_iter()
+                .flat_map(|schema| self.list_macros_in_schema(schema))
+                .collect()
+        };
+        Ok(macros)
+    }
+
+    fn list_macros_in_schema(&self, schema: catalog::SchemaView<'_>) -> Vec<Macro> {
+        schema
+            .list_macros()
+            .into_iter()
+            .map(|macro_| Macro::new(self.conn.clone(), macro_.id().unwrap()))
+            .collect()
+    }
+
     /// List the names of all schemas in the catalog.
     pub async fn list_schemas(&self) -> DucklakeResult<Vec<String>> {
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -596,6 +649,8 @@ within_transaction! {
     fn delete_table(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
     /// Delete an existing view from the catalog.
     fn delete_view(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
+    /// Delete an existing macro from the catalog.
+    fn delete_macro(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, macro_type: MacroType, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
 }
 
 impl Ducklake {
@@ -657,6 +712,29 @@ impl Ducklake {
             Ok(view)
         } else {
             self.view(name).await
+        }
+    }
+
+    /// Create a new macro in the catalog.
+    pub async fn create_macro(
+        &self,
+        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        macro_type: MacroType,
+        implementations: Vec<MacroImplementation>,
+        if_exists: IfExistsStrategy,
+    ) -> DucklakeResult<Macro> {
+        let name = name.try_into().map_err(|error| error.into())?;
+        let mut tx = self.transaction().await?;
+        tx.create_macro(name.clone(), macro_type, implementations, if_exists)?;
+        let macro_ = self.maybe_macro_from_catalog(tx.catalog(), &name, macro_type)?;
+        tx.commit().await?;
+
+        // `macro_` is `Some` if the macro already had an ID in the catalog. Otherwise, it is
+        // `None` and we will need to fetch the macro again.
+        if let Some(macro_) = macro_ {
+            Ok(macro_)
+        } else {
+            self.macro_(name, macro_type).await
         }
     }
 }

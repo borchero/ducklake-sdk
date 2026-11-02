@@ -9,6 +9,7 @@ except importlib.metadata.PackageNotFoundError as e:  # pragma: no cover
 
 from .connect import connect, create
 from .ducklake import Ducklake
+from .macro import Macro, MacroImplementation, MacroParameter, MacroType
 from .options import DatabaseOptions
 from .table import Table
 from .transaction import Transaction
@@ -92,6 +93,10 @@ __all__ = [
     "List",
     "Map",
     "MaintenanceResult",
+    "Macro",
+    "MacroImplementation",
+    "MacroParameter",
+    "MacroType",
     "PartitionColumn",
     "Partitioning",
     "ScanDataFile",

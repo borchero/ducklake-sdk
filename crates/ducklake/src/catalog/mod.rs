@@ -9,7 +9,7 @@ mod typedefs;
 mod views;
 
 use arena::{Arena, ArenaIdx};
-pub(crate) use refs::{ColumnRef, SchemaRef, TableRef, ViewRef};
+pub(crate) use refs::{ColumnRef, MacroRef, SchemaRef, TableRef, ViewRef};
 use typedefs::*;
 pub(crate) use views::SchemaView;
 
@@ -28,6 +28,8 @@ pub(crate) struct Catalog {
     table_arena: Arena<CatalogTable>,
     // Storage of views across schemas.
     view_arena: Arena<CatalogView>,
+    // Storage of macros across schemas.
+    macro_arena: Arena<CatalogMacro>,
     // Mapping from schema name to arena index for quick lookup by schema name.
     schemas: HashMap<String, ArenaIdx>,
 }
@@ -55,11 +57,41 @@ impl Catalog {
             name: name.to_string(),
             tables: HashMap::new(),
             views: HashMap::new(),
+            macros: HashMap::new(),
             path,
         };
         let idx = self.schema_arena.push(schema, None);
         self.schemas.insert(name.to_string(), idx);
         Ok(idx.into())
+    }
+}
+
+/* ------------------------------------------- MACRO ------------------------------------------- */
+
+impl Catalog {
+    /// Add a new macro with the given name as a pending macro.
+    pub(crate) fn add_macro(
+        &mut self,
+        macro_: crate::MacroInfo,
+    ) -> DucklakeResult<(SchemaRef, MacroRef)> {
+        if let Ok(existing) = self.macro_((&macro_.name, macro_.macro_type)) {
+            return Err(DucklakeError::macro_already_exists(existing.name()));
+        }
+
+        let catalog_macro = CatalogMacro {
+            id: None,
+            name: macro_.name.clone(),
+            macro_type: macro_.macro_type,
+            implementations: macro_.implementations,
+        };
+        let macro_idx = self.macro_arena.push(catalog_macro, None);
+
+        let mut schema = self.schema_mut(&macro_.name.schema)?;
+        schema.inner_mut().macros.insert(
+            (macro_.name.name.to_ascii_lowercase(), macro_.macro_type),
+            macro_idx,
+        );
+        Ok((schema.ref_(), macro_idx.into()))
     }
 }
 

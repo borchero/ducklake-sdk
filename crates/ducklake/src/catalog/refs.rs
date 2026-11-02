@@ -57,6 +57,23 @@ impl From<ArenaIdx> for ViewRef {
     }
 }
 
+/// Opaque reference to a macro in the catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct MacroRef(pub(super) ArenaIdx);
+
+#[cfg(test)]
+impl MacroRef {
+    pub(crate) fn mock(i: usize) -> Self {
+        Self(ArenaIdx(i))
+    }
+}
+
+impl From<ArenaIdx> for MacroRef {
+    fn from(value: ArenaIdx) -> Self {
+        Self(value)
+    }
+}
+
 /// Opaque reference to a column within a table in the catalog. This is static for the lifetime
 /// of a catalog. It is different to the column ID in the DuckLake and also exists for
 /// transaction-local (i.e. pending) columns, potentially of transaction-local tables.

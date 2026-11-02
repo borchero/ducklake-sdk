@@ -45,6 +45,8 @@ pub enum DucklakeError {
     InvalidTableName { name: String, reason: &'static str },
     #[error("invalid view definition: {reason}")]
     InvalidView { reason: String },
+    #[error("invalid macro definition: {reason}")]
+    InvalidMacro { reason: String },
     #[error("invalid column name '{name}': {reason}")]
     InvalidColumnName { name: String, reason: &'static str },
     #[error("cannot cast column from type '{old}' to type '{new}'")]
@@ -208,6 +210,20 @@ impl DucklakeError {
     pub(crate) fn view_not_found(name: &crate::TableName) -> Self {
         DucklakeError::NotFound {
             entity: "view",
+            name: name.to_string(),
+        }
+    }
+
+    pub(crate) fn macro_already_exists(name: &crate::TableName) -> Self {
+        DucklakeError::AlreadyExists {
+            entity: "macro",
+            name: name.to_string(),
+        }
+    }
+
+    pub(crate) fn macro_not_found(name: &crate::TableName) -> Self {
+        DucklakeError::NotFound {
+            entity: "macro",
             name: name.to_string(),
         }
     }

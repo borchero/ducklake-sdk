@@ -39,6 +39,7 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
         ReadonlyDucklake => ReadonlyDucklakeError::new_err(error.to_string()),
         InvalidTableName { .. }
         | InvalidView { .. }
+        | InvalidMacro { .. }
         | InvalidPartitionTransform { .. }
         | InvalidSortDirection { .. }
         | InvalidNullOrder { .. }

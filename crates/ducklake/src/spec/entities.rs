@@ -272,9 +272,9 @@ pub(crate) struct DucklakeMacro {
 pub(crate) struct DucklakeMacroImpl {
     pub macro_id: i64,
     pub impl_id: i64,
-    pub dialect: Option<String>,
-    pub sql: Option<String>,
-    pub r#type: Option<String>,
+    pub dialect: String,
+    pub sql: String,
+    pub r#type: String,
 }
 
 /// This table stores the parameters for each macro implementation.
@@ -283,10 +283,10 @@ pub(crate) struct DucklakeMacroParameters {
     pub macro_id: i64,
     pub impl_id: i64,
     pub column_id: i64,
-    pub parameter_name: Option<String>,
-    pub parameter_type: Option<String>,
+    pub parameter_name: String,
+    pub parameter_type: String,
     pub default_value: Option<String>,
-    pub default_value_type: Option<String>,
+    pub default_value_type: String,
 }
 
 /// This table records the version history of sort settings for tables. Each row represents one

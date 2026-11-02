@@ -94,6 +94,11 @@ class View:
         The view's query is evaluated against the referenced DuckLake tables using a Polars
         :class:`~polars.SQLContext`.
 
+        DuckLake scalar and table macro calls are expanded before execution. Typed macro
+        parameters require DuckDB's type binder and are therefore not supported by this Polars
+        execution path. Correlated table-macro arguments are also not supported because Polars SQL
+        does not currently support lateral joins.
+
         Note:
             This requires :mod:`polars` to be installed.
         """

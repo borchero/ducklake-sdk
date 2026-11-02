@@ -26,11 +26,12 @@ impl Catalog {
     /// Create a new, empty catalog.
     ///
     /// This is reserved for unit testing. Consumers should always use `Catalog::load`.
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             schema_arena: Arena::new(),
             table_arena: Arena::new(),
             view_arena: Arena::new(),
+            macro_arena: Arena::new(),
             schemas: HashMap::new(),
         }
     }
@@ -44,6 +45,30 @@ impl Catalog {
         let schemas_query = snapshot_query!(ducklake_schema, snapshot_id);
         let tables_query = snapshot_query!(ducklake_table, snapshot_id);
         let views_query = snapshot_query!(ducklake_view, snapshot_id);
+        let macros_query = snapshot_query!(ducklake_macro, snapshot_id);
+        let active_macro_ids = macros_query
+            .clone()
+            .clear_selects()
+            .column(ducklake_macro::Column::MacroId)
+            .to_owned();
+        let macro_impls_query = Query::select()
+            .column(Asterisk)
+            .from(ducklake_macro_impl::Table)
+            .and_where(
+                ducklake_macro_impl::Column::MacroId
+                    .col()
+                    .in_subquery(active_macro_ids.clone()),
+            )
+            .to_owned();
+        let macro_parameters_query = Query::select()
+            .column(Asterisk)
+            .from(ducklake_macro_parameters::Table)
+            .and_where(
+                ducklake_macro_parameters::Column::MacroId
+                    .col()
+                    .in_subquery(active_macro_ids),
+            )
+            .to_owned();
         let columns_query = snapshot_query!(ducklake_column, snapshot_id);
         let tags_query = snapshot_query!(ducklake_tag, snapshot_id);
         let column_tags_query = snapshot_query!(ducklake_column_tag, snapshot_id);
@@ -77,6 +102,9 @@ impl Catalog {
             fetched_schemas,
             fetched_tables,
             fetched_views,
+            fetched_macros,
+            fetched_macro_impls,
+            fetched_macro_parameters,
             fetched_columns,
             fetched_tags,
             fetched_column_tags,
@@ -88,6 +116,9 @@ impl Catalog {
             Vec<DucklakeSchema>,
             Vec<DucklakeTable>,
             Vec<DucklakeView>,
+            Vec<DucklakeMacro>,
+            Vec<DucklakeMacroImpl>,
+            Vec<DucklakeMacroParameters>,
             Vec<DucklakeColumn>,
             Vec<DucklakeTag>,
             Vec<DucklakeColumnTag>,
@@ -99,6 +130,9 @@ impl Catalog {
             pool.fetch_all(&schemas_query),
             pool.fetch_all(&tables_query),
             pool.fetch_all(&views_query),
+            pool.fetch_all(&macros_query),
+            pool.fetch_all(&macro_impls_query),
+            pool.fetch_all(&macro_parameters_query),
             pool.fetch_all(&columns_query),
             pool.fetch_all(&tags_query),
             pool.fetch_all(&column_tags_query),
@@ -129,6 +163,12 @@ impl Catalog {
         let mut grouped_sort_expressions = fetched_sort_expressions
             .into_iter()
             .into_group_map_by(|s| s.table_id);
+        let mut grouped_macro_impls = fetched_macro_impls
+            .into_iter()
+            .into_group_map_by(|implementation| implementation.macro_id);
+        let mut grouped_macro_parameters = fetched_macro_parameters
+            .into_iter()
+            .into_group_map_by(|parameter| (parameter.macro_id, parameter.impl_id));
 
         // Initialize a new catalog and populate it with the fetched data
         let mut catalog = Catalog::new();
@@ -144,6 +184,11 @@ impl Catalog {
             &mut grouped_tags,
         )?;
         catalog.set_views(fetched_views, &mut grouped_tags)?;
+        catalog.set_macros(
+            fetched_macros,
+            &mut grouped_macro_impls,
+            &mut grouped_macro_parameters,
+        )?;
 
         Ok(catalog)
     }
@@ -158,6 +203,7 @@ impl Catalog {
                 name: schema_name.clone(),
                 tables: HashMap::new(),
                 views: HashMap::new(),
+                macros: HashMap::new(),
                 path: io::DucklakePath::new(
                     &default_empty_string(&schema.path, || format!("{}/", schema_name)),
                     schema.path_is_relative,
@@ -325,6 +371,44 @@ impl Catalog {
                 .inner_mut()
                 .views
                 .insert(view_name, arena_idx);
+        }
+        Ok(())
+    }
+
+    fn set_macros(
+        &mut self,
+        macros: Vec<DucklakeMacro>,
+        implementations: &mut HashMap<i64, Vec<DucklakeMacroImpl>>,
+        parameters: &mut HashMap<(i64, i64), Vec<DucklakeMacroParameters>>,
+    ) -> DucklakeResult<()> {
+        for macro_ in macros {
+            // 1) Get the schema this macro belongs to
+            let schema = self
+                .schema(macro_.schema_id)
+                .expect("macro references the ID of a non-existent schema");
+
+            // 2) Construct the full macro catalog object
+            let catalog_macro = CatalogMacro::from_ducklake(
+                macro_.macro_id,
+                crate::TableName {
+                    schema: schema.name().to_string(),
+                    name: macro_.macro_name.clone(),
+                },
+                implementations.remove(&macro_.macro_id).unwrap_or_default(),
+                parameters,
+            )?;
+
+            // 3) Add the macro to the catalog
+            let macro_type = catalog_macro.macro_type;
+            let arena_idx = self.macro_arena.push(catalog_macro, Some(macro_.macro_id));
+            self.schema_mut(macro_.schema_id)
+                .unwrap() // SAFETY: we already verified existence above
+                .inner_mut()
+                .macros
+                .insert(
+                    (macro_.macro_name.to_ascii_lowercase(), macro_type),
+                    arena_idx,
+                );
         }
         Ok(())
     }

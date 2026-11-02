@@ -50,6 +50,9 @@ impl<'a> Transaction<'a> {
             for view_name in self.list_views(Some(name))? {
                 self.delete_view(view_name, IfExistsStrategy::Fail)?;
             }
+            for (macro_name, macro_type) in self.list_macros(Some(name))? {
+                self.delete_macro(macro_name, macro_type, IfExistsStrategy::Fail)?;
+            }
         }
 
         let mut schema = self.catalog_mut().schema_mut(name)?;
