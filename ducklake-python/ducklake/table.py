@@ -101,7 +101,11 @@ class Table:
     @property
     def tags(self) -> dict[str, str]:
         """The tags associated with the table."""
-        return dict(self._pytable.tags)
+        return self._pytable.tags
+
+    def get_tag(self, key: str) -> str | None:
+        """Get a tag by key, or ``None`` if it is absent, without copying all tags."""
+        return self._pytable.get_tag(key)
 
     @property
     def metadata(self) -> TableMetadata:

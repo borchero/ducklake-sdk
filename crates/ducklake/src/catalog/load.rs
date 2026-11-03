@@ -309,7 +309,7 @@ impl Catalog {
                 sort_info: table_sort_info,
                 tags: tags
                     .remove(&table.table_id)
-                    .map(|v| v.into_iter().map(|tag| tag.into()).collect())
+                    .map(|v| v.into_iter().map(crate::Tag::from).collect())
                     .unwrap_or_default(),
                 path: io::DucklakePath::new(
                     &default_empty_string(&table.path, || format!("{}/", table_name)),
@@ -360,7 +360,7 @@ impl Catalog {
                     }),
                 tags: tags
                     .remove(&view.view_id)
-                    .map(|v| v.into_iter().map(|tag| tag.into()).collect())
+                    .map(|v| v.into_iter().map(crate::Tag::from).collect())
                     .unwrap_or_default(),
             };
 

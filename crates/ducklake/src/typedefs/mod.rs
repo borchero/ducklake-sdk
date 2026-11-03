@@ -16,5 +16,5 @@ pub(crate) use schema::Schema;
 pub use schema::{Column, ColumnDefault, DataType, TimestampPrecision};
 pub(crate) use sort::SortInfo;
 pub use sort::{NullOrder, SortDirection, SortExpression};
-pub use tag::Tag;
+pub use tag::{Tag, Tags};
 pub use value::Value;

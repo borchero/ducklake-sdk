@@ -166,7 +166,7 @@ impl PyDucklake {
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
         sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,
         data_path: Option<String>,
-        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        tags: Option<Wrap<ducklake::Tags>>,
         if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<PyTable> {
         block_on(
@@ -177,7 +177,7 @@ impl PyDucklake {
                 partition.map(|v| v.into_iter().map(|p| p.0).collect()),
                 sort_info.map(|v| v.into_iter().map(|s| s.0).collect()),
                 data_path,
-                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                tags.map(|tags| tags.0),
                 if_exists.0,
             ),
         )
@@ -280,7 +280,7 @@ impl PyDucklake {
         name: Wrap<ducklake::QualifiedName>,
         sql: String,
         column_aliases: Option<Vec<String>>,
-        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        tags: Option<Wrap<ducklake::Tags>>,
         if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<PyView> {
         block_on(
@@ -289,7 +289,7 @@ impl PyDucklake {
                 name.0,
                 sql,
                 column_aliases,
-                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                tags.map(|tags| tags.0),
                 if_exists.0,
             ),
         )

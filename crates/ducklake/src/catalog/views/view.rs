@@ -130,7 +130,7 @@ impl<'a, C: Deref<Target = Catalog>> ViewView<'a, C> {
         self.inner().column_aliases.clone()
     }
 
-    pub(crate) fn tags(&self) -> Vec<crate::Tag> {
+    pub(crate) fn tags(&self) -> crate::Tags {
         self.inner().tags.clone()
     }
 }

@@ -26,7 +26,7 @@ pub(crate) struct ViewInfo {
     pub sql: String,
     pub dialect: String,
     pub column_aliases: Option<Vec<String>>,
-    pub tags: Vec<crate::Tag>,
+    pub tags: crate::Tags,
 }
 
 /// The definition of a view, consisting of its SQL query, dialect, and referenced relations.
@@ -73,7 +73,7 @@ impl View {
     }
 
     /// Get the tags of the view.
-    pub async fn tags(&self) -> DucklakeResult<Vec<crate::Tag>> {
+    pub async fn tags(&self) -> DucklakeResult<crate::Tags> {
         let snapshot = self.conn.current_snapshot();
         let catalog = snapshot.catalog().await?;
         Ok(catalog.view(self.id)?.tags())

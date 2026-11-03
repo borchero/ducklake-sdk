@@ -30,7 +30,7 @@ pub(in crate::catalog) struct CatalogColumn {
     pub dtype: CatalogDataType,
     pub parent_column: Option<ArenaIdx>,
     pub nullable: bool,
-    pub tags: Vec<crate::Tag>,
+    pub tags: crate::Tags,
     pub initial_default: Option<crate::Value>,
     pub default_value: crate::ColumnDefault,
 }
@@ -604,7 +604,7 @@ impl CatalogColumn {
             nullable: col.nulls_allowed,
             tags: tags
                 .extract_if(.., |tag| tag.column_id == column_id)
-                .map(|tag| tag.into())
+                .map(crate::Tag::from)
                 .collect(),
             initial_default,
             default_value,

@@ -17,6 +17,7 @@ use crate::{
     Schema,
     TableMetadata,
     Tag,
+    Tags,
     io,
     primitives,
     utils,
@@ -59,6 +60,11 @@ impl<'a> Transaction<'a> {
 /* --------------------------------------------------------------------------------------------- */
 
 impl<'tx, 'a> TransactionTable<'tx, 'a> {
+    /// Get the tags of the table, including uncommitted changes, without copying the entries.
+    pub fn tags(&self) -> DucklakeResult<crate::Tags> {
+        Ok(self.tx.catalog().table(&self.name)?.tags())
+    }
+
     /// Get the schema of the table within the current transaction.
     pub fn columns(&self) -> DucklakeResult<impl Iterator<Item = crate::Column>> {
         let columns = self
@@ -109,7 +115,7 @@ impl<'a> Transaction<'a> {
         partition_columns: Option<Vec<PartitionColumn>>,
         sort_info: Option<Vec<crate::SortExpression>>,
         path: Option<String>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
         let name = name.try_into().map_err(|e| e.into())?;
@@ -152,7 +158,7 @@ impl<'a> Transaction<'a> {
         partition_columns: Option<Vec<PartitionColumn>>,
         sort_info: Option<Vec<crate::SortExpression>>,
         path: Option<String>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
         retired_columns: Option<Vec<crate::spec::DucklakeColumn>>,
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
@@ -167,12 +173,13 @@ impl<'a> Transaction<'a> {
         let path = path.ensure_directory();
 
         // Insert the table into the catalog along with all its metadata
+        let tags = tags.unwrap_or_default();
         let info = crate::TableInfo {
             name: name.clone(),
             schema: columns.clone().try_into()?,
             partitioning: partition_columns.clone().map(Into::into),
             sort_info: sort_info.clone().map(Into::into),
-            tags: tags.clone().unwrap_or_default(),
+            tags: tags.clone(),
         };
         let next_column_id = retired_columns.as_ref().map(|retired| {
             columns
