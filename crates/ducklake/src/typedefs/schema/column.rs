@@ -55,8 +55,8 @@ impl Column {
     }
 
     /// Set the tags of the column.
-    pub fn tags(mut self, tags: Vec<crate::Tag>) -> Self {
-        self.tags = tags.into_iter().collect();
+    pub fn tags(mut self, tags: crate::Tags) -> Self {
+        self.tags = tags;
         self
     }
 

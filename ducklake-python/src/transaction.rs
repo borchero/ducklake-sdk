@@ -130,7 +130,7 @@ impl PyTransaction {
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
         sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,
         data_path: Option<String>,
-        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        tags: Option<Wrap<ducklake::Tags>>,
         if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<PyTransactionTable> {
         self.tx()
@@ -140,7 +140,7 @@ impl PyTransaction {
                 partition.map(|v| v.into_iter().map(|p| p.0).collect()),
                 sort_info.map(|items| items.into_iter().map(|item| item.0).collect()),
                 data_path,
-                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                tags.map(|tags| tags.0),
                 if_exists.0,
             )
             .map_err(error::into_pyerr)?;

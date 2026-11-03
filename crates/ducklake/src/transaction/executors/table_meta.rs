@@ -24,7 +24,7 @@ pub(crate) fn create_table<'a>(
     partition_columns: &Option<Vec<crate::PartitionColumn>>,
     sort_info: &Option<Vec<crate::SortExpression>>,
     path: &io::DucklakePath,
-    tags: &Option<Vec<crate::Tag>>,
+    tags: &crate::Tags,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
 
@@ -86,16 +86,14 @@ pub(crate) fn create_table<'a>(
     }
 
     // 5/5) Optionally add tags to the table
-    if let Some(tags) = tags
-        && !tags.is_empty()
-    {
+    if !tags.is_empty() {
         let snapshot_id = state.snapshot_id();
-        let ducklake_tags = tags.iter().map(|t| DucklakeTag {
+        let ducklake_tags = tags.iter().map(|(key, value)| DucklakeTag {
             object_id: table_id,
             begin_snapshot: snapshot_id,
             end_snapshot: None,
-            key: t.key.clone(),
-            value: t.value.clone(),
+            key: key.to_owned(),
+            value: value.to_owned(),
         });
         changes.new_tags.extend(ducklake_tags);
     }

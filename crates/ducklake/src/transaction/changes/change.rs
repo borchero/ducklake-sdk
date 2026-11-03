@@ -302,7 +302,7 @@ pub(crate) enum Change {
         partition_columns: Option<Vec<crate::PartitionColumn>>,
         sort_info: Option<Vec<crate::SortExpression>>,
         path: io::DucklakePath,
-        tags: Option<Vec<crate::Tag>>,
+        tags: crate::Tags,
     },
     WriteTableDataFiles {
         table_ref: TableRef,
@@ -345,7 +345,7 @@ pub(crate) enum Change {
         sql: String,
         dialect: String,
         column_aliases: Option<Vec<String>>,
-        tags: Option<Vec<crate::Tag>>,
+        tags: crate::Tags,
     },
     DeleteView {
         view_ref: ViewRef,
@@ -899,7 +899,7 @@ mod tests {
             sql: "SELECT 1".to_string(),
             dialect: "duckdb".to_string(),
             column_aliases: None,
-            tags: None,
+            tags: Default::default(),
         }
     }
 

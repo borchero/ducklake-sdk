@@ -1,6 +1,6 @@
 use super::changes::Change;
 use super::{IfExistsStrategy, Transaction};
-use crate::{DucklakeError, DucklakeResult, TableName, Tag, ViewInfo, view};
+use crate::{DucklakeError, DucklakeResult, TableName, Tags, ViewInfo, view};
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                           LIFECYCLE                                           */
@@ -17,7 +17,7 @@ impl<'a> Transaction<'a> {
         name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
         sql: String,
         column_aliases: Option<Vec<String>>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<()> {
         let name = name.try_into().map_err(|e| e.into())?;
@@ -33,13 +33,14 @@ impl<'a> Transaction<'a> {
         let sql = format!("{statement:#}");
 
         // Insert the view into the catalog
+        let tags = tags.unwrap_or_default();
         let dialect = "duckdb".to_string();
         let info = ViewInfo {
             name: name.clone(),
             sql: sql.clone(),
             dialect: dialect.clone(),
             column_aliases: column_aliases.clone(),
-            tags: tags.iter().flatten().cloned().collect(),
+            tags: tags.clone(),
         };
         let (schema_ref, view_ref) = self.catalog_mut().add_view(info)?;
 

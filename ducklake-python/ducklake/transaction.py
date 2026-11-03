@@ -152,7 +152,7 @@ class Transaction:
                 else None
             ),
             data_path=data_path,
-            tags=list(tags.items()) if tags else None,
+            tags=dict(tags) if tags is not None else None,
             if_exists=if_exists,
         )
         return TransactionTable._from_pytransaction_table(

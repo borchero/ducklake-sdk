@@ -73,7 +73,7 @@ class PyDucklake:
         partition: list[tuple[str, str | None, int | None]] | None,
         sort_info: list[NativeSortExpression] | None,
         data_path: str | None,
-        tags: list[tuple[str, str]] | None,
+        tags: dict[str, str] | None,
         if_exists: str,
     ) -> PyTable: ...
     def table(self, name: str | tuple[str, str]) -> PyTable: ...
@@ -97,7 +97,7 @@ class PyDucklake:
         name: str | tuple[str, str],
         sql: str,
         column_aliases: list[str] | None,
-        tags: list[tuple[str, str]] | None,
+        tags: dict[str, str] | None,
         if_exists: str,
     ) -> PyView: ...
     def view(self, name: str | tuple[str, str]) -> PyView: ...
@@ -222,7 +222,7 @@ class PyTransaction:
         partition: list[tuple[str, str | None, int | None]] | None,
         sort_info: list[NativeSortExpression] | None,
         data_path: str | None,
-        tags: list[tuple[str, str]] | None,
+        tags: dict[str, str] | None,
         if_exists: str,
     ) -> PyTransactionTable: ...
     def commit(self) -> None: ...

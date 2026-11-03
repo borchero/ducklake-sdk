@@ -13,7 +13,7 @@ pub(crate) fn create_view<'a>(
     sql: &str,
     dialect: &str,
     column_aliases: &Option<Vec<String>>,
-    tags: &Option<Vec<crate::Tag>>,
+    tags: &crate::Tags,
 ) -> DucklakeResult<()> {
     let view_id = state.view_id(*view_ref);
 
@@ -34,16 +34,14 @@ pub(crate) fn create_view<'a>(
     changes.new_views.push(view);
 
     // 2/2) Optionally add tags to the view
-    if let Some(tags) = tags
-        && !tags.is_empty()
-    {
+    if !tags.is_empty() {
         let snapshot_id = state.snapshot_id();
-        let ducklake_tags = tags.iter().map(|t| DucklakeTag {
+        let ducklake_tags = tags.iter().map(|(key, value)| DucklakeTag {
             object_id: view_id,
             begin_snapshot: snapshot_id,
             end_snapshot: None,
-            key: t.key.clone(),
-            value: t.value.clone(),
+            key: key.to_owned(),
+            value: value.to_owned(),
         });
         changes.new_tags.extend(ducklake_tags);
     }

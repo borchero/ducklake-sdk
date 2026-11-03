@@ -106,10 +106,14 @@ fn column_from_arrow_field(field: &Field) -> DucklakeResult<ducklake::Column> {
             dictionary,
             metadata: field.metadata().clone(),
         };
-        column = column.tags(vec![ducklake::Tag {
-            key: COMMENT_TAG.to_string(),
-            value: serde_json::to_string(&metadata).unwrap(),
-        }]);
+        column = column.tags(
+            [ducklake::Tag {
+                key: COMMENT_TAG.to_string(),
+                value: serde_json::to_string(&metadata).unwrap(),
+            }]
+            .into_iter()
+            .collect(),
+        );
     }
     Ok(column)
 }

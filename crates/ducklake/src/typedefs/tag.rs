@@ -3,10 +3,7 @@ use std::sync::Arc;
 
 use crate::spec::*;
 
-/// An immutable collection of tags indexed by key.
-///
-/// Cloning this collection shares its storage without copying the entries. Returned collections
-/// remain unchanged when tags are subsequently added, replaced, or removed in the catalog.
+/// A collection of tags indexed by key.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tags(Arc<HashMap<String, String>>);
 
@@ -57,6 +54,23 @@ impl FromIterator<Tag> for Tags {
     fn from_iter<T: IntoIterator<Item = Tag>>(iter: T) -> Self {
         Self(Arc::new(
             iter.into_iter().map(|tag| (tag.key, tag.value)).collect(),
+        ))
+    }
+}
+
+impl From<HashMap<String, String>> for Tags {
+    fn from(tags: HashMap<String, String>) -> Self {
+        Self(Arc::new(tags))
+    }
+}
+
+/// Collect key-value pairs, keeping the last value for each key.
+impl<K: Into<String>, V: Into<String>> FromIterator<(K, V)> for Tags {
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        Self(Arc::new(
+            iter.into_iter()
+                .map(|(key, value)| (key.into(), value.into()))
+                .collect(),
         ))
     }
 }
