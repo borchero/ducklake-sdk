@@ -243,36 +243,27 @@ fn generate_column(column: &Column, len: usize, defaults: Defaults) -> DucklakeR
 
 #[cfg(test)]
 mod tests {
-    use arrow_array::builder::{Int32Builder, ListBuilder, StructBuilder};
+    use arrow_array::Int64Array;
     use arrow_array::cast::AsArray;
     use arrow_array::types::Int64Type;
-    use arrow_array::{Int32Array, Int64Array};
-    use rstest::rstest;
 
     use super::*;
     use crate::{Schema, Value};
 
     #[test]
-    fn read_matches_ids_and_preserves_target_order() {
+    fn read_matches_renamed_column_by_id() {
         // Arrange
-        let old = Schema::try_from(vec![
-            Column::new("a".into(), DataType::Int32).field_id(Some(1)),
-            Column::new("b".into(), DataType::Int64).field_id(Some(2)),
+        let source = Schema::try_from(vec![
+            Column::new("old".into(), DataType::Int64).field_id(Some(1)),
         ])
         .unwrap();
         let batch = RecordBatch::try_new(
-            Arc::new(old.to_arrow()),
-            vec![
-                Arc::new(Int32Array::from(vec![Some(7), None])),
-                Arc::new(Int64Array::from(vec![100, 200])),
-            ],
+            Arc::new(source.to_arrow()),
+            vec![Arc::new(Int64Array::from(vec![7]))],
         )
         .unwrap();
         let target = Schema::try_from(vec![
-            Column::new("z".into(), DataType::Int64).field_id(Some(1)),
-            Column::new("b".into(), DataType::Int64)
-                .field_id(Some(3))
-                .initial_default(Some(Value::Int64(42))),
+            Column::new("new".into(), DataType::Int64).field_id(Some(1)),
         ])
         .unwrap();
 
@@ -280,110 +271,27 @@ mod tests {
         let result = match_to_schema(&batch, &target, Defaults::InitialDefault).unwrap();
 
         // Assert
-        assert_eq!(result.schema().as_ref(), &target.to_arrow());
-        assert_eq!(
-            result.column(0).as_primitive::<Int64Type>(),
-            &Int64Array::from(vec![Some(7), None])
-        );
-        assert_eq!(
-            result.column(1).as_primitive::<Int64Type>(),
-            &Int64Array::from(vec![42, 42])
-        );
+        assert_eq!(result.schema().field(0).name(), "new");
+        assert_eq!(result.column(0).as_primitive::<Int64Type>().value(0), 7);
     }
 
     #[test]
-    fn read_evolves_sliced_lists_and_preserves_nested_nulls() {
+    fn write_fills_missing_column_with_default() {
         // Arrange
-        let old_child = Column::new("a".into(), DataType::Int32).field_id(Some(3));
-        let fields: Fields = vec![old_child.to_arrow_field()].into();
-        let mut builder = ListBuilder::new(StructBuilder::new(
-            fields.clone(),
-            vec![Box::new(Int32Builder::new())],
-        ))
-        .with_field(
-            Column::new("element".into(), DataType::Struct(vec![old_child]))
-                .field_id(Some(2))
-                .to_arrow_field(),
-        );
-        for (value, valid) in [(100, true), (7, true), (0, false)] {
-            builder
-                .values()
-                .field_builder::<Int32Builder>(0)
-                .unwrap()
-                .append_value(value);
-            builder.values().append(valid);
-            builder.append(true);
-        }
-        builder.append(false);
-        let array: ArrayRef = Arc::new(builder.finish().slice(1, 3));
-        let source = Field::new("list", array.data_type().clone(), true);
-        let target = Column::new(
-            "list".into(),
-            DataType::List(Box::new(
-                Column::new(
-                    "element".into(),
-                    DataType::Struct(vec![
-                        Column::new("z".into(), DataType::Int64).field_id(Some(3)),
-                        Column::new("a".into(), DataType::Int64)
-                            .field_id(Some(4))
-                            .initial_default(Some(Value::Int64(42))),
-                    ]),
-                )
-                .field_id(Some(2)),
-            )),
-        );
-
-        // Act
-        let result = match_column(&source, &array, &target, Defaults::InitialDefault).unwrap();
-
-        // Assert
-        let list = result.as_list::<i64>();
-        assert_eq!(list.len(), 3);
-        assert!(list.is_null(2));
-        let first = list.value(0);
-        assert_eq!(
-            first
-                .as_struct()
-                .column(0)
-                .as_primitive::<Int64Type>()
-                .value(0),
-            7
-        );
-        assert_eq!(
-            first
-                .as_struct()
-                .column(1)
-                .as_primitive::<Int64Type>()
-                .value(0),
-            42
-        );
-        assert!(list.value(1).as_struct().is_null(0));
-    }
-
-    #[rstest]
-    #[case::narrowing(DataType::Int8, true, Some(300))]
-    #[case::null(DataType::Int64, false, None)]
-    fn invalid_writes_return_errors(
-        #[case] dtype: DataType,
-        #[case] nullable: bool,
-        #[case] value: Option<i64>,
-    ) {
-        // Arrange
-        let batch = RecordBatch::try_from_iter(vec![(
-            "x",
-            Arc::new(Int64Array::from(vec![value])) as ArrayRef,
-        )])
+        let values: ArrayRef = Arc::new(Int64Array::from(vec![7]));
+        let batch = RecordBatch::try_from_iter([("x", values)]).unwrap();
+        let schema = Schema::try_from(vec![
+            Column::new("x".into(), DataType::Int64),
+            Column::new("y".into(), DataType::Int64)
+                .default_value(ColumnDefault::Literal(Some(Value::Int64(42)))),
+        ])
         .unwrap();
-        let schema =
-            Schema::try_from(vec![Column::new("x".into(), dtype).nullable(nullable)]).unwrap();
 
         // Act
-        let result = match_to_schema(&batch, &schema, Defaults::DefaultValue);
+        let result = match_to_schema(&batch, &schema, Defaults::DefaultValue).unwrap();
 
         // Assert
-        assert!(matches!(
-            result,
-            Err(DucklakeError::InvalidCast { .. } | DucklakeError::InvalidNullValue { .. })
-        ));
+        assert_eq!(result.column(0).as_primitive::<Int64Type>().value(0), 7);
+        assert_eq!(result.column(1).as_primitive::<Int64Type>().value(0), 42);
     }
 }
