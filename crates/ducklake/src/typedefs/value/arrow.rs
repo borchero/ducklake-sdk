@@ -7,11 +7,7 @@ use crate::io::arrow::conversion::{IntoPhysical, IntoPhysicalWithContext};
 use crate::{Column, DataType, DucklakeError, DucklakeResult};
 
 impl Value {
-    pub(crate) fn broadcast_into_array(
-        &self,
-        dtype: &DataType,
-        len: usize,
-    ) -> DucklakeResult<ArrayRef> {
+    pub(crate) fn broadcast(&self, dtype: &DataType, len: usize) -> DucklakeResult<ArrayRef> {
         // Build one scalar first, so view arrays share large default strings across all rows.
         let scalar: ArrayRef = match self {
             Value::Boolean(v) => Arc::new(BooleanArray::from(vec![*v])),
@@ -71,6 +67,8 @@ impl Value {
                 ));
             }
         };
+
+        // Build the final array
         let field = Column::new(String::new(), dtype.clone()).to_arrow_field();
         let scalar = arrow_cast::cast_with_options(
             &scalar,
@@ -103,7 +101,7 @@ mod tests {
         let field = Column::new("x".into(), dtype.clone()).to_arrow_field();
 
         // Act
-        let array = value.broadcast_into_array(&dtype, 3).unwrap();
+        let array = value.broadcast(&dtype, 3).unwrap();
 
         // Assert
         assert_eq!(array.len(), 3);

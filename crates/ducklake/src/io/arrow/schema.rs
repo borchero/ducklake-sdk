@@ -235,11 +235,16 @@ fn generate_column(column: &Column, len: usize, defaults: Defaults) -> DucklakeR
         },
     };
     if let Some(value) = value {
-        return value.broadcast_into_array(&column.dtype, len);
+        value.broadcast(&column.dtype, len)
+    } else {
+        let field = column.to_arrow_field();
+        Ok(arrow_array::new_null_array(field.data_type(), len))
     }
-    let field = column.to_arrow_field();
-    Ok(arrow_array::new_null_array(field.data_type(), len))
 }
+
+/* --------------------------------------------------------------------------------------------- */
+/*                                             TESTS                                             */
+/* --------------------------------------------------------------------------------------------- */
 
 #[cfg(test)]
 mod tests {

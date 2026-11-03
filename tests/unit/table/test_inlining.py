@@ -106,7 +106,7 @@ def test_inline_scan_matches_evolved_schema(
     result = table.scan()
 
     # Assert
-    expected = pl.DataFrame({"z": [1, 2], "b": [42, 42]})
+    expected = pl.DataFrame({"z": [1, 2], "b": [42, 42]}, schema={"z": pl.Int64, "b": pl.Int64})
     assert len(result.inline_data) == 1
     assert_frame_equal(pl.DataFrame(result.inline_data[0]), expected)
     assert_frame_equal(table.read_polars(), expected)
