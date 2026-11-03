@@ -21,17 +21,33 @@ def test_writing_null_parquet_fails_for_non_nullable_column(
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
-@pytest.mark.parametrize("nested", [False, True])
 def test_writing_null_inline_fails_for_non_nullable_column(
-    shared_ducklake: dl.Ducklake, random_table_name: str, nested: bool
+    shared_ducklake: dl.Ducklake, random_table_name: str
 ) -> None:
     # Arrange
-    column = dl.Column("x", dl.Int64(), nullable=False)
+    table = shared_ducklake.create_table(
+        random_table_name, [dl.Column("x", dl.Int64(), nullable=False)]
+    )
     df = pl.DataFrame({"x": [1, None, 3]})
-    if nested:
-        column = dl.Column("s", dl.Struct([column]))
-        df = df.select(pl.struct("x").alias("s"))
-    table = shared_ducklake.create_table(random_table_name, [column])
+
+    # Act
+    with pytest.raises(dlexc.InvalidNullValueError) as exc_info:
+        table.write_polars(df)
+
+    # Assert
+    assert "non-nullable column 'x'" in str(exc_info.value)
+
+
+@pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
+def test_writing_null_inline_fails_for_non_nullable_struct_field(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(
+        random_table_name,
+        [dl.Column("s", dl.Struct([dl.Column("x", dl.Int64(), nullable=False)]))],
+    )
+    df = pl.DataFrame({"s": [{"x": 1}, {"x": None}, {"x": 3}]})
 
     # Act
     with pytest.raises(dlexc.InvalidNullValueError) as exc_info:
