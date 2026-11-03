@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .typedefs import TableName
+from .typedefs import QualifiedName
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -49,9 +49,9 @@ class View:
     # ---------------------------------------- PROPERTIES --------------------------------------- #
 
     @property
-    def name(self) -> TableName:
+    def name(self) -> QualifiedName:
         """The fully qualified name of the view."""
-        return TableName(*self._pyview.name)
+        return QualifiedName(*self._pyview.name)
 
     @property
     def sql(self) -> str:

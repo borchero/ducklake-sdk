@@ -27,12 +27,12 @@ if TYPE_CHECKING:
 # ------------------------------------------ TABLE NAME ----------------------------------------- #
 
 
-class TableName(NamedTuple):
-    """A tuple representing the name of a table."""
+class QualifiedName(NamedTuple):
+    """A tuple representing the schema and name of an object."""
 
-    #: The schema of the table. The default schema is "main".
+    #: The schema of the object. The default schema is "main".
     schema: str
-    #: The name of the table within the schema.
+    #: The name of the object within the schema.
     name: str
 
     def __str__(self) -> str:
@@ -135,7 +135,7 @@ class SnapshotMetadata:
 class MaintenanceResult(TypedDict):
     """Result row returned by file compaction maintenance operations."""
 
-    table_name: TableName
+    table_name: QualifiedName
     files_processed: int
     files_created: int
 

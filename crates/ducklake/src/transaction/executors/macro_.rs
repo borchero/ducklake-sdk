@@ -1,14 +1,14 @@
 use crate::catalog::{MacroRef, SchemaRef};
 use crate::spec::*;
 use crate::transaction::{CommitState, TransactionChanges};
-use crate::{DucklakeResult, MacroImplementation, MacroType, TableName};
+use crate::{DucklakeResult, MacroImplementation, MacroType, QualifiedName};
 
 pub(crate) fn create_macro<'a>(
     changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     schema_ref: &SchemaRef,
     macro_ref: &MacroRef,
-    name: &TableName,
+    name: &QualifiedName,
     macro_type: MacroType,
     implementations: &[MacroImplementation],
 ) -> DucklakeResult<()> {

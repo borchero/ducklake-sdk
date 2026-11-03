@@ -46,7 +46,7 @@ impl Catalog {
 
 /* ------------------------------------------ INTO REF ----------------------------------------- */
 
-impl TryIntoRef<ViewRef> for &crate::TableName {
+impl TryIntoRef<ViewRef> for &crate::QualifiedName {
     type Error = DucklakeError;
 
     fn try_into_ref(self, catalog: &Catalog) -> Result<ViewRef, Self::Error> {
@@ -114,7 +114,7 @@ impl<'a, C: Deref<Target = Catalog>> ViewView<'a, C> {
         self.inner().id
     }
 
-    pub(crate) fn name(&self) -> &crate::TableName {
+    pub(crate) fn name(&self) -> &crate::QualifiedName {
         &self.inner().name
     }
 

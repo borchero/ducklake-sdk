@@ -9,14 +9,14 @@ use crate::{
     MacroImplementation,
     MacroParameter,
     MacroType,
-    TableName,
+    QualifiedName,
 };
 
 /// A macro in a catalog.
 #[derive(Debug, Clone)]
 pub(in crate::catalog) struct CatalogMacro {
     pub id: Option<i64>,
-    pub name: TableName,
+    pub name: QualifiedName,
     pub macro_type: MacroType,
     pub implementations: Vec<MacroImplementation>,
 }
@@ -24,7 +24,7 @@ pub(in crate::catalog) struct CatalogMacro {
 impl CatalogMacro {
     pub(in crate::catalog) fn from_ducklake(
         id: i64,
-        name: TableName,
+        name: QualifiedName,
         mut implementations: Vec<DucklakeMacroImpl>,
         parameters: &mut HashMap<(i64, i64), Vec<DucklakeMacroParameters>>,
     ) -> DucklakeResult<Self> {

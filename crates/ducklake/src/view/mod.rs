@@ -10,7 +10,7 @@ pub(crate) use sql::{
 };
 
 use crate::ducklake::DucklakeConnection;
-use crate::{DucklakeResult, Table, TableName};
+use crate::{DucklakeResult, QualifiedName, Table};
 
 /// Handle to a view in the DuckLake catalog.
 #[derive(Clone)]
@@ -22,7 +22,7 @@ pub struct View {
 /// Information required to create a view in the catalog.
 #[derive(Clone)]
 pub(crate) struct ViewInfo {
-    pub name: TableName,
+    pub name: QualifiedName,
     pub sql: String,
     pub dialect: String,
     pub column_aliases: Option<Vec<String>>,
@@ -40,9 +40,9 @@ pub struct ViewDefinition {
     pub default_schema: String,
     /// Names and handles of all catalog tables referenced by the query. References to non-catalog
     /// tables are omitted.
-    pub tables: Vec<(TableName, Table)>,
+    pub tables: Vec<(QualifiedName, Table)>,
     /// Names and handles of all catalog views referenced by the query.
-    pub views: Vec<(TableName, View)>,
+    pub views: Vec<(QualifiedName, View)>,
 }
 
 impl View {
@@ -51,7 +51,7 @@ impl View {
     }
 
     /// Get the name of the view.
-    pub async fn name(&self) -> DucklakeResult<TableName> {
+    pub async fn name(&self) -> DucklakeResult<QualifiedName> {
         let snapshot = self.conn.current_snapshot();
         let catalog = snapshot.catalog().await?;
         let view = catalog.view(self.id)?;

@@ -125,10 +125,10 @@ def test_list_tables_reflects_transaction_changes(
 
     # Assert
     all_table_names = {table.name for table in all_tables}
-    assert dl.TableName("main", existing_table_name) not in all_table_names
-    assert dl.TableName(random_schema_name, random_table_name) in all_table_names
+    assert dl.QualifiedName("main", existing_table_name) not in all_table_names
+    assert dl.QualifiedName(random_schema_name, random_table_name) in all_table_names
     assert [table.name for table in schema_tables] == [
-        dl.TableName(random_schema_name, random_table_name)
+        dl.QualifiedName(random_schema_name, random_table_name)
     ]
 
 

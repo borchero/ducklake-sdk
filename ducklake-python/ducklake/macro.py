@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from .typedefs import TableName
+from .typedefs import QualifiedName
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -18,9 +18,9 @@ class Macro:
     _pymacro: PyMacro
 
     @property
-    def name(self) -> TableName:
+    def name(self) -> QualifiedName:
         """The fully-qualified name of the macro."""
-        return TableName(*self._pymacro.name)
+        return QualifiedName(*self._pymacro.name)
 
     @property
     def macro_type(self) -> MacroType:

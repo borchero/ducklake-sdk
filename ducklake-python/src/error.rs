@@ -37,7 +37,7 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
         }
         TransactionConflict(_) => TransactionConflictError::new_err(error.to_string()),
         ReadonlyDucklake => ReadonlyDucklakeError::new_err(error.to_string()),
-        InvalidTableName { .. }
+        InvalidQualifiedName { .. }
         | InvalidView { .. }
         | InvalidMacro { .. }
         | InvalidPartitionTransform { .. }

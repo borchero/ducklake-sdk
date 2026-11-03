@@ -7,11 +7,11 @@ from .typedefs import (
     DataType,
     PartitionColumn,
     Partitioning,
+    QualifiedName,
     Schema,
     SortColumn,
     SortInfo,
     TableMetadata,
-    TableName,
     Value,
     WriteDataFile,
 )
@@ -91,7 +91,7 @@ class Transaction:
             for table in self._pytx.list_tables(schema)
         ]
 
-    def table(self, name: str | TableName) -> TransactionTable:
+    def table(self, name: str | QualifiedName) -> TransactionTable:
         pytransaction_table = self._pytx.table(name)
         return TransactionTable._from_pytransaction_table(
             pytransaction_table, self._storage_options
@@ -99,7 +99,7 @@ class Transaction:
 
     def create_table(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         schema: Schema | Sequence[Column] | Mapping[str, DataType],
         *,
         partition_by: (
@@ -161,7 +161,7 @@ class Transaction:
 
     def delete_table(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         *,
         if_not_exists: Literal["fail", "skip"] = "fail",
     ) -> None:
@@ -183,7 +183,7 @@ class Transaction:
 
     def delete_view(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         *,
         if_not_exists: Literal["fail", "skip"] = "fail",
     ) -> None:
@@ -286,9 +286,9 @@ class TransactionTable:
     # ------------------------------------------------------------------------------------------- #
 
     @property
-    def name(self) -> TableName:
+    def name(self) -> QualifiedName:
         """The fully qualified name of the table."""
-        return TableName(*self._pytxtable.name)
+        return QualifiedName(*self._pytxtable.name)
 
     # ------------------------------------------------------------------------------------------- #
     #                                            WRITES                                           #
