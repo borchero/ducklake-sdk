@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use arrow_array::cast::AsArray;
 use arrow_array::{
     Array,
     ArrayRef,
@@ -121,7 +122,7 @@ fn match_column(
             Ok(array.clone())
         }
         (ArrowType::Struct(_), DataType::Struct(columns)) => {
-            let source = array.as_any().downcast_ref::<StructArray>().unwrap();
+            let source = array.as_struct();
             let arrays = match_fields(
                 source.fields(),
                 source.columns(),
@@ -144,7 +145,7 @@ fn match_column(
         }
         (ArrowType::List(inner) | ArrowType::LargeList(inner), DataType::List(column)) => {
             let array = arrow_cast::cast(array, &ArrowType::LargeList(inner.clone()))?;
-            let source = array.as_any().downcast_ref::<LargeListArray>().unwrap();
+            let source = array.as_list::<i64>();
             let values = match_child(inner, source.values(), column, defaults)?;
             check_nullability(column, &values, None)?;
             Ok(Arc::new(LargeListArray::try_new(
@@ -155,7 +156,7 @@ fn match_column(
             )?))
         }
         (ArrowType::Map(_, _), DataType::Map(key, value)) => {
-            let source = array.as_any().downcast_ref::<MapArray>().unwrap();
+            let source = array.as_map();
             let fields = source.entries().fields();
             let keys = match_child(&fields[0], source.keys(), key, defaults)?;
             let values = match_child(&fields[1], source.values(), value, defaults)?;
@@ -249,7 +250,6 @@ fn generate_column(column: &Column, len: usize, defaults: Defaults) -> DucklakeR
 #[cfg(test)]
 mod tests {
     use arrow_array::Int64Array;
-    use arrow_array::cast::AsArray;
     use arrow_array::types::Int64Type;
 
     use super::*;
