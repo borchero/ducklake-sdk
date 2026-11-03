@@ -67,12 +67,12 @@ def test_table_by_tuple(shared_ducklake: dl.Ducklake, random_table_name: str) ->
     assert table.name == ("main", random_table_name)
 
 
-def test_table_by_tablename(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+def test_table_by_qualified_name(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
     # Arrange
     shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
 
     # Act
-    table = shared_ducklake.table(dl.TableName("main", random_table_name))
+    table = shared_ducklake.table(dl.QualifiedName("main", random_table_name))
 
     # Assert
     assert table.name == ("main", random_table_name)

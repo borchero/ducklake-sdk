@@ -30,11 +30,11 @@ use crate::{
     MacroImplementation,
     MacroParameter,
     MacroType,
-    TableName,
+    QualifiedName,
 };
 
 pub(crate) struct SqlMacro {
-    pub name: TableName,
+    pub name: QualifiedName,
     pub macro_type: MacroType,
     pub implementations: Vec<MacroImplementation>,
 }
@@ -103,7 +103,7 @@ pub(crate) fn find_referenced_tables_in_schema(
     sql: &str,
     dialect: &str,
     default_schema: &str,
-) -> DucklakeResult<Vec<TableName>> {
+) -> DucklakeResult<Vec<QualifiedName>> {
     let statement = parse_select_query(sql, dialect)?;
 
     let mut visitor = RelationVisitor::default();
@@ -111,7 +111,7 @@ pub(crate) fn find_referenced_tables_in_schema(
 
     let mut tables = HashSet::new();
     for relation in visitor.relations {
-        let Some(name) = TableName::from_object_name(&relation, default_schema) else {
+        let Some(name) = QualifiedName::from_object_name(&relation, default_schema) else {
             continue;
         };
         tables.insert(name);
@@ -139,7 +139,7 @@ struct MacroExpander<'a> {
     dialect: &'a str,
     default_schema: &'a str,
     macros: &'a [SqlMacro],
-    active: Vec<(TableName, MacroType)>,
+    active: Vec<(QualifiedName, MacroType)>,
 }
 
 impl<'a> MacroExpander<'a> {
@@ -209,7 +209,7 @@ impl<'a> MacroExpander<'a> {
 
     fn find_macro(&self, name: &ObjectName, macro_type: MacroType) -> Option<&'a SqlMacro> {
         let is_unqualified = name.0.len() == 1;
-        let name = TableName::from_object_name(name, self.default_schema)?;
+        let name = QualifiedName::from_object_name(name, self.default_schema)?;
         let find_in_schema = |schema: &str| {
             self.macros.iter().find(|macro_| {
                 macro_.macro_type == macro_type

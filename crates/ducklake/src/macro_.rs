@@ -1,5 +1,5 @@
 use crate::ducklake::DucklakeConnection;
-use crate::{DucklakeResult, MacroImplementation, MacroType, TableName};
+use crate::{DucklakeResult, MacroImplementation, MacroType, QualifiedName};
 
 /// Handle to a macro in the DuckLake catalog.
 #[derive(Clone)]
@@ -12,7 +12,7 @@ pub struct Macro {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MacroInfo {
     /// Fully-qualified macro name.
-    pub name: TableName,
+    pub name: QualifiedName,
     /// Whether this is a scalar or table macro.
     pub macro_type: MacroType,
     /// All implementations (overloads) of the macro.
@@ -21,7 +21,7 @@ pub(crate) struct MacroInfo {
 
 impl Macro {
     /// Get the fully-qualified macro name.
-    pub async fn name(&self) -> DucklakeResult<TableName> {
+    pub async fn name(&self) -> DucklakeResult<QualifiedName> {
         let snapshot = self.conn.current_snapshot();
         let catalog = snapshot.catalog().await?;
         Ok(catalog.macro_(self.id)?.name().clone())

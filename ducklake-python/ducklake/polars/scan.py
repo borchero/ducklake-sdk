@@ -325,7 +325,7 @@ def scan_view(view: View) -> pl.LazyFrame:
     return _scan_view(view, frozenset())
 
 
-def _scan_view(view: View, ancestors: frozenset[typedefs.TableName]) -> pl.LazyFrame:
+def _scan_view(view: View, ancestors: frozenset[typedefs.QualifiedName]) -> pl.LazyFrame:
     name = view.name
     if name in ancestors:
         raise ValueError(f"cyclic view reference involving {name}")

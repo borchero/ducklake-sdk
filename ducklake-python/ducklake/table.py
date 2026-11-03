@@ -9,13 +9,13 @@ from .typedefs import (
     MaintenanceResult,
     PartitionColumn,
     Partitioning,
+    QualifiedName,
     ScanResult,
     Schema,
     SortColumn,
     SortInfo,
     TableMetadata,
     TableMetadataUpdate,
-    TableName,
     Value,
     WriteDataFile,
     _serialize_metadata_value,
@@ -59,9 +59,9 @@ class Table:
     # ---------------------------------------- PROPERTIES --------------------------------------- #
 
     @property
-    def name(self) -> TableName:
+    def name(self) -> QualifiedName:
         """The fully qualified name of the table."""
-        return TableName(*self._pytable.name)
+        return QualifiedName(*self._pytable.name)
 
     @property
     def schema(self) -> Schema:

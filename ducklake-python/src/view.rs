@@ -100,7 +100,7 @@ fn normalize_query(
         // Polars SQLContext does not support schemas. Replace known DuckLake table names with
         // unique aliases that can be registered as flat frame names.
         let Some(name) =
-            ducklake::TableName::from_object_name(relation, &definition.default_schema)
+            ducklake::QualifiedName::from_object_name(relation, &definition.default_schema)
         else {
             return ControlFlow::Continue(());
         };

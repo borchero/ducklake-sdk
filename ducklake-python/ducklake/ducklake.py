@@ -15,12 +15,12 @@ from .typedefs import (
     MaintenanceResult,
     PartitionColumn,
     Partitioning,
+    QualifiedName,
     Schema,
     SnapshotMetadata,
     SortColumn,
     SortInfo,
     TableMetadataUpdate,
-    TableName,
     TableStatistics,
     _serialize_metadata_value,
 )
@@ -242,7 +242,7 @@ class Ducklake:
 
     def create_table(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         schema: Schema | Sequence[Column] | Mapping[str, DataType],
         *,
         partition_by: (
@@ -301,7 +301,7 @@ class Ducklake:
 
     def delete_table(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         *,
         if_not_exists: Literal["fail", "skip"] = "fail",
     ) -> None:
@@ -319,11 +319,11 @@ class Ducklake:
         """
         self._pyducklake.delete_table(name, if_not_exists)
 
-    def table(self, name: str | tuple[str, str] | TableName) -> Table:
+    def table(self, name: str | tuple[str, str] | QualifiedName) -> Table:
         """Read a table from the catalog.
 
         Args:
-            name: The name of the table. This can either be a string or a TableName tuple. If
+            name: The name of the table. This can either be a string or a QualifiedName tuple. If
                 a string is provided, it is parsed just like DuckDB parses table names: it must
                 be of the format `<schema>.<table>` where the schema is optional and defaults to
                 "main". If either the schema or table name contains special characters, both must
@@ -342,11 +342,11 @@ class Ducklake:
         pytable = self._pyducklake.table(name)
         return self._wrap_table(pytable)
 
-    def has_table(self, name: str | tuple[str, str] | TableName) -> bool:
+    def has_table(self, name: str | tuple[str, str] | QualifiedName) -> bool:
         """Check whether a table exists in the catalog.
 
         Args:
-            name: The name of the table. This can either be a string or a TableName tuple. If
+            name: The name of the table. This can either be a string or a QualifiedName tuple. If
                 a string is provided, it is parsed just like DuckDB parses table names: it must
                 be of the format `<schema>.<table>` where the schema is optional and defaults to
                 "main". If either the schema or table name contains special characters, both must
@@ -405,7 +405,7 @@ class Ducklake:
 
     def create_view(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         sql: str,
         *,
         column_aliases: Sequence[str] | None = None,
@@ -441,7 +441,7 @@ class Ducklake:
 
     def delete_view(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         *,
         if_not_exists: Literal["fail", "skip"] = "fail",
     ) -> None:
@@ -459,11 +459,11 @@ class Ducklake:
         """
         self._pyducklake.delete_view(name, if_not_exists)
 
-    def get_view(self, name: str | tuple[str, str] | TableName) -> View:
+    def get_view(self, name: str | tuple[str, str] | QualifiedName) -> View:
         """Read a view from the catalog.
 
         Args:
-            name: The name of the view. This can either be a string or a TableName tuple. If
+            name: The name of the view. This can either be a string or a QualifiedName tuple. If
                 a string is provided, it is parsed just like DuckDB parses table names: it must
                 be of the format `<schema>.<view>` where the schema is optional and defaults to
                 "main".
@@ -558,7 +558,7 @@ class Ducklake:
 
     def create_macro(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         sql: str | Sequence[MacroImplementation],
         parameters: Sequence[str | MacroParameter] = (),
         *,
@@ -613,7 +613,7 @@ class Ducklake:
 
     def delete_macro(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         *,
         macro_type: MacroType = "scalar",
         if_not_exists: Literal["fail", "skip"] = "fail",
@@ -634,7 +634,7 @@ class Ducklake:
 
     def get_macro(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         *,
         macro_type: MacroType = "scalar",
     ) -> Macro:

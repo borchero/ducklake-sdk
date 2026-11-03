@@ -19,7 +19,7 @@ pub struct PyTransaction(TransactionInner);
 #[pyclass]
 pub struct PyTransactionTable {
     transaction: TransactionInner,
-    table: ducklake::TableName,
+    table: ducklake::QualifiedName,
 }
 
 impl PyTransaction {
@@ -76,7 +76,7 @@ impl PyTransaction {
 
     fn delete_table(
         &mut self,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         if_not_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {
         self.tx()
@@ -86,7 +86,7 @@ impl PyTransaction {
 
     fn delete_view(
         &mut self,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         if_not_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {
         self.tx()
@@ -112,7 +112,7 @@ impl PyTransaction {
             .collect())
     }
 
-    fn table(&mut self, name: Wrap<ducklake::TableName>) -> PyResult<PyTransactionTable> {
+    fn table(&mut self, name: Wrap<ducklake::QualifiedName>) -> PyResult<PyTransactionTable> {
         // NOTE: We don't use the return value here as we'll run into lifetime issues in the
         //  Python bindings. We still use it to check that the table exists.
         self.tx().table(name.0.clone()).map_err(error::into_pyerr)?;
@@ -125,7 +125,7 @@ impl PyTransaction {
     #[allow(clippy::too_many_arguments)]
     fn create_table(
         &mut self,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         schema: Vec<Wrap<ducklake::Column>>,
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
         sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,

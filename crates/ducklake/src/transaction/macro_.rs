@@ -6,13 +6,13 @@ use sqlparser::parser::Parser;
 
 use super::changes::Change;
 use super::{IfExistsStrategy, Transaction};
-use crate::{DucklakeError, DucklakeResult, MacroInfo, MacroType, TableName};
+use crate::{DucklakeError, DucklakeResult, MacroInfo, MacroType, QualifiedName};
 
 impl<'a> Transaction<'a> {
     /// Create a macro in the catalog.
     pub fn create_macro(
         &mut self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         macro_type: MacroType,
         mut implementations: Vec<crate::MacroImplementation>,
         if_exists: IfExistsStrategy,
@@ -44,7 +44,7 @@ impl<'a> Transaction<'a> {
     /// Delete a macro with the given name from the catalog.
     pub fn delete_macro(
         &mut self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         macro_type: MacroType,
         if_not_exists: IfExistsStrategy,
     ) -> DucklakeResult<()> {
