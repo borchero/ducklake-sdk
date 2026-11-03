@@ -93,19 +93,6 @@ impl<'a> CommitState<'a> {
         table.column(column_ref).into_ok().id()
     }
 
-    pub(crate) fn column_ref(
-        &self,
-        table_ref: TableRef,
-        column_id: i64,
-    ) -> DucklakeResult<ColumnRef> {
-        Ok(self
-            .catalog
-            .table(table_ref)
-            .into_ok()
-            .column(column_id)?
-            .ref_())
-    }
-
     /// Obtain the ID for a partition within the table with the provided ID. If the partition does
     /// not yet exist, a new ID is generated from the catalog ID sequence. This panics if the
     /// partition has not been defined for the table (i.e. is neither existing nor pending nor
