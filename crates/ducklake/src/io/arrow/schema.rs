@@ -181,7 +181,11 @@ fn match_column(
         _ => {
             let source = Column::try_from(field)?;
             if source.dtype != column.dtype
-                && !allows_primitive_promotion(&source.dtype, &column.dtype)
+                && !source.dtype.can_promote_to(&column.dtype)
+                && !matches!(
+                    (&source.dtype, &column.dtype),
+                    (DataType::Varchar, DataType::Json)
+                )
             {
                 return Err(DucklakeError::InvalidCast {
                     old: source.dtype,
@@ -214,21 +218,6 @@ fn match_child(
     } else {
         match_column(field, array, column, defaults)
     }
-}
-
-fn allows_primitive_promotion(source: &DataType, target: &DataType) -> bool {
-    use DataType::*;
-    matches!(
-        (source, target),
-        (Int8, Int16 | Int32 | Int64)
-            | (Int16, Int32 | Int64)
-            | (Int32, Int64)
-            | (UInt8, UInt16 | UInt32 | UInt64)
-            | (UInt16, UInt32 | UInt64)
-            | (UInt32, UInt64)
-            | (Float32, Float64)
-            | (Varchar, Json)
-    )
 }
 
 fn generate_column(column: &Column, len: usize, defaults: Defaults) -> DucklakeResult<ArrayRef> {
