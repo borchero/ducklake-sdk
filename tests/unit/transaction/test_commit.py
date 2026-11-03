@@ -176,7 +176,7 @@ def test_inline_write_and_schema_change(ducklake: dl.Ducklake, write_first: bool
     # Assert
     table = ducklake.table("table")
     assert not table.scan().data_files
-    assert_frame_equal(table.read_polars(), pl.DataFrame({"y": [7]}))
+    assert_frame_equal(table.read_polars(), pl.DataFrame({"y": [7]}, schema={"y": pl.Int64}))
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
