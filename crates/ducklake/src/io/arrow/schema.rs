@@ -180,22 +180,23 @@ fn match_column(
         (ArrowType::Null, _) => Ok(arrow_array::new_null_array(target.data_type(), array.len())),
         _ => {
             let source = Column::try_from(field)?;
-            if source.dtype != column.dtype
-                && !source.dtype.can_promote_to(&column.dtype)
-                && !matches!(
+            if source.dtype == column.dtype
+                || source.dtype.can_promote_to(&column.dtype)
+                || matches!(
                     (&source.dtype, &column.dtype),
                     (DataType::Varchar, DataType::Json)
                 )
             {
-                return Err(DucklakeError::InvalidCast {
+                if array.data_type() == target.data_type() {
+                    Ok(array.clone())
+                } else {
+                    Ok(arrow_cast::cast(array, target.data_type())?)
+                }
+            } else {
+                Err(DucklakeError::InvalidCast {
                     old: source.dtype,
                     new: column.dtype.clone(),
-                });
-            }
-            if array.data_type() == target.data_type() {
-                Ok(array.clone())
-            } else {
-                Ok(arrow_cast::cast(array, target.data_type())?)
+                })
             }
         }
     }
