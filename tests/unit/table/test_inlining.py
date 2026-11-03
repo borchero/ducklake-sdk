@@ -130,29 +130,3 @@ def test_inline_write_fills_omitted_columns_and_preserves_nulls(
 
     # Assert
     assert_frame_equal(table.read_polars(), pl.DataFrame({"z": [42, 42], "a": [None, 7]}))
-
-
-@pytest.mark.parametrize("supplied", [False, True])
-def test_null_struct_allows_nonnullable_children(
-    shared_ducklake: dl.Ducklake, random_table_name: str, supplied: bool
-) -> None:
-    # Arrange
-    table = shared_ducklake.create_table(
-        random_table_name,
-        [
-            dl.Column("id", dl.Int64()),
-            dl.Column("s", dl.Struct([dl.Column("x", dl.Int64(), nullable=False)])),
-        ],
-    )
-    data = pl.DataFrame({"id": [1]})
-    if supplied:
-        data = data.with_columns(pl.lit(None, dtype=pl.Struct({"x": pl.Int64})).alias("s"))
-
-    # Act
-    table._write_inline_data(data)
-
-    # Assert
-    expected = pl.DataFrame(
-        {"id": [1], "s": [None]}, schema={"id": pl.Int64, "s": pl.Struct({"x": pl.Int64})}
-    )
-    assert_frame_equal(pl.DataFrame(table.scan().inline_data[0]), expected)

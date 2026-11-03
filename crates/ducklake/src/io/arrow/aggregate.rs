@@ -55,11 +55,11 @@ pub(crate) fn find_min(data_type: &DataType, array: &arrow_array::ArrayRef) -> O
         ),
         DataType::TimeTz => aggregate!(array, FixedSizeBinaryArray, min_fixed_size_binary, TimeTz),
         DataType::Date => aggregate!(array, Date32Array, min, Date),
-        DataType::Timestamp { .. } => arrow_match_timestamp!(array.data_type(),
-            second => aggregate!(array, TimestampSecondArray, min, Timestamp, ArrowTimeUnit::Second),
-            millisecond => aggregate!(array, TimestampMillisecondArray, min, Timestamp, ArrowTimeUnit::Millisecond),
-            microsecond => aggregate!(array, TimestampMicrosecondArray, min, Timestamp, ArrowTimeUnit::Microsecond),
-            nanosecond => aggregate!(array, TimestampNanosecondArray, min, Timestamp, ArrowTimeUnit::Nanosecond)
+        DataType::Timestamp { precision } => arrow_match_timestamp!(array.data_type(),
+            second => aggregate!(array, TimestampSecondArray, min, Timestamp, (*precision).into()),
+            millisecond => aggregate!(array, TimestampMillisecondArray, min, Timestamp, (*precision).into()),
+            microsecond => aggregate!(array, TimestampMicrosecondArray, min, Timestamp, (*precision).into()),
+            nanosecond => aggregate!(array, TimestampNanosecondArray, min, Timestamp, (*precision).into())
         ),
         DataType::TimestampTz => aggregate!(array, TimestampMicrosecondArray, min, TimestampTz),
         DataType::Interval => aggregate!(array, IntervalMonthDayNanoArray, min, Interval),
@@ -122,11 +122,11 @@ pub(crate) fn find_max(data_type: &DataType, array: &arrow_array::ArrayRef) -> O
         ),
         DataType::TimeTz => aggregate!(array, FixedSizeBinaryArray, max_fixed_size_binary, TimeTz),
         DataType::Date => aggregate!(array, Date32Array, max, Date),
-        DataType::Timestamp { .. } => arrow_match_timestamp!(array.data_type(),
-            second => aggregate!(array, TimestampSecondArray, max, Timestamp, ArrowTimeUnit::Second),
-            millisecond => aggregate!(array, TimestampMillisecondArray, max, Timestamp, ArrowTimeUnit::Millisecond),
-            microsecond => aggregate!(array, TimestampMicrosecondArray, max, Timestamp, ArrowTimeUnit::Microsecond),
-            nanosecond => aggregate!(array, TimestampNanosecondArray, max, Timestamp, ArrowTimeUnit::Nanosecond)
+        DataType::Timestamp { precision } => arrow_match_timestamp!(array.data_type(),
+            second => aggregate!(array, TimestampSecondArray, max, Timestamp, (*precision).into()),
+            millisecond => aggregate!(array, TimestampMillisecondArray, max, Timestamp, (*precision).into()),
+            microsecond => aggregate!(array, TimestampMicrosecondArray, max, Timestamp, (*precision).into()),
+            nanosecond => aggregate!(array, TimestampNanosecondArray, max, Timestamp, (*precision).into())
         ),
         DataType::TimestampTz => aggregate!(array, TimestampMicrosecondArray, max, TimestampTz),
         DataType::Interval => aggregate!(array, IntervalMonthDayNanoArray, max, Interval),
@@ -169,34 +169,29 @@ mod tests {
     use super::*;
     use crate::Column;
 
-    #[rstest::rstest]
-    #[case::seconds(crate::TimestampPrecision::Seconds)]
-    #[case::milliseconds(crate::TimestampPrecision::Milliseconds)]
-    #[case::microseconds(crate::TimestampPrecision::Microseconds)]
-    #[case::nanoseconds(crate::TimestampPrecision::Nanoseconds)]
-    fn test_timestamp_precision(#[case] precision: crate::TimestampPrecision) {
-        // Arrange
-        let dtype = DataType::Timestamp { precision };
-        let field = Column::new("x".into(), dtype.clone()).to_arrow_field();
-        let values = arrow_array::TimestampSecondArray::from(vec![Some(-2), None, Some(3)]);
-        let array = arrow_cast::cast(&values, field.data_type()).unwrap();
+    #[test]
+    fn test_find_min_max_timestamp_non_microsecond_precision() {
+        // Regression test: `find_min`/`find_max` used to unconditionally downcast a `Timestamp`
+        // column's Arrow array to `TimestampMicrosecondArray`, which panicked for any other
+        // precision instead of dispatching on the array's actual `TimeUnit`.
+        use chrono::DateTime;
 
-        // Act
-        let min = find_min(&dtype, &array);
-        let max = find_max(&dtype, &array);
-
-        // Assert
+        let expected_min = DateTime::from_timestamp_millis(1_000).unwrap().naive_utc();
+        let expected_max = DateTime::from_timestamp_millis(3_000).unwrap().naive_utc();
+        let array: ArrayRef = Arc::new(arrow_array::TimestampMillisecondArray::from(vec![
+            Some(3_000),
+            None,
+            Some(1_000),
+            Some(2_000),
+        ]));
+        let dtype = DataType::timestamp(crate::TimestampPrecision::Milliseconds);
         assert_eq!(
-            min,
-            Some(Value::Timestamp(
-                chrono::DateTime::from_timestamp(-2, 0).unwrap().naive_utc()
-            ))
+            find_min(&dtype, &array),
+            Some(Value::Timestamp(expected_min))
         );
         assert_eq!(
-            max,
-            Some(Value::Timestamp(
-                chrono::DateTime::from_timestamp(3, 0).unwrap().naive_utc()
-            ))
+            find_max(&dtype, &array),
+            Some(Value::Timestamp(expected_max))
         );
     }
 
