@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use arrow_array::*;
-use arrow_schema::TimeUnit;
 
 use super::Value;
 use crate::io::arrow::conversion::{IntoPhysical, IntoPhysicalWithContext};
@@ -14,18 +13,18 @@ impl Value {
         len: usize,
     ) -> DucklakeResult<ArrayRef> {
         // Build one scalar first, so view arrays share large default strings across all rows.
-        let scalar: ArrayRef = match self.clone() {
-            Value::Boolean(v) => Arc::new(BooleanArray::from(vec![v])),
-            Value::Int8(v) => Arc::new(Int8Array::from_value(v, 1)),
-            Value::Int16(v) => Arc::new(Int16Array::from_value(v, 1)),
-            Value::Int32(v) => Arc::new(Int32Array::from_value(v, 1)),
-            Value::Int64(v) => Arc::new(Int64Array::from_value(v, 1)),
-            Value::UInt8(v) => Arc::new(UInt8Array::from_value(v, 1)),
-            Value::UInt16(v) => Arc::new(UInt16Array::from_value(v, 1)),
-            Value::UInt32(v) => Arc::new(UInt32Array::from_value(v, 1)),
-            Value::UInt64(v) => Arc::new(UInt64Array::from_value(v, 1)),
-            Value::Float32(v) => Arc::new(Float32Array::from_value(v, 1)),
-            Value::Float64(v) => Arc::new(Float64Array::from_value(v, 1)),
+        let scalar: ArrayRef = match self {
+            Value::Boolean(v) => Arc::new(BooleanArray::from(vec![*v])),
+            Value::Int8(v) => Arc::new(Int8Array::from_value(*v, 1)),
+            Value::Int16(v) => Arc::new(Int16Array::from_value(*v, 1)),
+            Value::Int32(v) => Arc::new(Int32Array::from_value(*v, 1)),
+            Value::Int64(v) => Arc::new(Int64Array::from_value(*v, 1)),
+            Value::UInt8(v) => Arc::new(UInt8Array::from_value(*v, 1)),
+            Value::UInt16(v) => Arc::new(UInt16Array::from_value(*v, 1)),
+            Value::UInt32(v) => Arc::new(UInt32Array::from_value(*v, 1)),
+            Value::UInt64(v) => Arc::new(UInt64Array::from_value(*v, 1)),
+            Value::Float32(v) => Arc::new(Float32Array::from_value(*v, 1)),
+            Value::Float64(v) => Arc::new(Float64Array::from_value(*v, 1)),
             Value::Int128(v) => Arc::new(FixedSizeBinaryArray::try_from_iter(std::iter::once(
                 v.into_physical(),
             ))?),
@@ -33,7 +32,7 @@ impl Value {
                 v.into_physical(),
             ))?),
             Value::TimeTz(v) => Arc::new(FixedSizeBinaryArray::try_from_iter(std::iter::once(
-                v.into_physical(),
+                v.clone().into_physical(),
             ))?),
             Value::Uuid(v) => Arc::new(FixedSizeBinaryArray::try_from_iter(std::iter::once(
                 v.into_physical(),
@@ -50,39 +49,18 @@ impl Value {
                         "timestamp default requires a timestamp column".into(),
                     ));
                 };
-                match precision {
-                    crate::TimestampPrecision::Seconds => {
-                        Arc::new(TimestampSecondArray::from_value(
-                            v.into_physical_with_context(&TimeUnit::Second),
-                            1,
-                        ))
-                    }
-                    crate::TimestampPrecision::Milliseconds => {
-                        Arc::new(TimestampMillisecondArray::from_value(
-                            v.into_physical_with_context(&TimeUnit::Millisecond),
-                            1,
-                        ))
-                    }
-                    crate::TimestampPrecision::Microseconds => {
-                        Arc::new(TimestampMicrosecondArray::from_value(
-                            v.into_physical_with_context(&TimeUnit::Microsecond),
-                            1,
-                        ))
-                    }
-                    crate::TimestampPrecision::Nanoseconds => {
-                        Arc::new(TimestampNanosecondArray::from_value(
-                            v.into_physical_with_context(&TimeUnit::Nanosecond),
-                            1,
-                        ))
-                    }
-                }
+                Arc::new(Int64Array::from_value(
+                    v.into_physical_with_context(&(*precision).into()),
+                    1,
+                ))
             }
             Value::TimestampTz(v) => Arc::new(
                 TimestampMicrosecondArray::from_value(v.into_physical(), 1).with_timezone("UTC"),
             ),
-            Value::Interval(v) => {
-                Arc::new(IntervalMonthDayNanoArray::from_value(v.into_physical(), 1))
-            }
+            Value::Interval(v) => Arc::new(IntervalMonthDayNanoArray::from_value(
+                v.clone().into_physical(),
+                1,
+            )),
             Value::Varchar(v) | Value::Json(v) => {
                 Arc::new(StringViewArray::from(vec![v.as_str()]))
             }
@@ -119,6 +97,10 @@ mod tests {
     #[rstest]
     #[case::decimal(DataType::Decimal { precision: 6, scale: 2 }, Value::Decimal(rust_decimal::Decimal::new(123, 1)))]
     #[case::uuid(DataType::Uuid, Value::Uuid(uuid::Uuid::nil()))]
+    #[case::timestamp_seconds(DataType::Timestamp { precision: crate::TimestampPrecision::Seconds }, Value::Timestamp(chrono::DateTime::from_timestamp(-123, 0).unwrap().naive_utc()))]
+    #[case::timestamp_milliseconds(DataType::Timestamp { precision: crate::TimestampPrecision::Milliseconds }, Value::Timestamp(chrono::DateTime::from_timestamp(-123, 0).unwrap().naive_utc()))]
+    #[case::timestamp_microseconds(DataType::Timestamp { precision: crate::TimestampPrecision::Microseconds }, Value::Timestamp(chrono::DateTime::from_timestamp(-123, 0).unwrap().naive_utc()))]
+    #[case::timestamp_nanoseconds(DataType::Timestamp { precision: crate::TimestampPrecision::Nanoseconds }, Value::Timestamp(chrono::DateTime::from_timestamp(-123, 0).unwrap().naive_utc()))]
     #[case::timestamp_tz(DataType::TimestampTz, Value::TimestampTz(chrono::DateTime::from_timestamp(123, 0).unwrap()))]
     #[case::int128(DataType::Int128, Value::Int128(-123))]
     #[case::uint128(DataType::UInt128, Value::UInt128(123))]

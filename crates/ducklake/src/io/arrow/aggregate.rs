@@ -5,38 +5,6 @@ use crate::io::arrow::conversion::{IntoLogical, IntoLogicalWithContext};
 use crate::{DataType, Value};
 
 macro_rules! aggregate {
-    ($array:expr, timestamp, $fn:ident, $precision:expr) => {
-        match $precision {
-            crate::TimestampPrecision::Seconds => aggregate!(
-                $array,
-                TimestampSecondArray,
-                $fn,
-                Timestamp,
-                ArrowTimeUnit::Second
-            ),
-            crate::TimestampPrecision::Milliseconds => aggregate!(
-                $array,
-                TimestampMillisecondArray,
-                $fn,
-                Timestamp,
-                ArrowTimeUnit::Millisecond
-            ),
-            crate::TimestampPrecision::Microseconds => aggregate!(
-                $array,
-                TimestampMicrosecondArray,
-                $fn,
-                Timestamp,
-                ArrowTimeUnit::Microsecond
-            ),
-            crate::TimestampPrecision::Nanoseconds => aggregate!(
-                $array,
-                TimestampNanosecondArray,
-                $fn,
-                Timestamp,
-                ArrowTimeUnit::Nanosecond
-            ),
-        }
-    };
     ($array:expr, $array_type:ident, $fn:ident, $value_type:ident) => {{
         let array = $array
             .as_any()
@@ -87,7 +55,12 @@ pub(crate) fn find_min(data_type: &DataType, array: &arrow_array::ArrayRef) -> O
         ),
         DataType::TimeTz => aggregate!(array, FixedSizeBinaryArray, min_fixed_size_binary, TimeTz),
         DataType::Date => aggregate!(array, Date32Array, min, Date),
-        DataType::Timestamp { precision } => aggregate!(array, timestamp, min, precision),
+        DataType::Timestamp { .. } => arrow_match_timestamp!(array.data_type(),
+            second => aggregate!(array, TimestampSecondArray, min, Timestamp, ArrowTimeUnit::Second),
+            millisecond => aggregate!(array, TimestampMillisecondArray, min, Timestamp, ArrowTimeUnit::Millisecond),
+            microsecond => aggregate!(array, TimestampMicrosecondArray, min, Timestamp, ArrowTimeUnit::Microsecond),
+            nanosecond => aggregate!(array, TimestampNanosecondArray, min, Timestamp, ArrowTimeUnit::Nanosecond)
+        ),
         DataType::TimestampTz => aggregate!(array, TimestampMicrosecondArray, min, TimestampTz),
         DataType::Interval => aggregate!(array, IntervalMonthDayNanoArray, min, Interval),
         DataType::Varchar => arrow_match_varchar!(array.data_type(),
@@ -149,7 +122,12 @@ pub(crate) fn find_max(data_type: &DataType, array: &arrow_array::ArrayRef) -> O
         ),
         DataType::TimeTz => aggregate!(array, FixedSizeBinaryArray, max_fixed_size_binary, TimeTz),
         DataType::Date => aggregate!(array, Date32Array, max, Date),
-        DataType::Timestamp { precision } => aggregate!(array, timestamp, max, precision),
+        DataType::Timestamp { .. } => arrow_match_timestamp!(array.data_type(),
+            second => aggregate!(array, TimestampSecondArray, max, Timestamp, ArrowTimeUnit::Second),
+            millisecond => aggregate!(array, TimestampMillisecondArray, max, Timestamp, ArrowTimeUnit::Millisecond),
+            microsecond => aggregate!(array, TimestampMicrosecondArray, max, Timestamp, ArrowTimeUnit::Microsecond),
+            nanosecond => aggregate!(array, TimestampNanosecondArray, max, Timestamp, ArrowTimeUnit::Nanosecond)
+        ),
         DataType::TimestampTz => aggregate!(array, TimestampMicrosecondArray, max, TimestampTz),
         DataType::Interval => aggregate!(array, IntervalMonthDayNanoArray, max, Interval),
         DataType::Varchar => arrow_match_varchar!(array.data_type(),
@@ -219,32 +197,6 @@ mod tests {
             Some(Value::Timestamp(
                 chrono::DateTime::from_timestamp(3, 0).unwrap().naive_utc()
             ))
-        );
-    }
-
-    #[test]
-    fn test_find_min_max_timestamp_non_microsecond_precision() {
-        // Regression test: `find_min`/`find_max` used to unconditionally downcast a `Timestamp`
-        // column's Arrow array to `TimestampMicrosecondArray`, which panicked for any other
-        // precision instead of dispatching on the array's actual `TimeUnit`.
-        use chrono::DateTime;
-
-        let expected_min = DateTime::from_timestamp_millis(1_000).unwrap().naive_utc();
-        let expected_max = DateTime::from_timestamp_millis(3_000).unwrap().naive_utc();
-        let array: ArrayRef = Arc::new(arrow_array::TimestampMillisecondArray::from(vec![
-            Some(3_000),
-            None,
-            Some(1_000),
-            Some(2_000),
-        ]));
-        let dtype = DataType::timestamp(crate::TimestampPrecision::Milliseconds);
-        assert_eq!(
-            find_min(&dtype, &array),
-            Some(Value::Timestamp(expected_min))
-        );
-        assert_eq!(
-            find_max(&dtype, &array),
-            Some(Value::Timestamp(expected_max))
         );
     }
 

@@ -6,7 +6,7 @@ from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import polars as pl
 import polars.datatypes as pld
@@ -14,6 +14,7 @@ import polars.exceptions as plexc
 import polars.selectors as cs
 from polars.lazyframe.resolver import LazyFrameResolver, ResolvedLazyFrameProps
 
+from ducklake import typedefs
 from ducklake.table import Table
 from ducklake.view import View
 
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
     from polars.lazyframe.resolver import FilterExpr
 
     from ducklake.typedefs import Column, ScanDataFile, ScanResult, Schema
-    from ducklake import typedefs
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
@@ -133,9 +133,7 @@ def _scan_ducklake(
             frames.append(lf)
 
     for inline_data in scan_result.inline_data:
-        frames.append(
-            _scan_inline_data(inline_data, include_file_paths=include_file_paths)
-        )
+        frames.append(_scan_inline_data(inline_data, include_file_paths=include_file_paths))
 
     if frames:
         result = pl.concat(frames)

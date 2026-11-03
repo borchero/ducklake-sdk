@@ -526,7 +526,7 @@ impl<'a> Transaction<'a> {
                     )?;
                     let statistics = io::arrow::compute_record_batch_statistics(&schema, &batch);
                     let data = CommitInlineData {
-                        record_batch: batch.clone(),
+                        record_batch: batch,
                         column_stats: statistics
                             .column_stats
                             .into_iter()

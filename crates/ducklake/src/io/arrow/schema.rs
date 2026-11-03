@@ -34,17 +34,32 @@ pub(crate) fn match_to_schema(
         defaults,
     )?;
     for (column, array) in schema.columns.values().zip(&arrays) {
-        if !column.nullable && array.null_count() > 0 {
-            return Err(DucklakeError::InvalidNullValue {
-                column: column.name.clone(),
-            });
-        }
+        check_nullability(column, array, None)?;
     }
     Ok(RecordBatch::try_new_with_options(
         Arc::new(schema.to_arrow()),
         arrays,
         &RecordBatchOptions::new().with_row_count(Some(batch.num_rows())),
     )?)
+}
+
+fn check_nullability(
+    column: &Column,
+    array: &ArrayRef,
+    parent: Option<&StructArray>,
+) -> DucklakeResult<()> {
+    if !column.nullable
+        && let Some(nulls) = array.logical_nulls()
+        && nulls.null_count() > 0
+        && !parent
+            .and_then(|parent| parent.nulls())
+            .is_some_and(|parent_nulls| parent_nulls.contains(&nulls))
+    {
+        return Err(DucklakeError::InvalidNullValue {
+            column: column.name.clone(),
+        });
+    }
+    Ok(())
 }
 
 fn match_fields<'a>(
@@ -114,6 +129,9 @@ fn match_column(
                 source.len(),
                 defaults,
             )?;
+            for (column, array) in columns.iter().zip(&arrays) {
+                check_nullability(column, array, Some(source))?;
+            }
             let ArrowType::Struct(fields) = target.data_type() else {
                 unreachable!()
             };
@@ -128,6 +146,7 @@ fn match_column(
             let array = arrow_cast::cast(array, &ArrowType::LargeList(inner.clone()))?;
             let source = array.as_any().downcast_ref::<LargeListArray>().unwrap();
             let values = match_child(inner, source.values(), column, defaults)?;
+            check_nullability(column, &values, None)?;
             Ok(Arc::new(LargeListArray::try_new(
                 Arc::new(column.to_arrow_field()),
                 source.offsets().clone(),
@@ -140,6 +159,8 @@ fn match_column(
             let fields = source.entries().fields();
             let keys = match_child(&fields[0], source.keys(), key, defaults)?;
             let values = match_child(&fields[1], source.values(), value, defaults)?;
+            check_nullability(key, &keys, None)?;
+            check_nullability(value, &values, None)?;
             let ArrowType::Map(target_entries, sorted) = target.data_type() else {
                 unreachable!()
             };
@@ -227,23 +248,6 @@ fn generate_column(column: &Column, len: usize, defaults: Defaults) -> DucklakeR
         return value.broadcast_into_array(&column.dtype, len);
     }
     let field = column.to_arrow_field();
-    if matches!(defaults, Defaults::InitialDefault)
-        && let DataType::Struct(columns) = &column.dtype
-    {
-        let arrays = columns
-            .iter()
-            .map(|column| generate_column(column, len, defaults))
-            .collect::<DucklakeResult<_>>()?;
-        let ArrowType::Struct(fields) = field.data_type() else {
-            unreachable!()
-        };
-        return Ok(Arc::new(StructArray::try_new_with_length(
-            fields.clone(),
-            arrays,
-            None,
-            len,
-        )?));
-    }
     Ok(arrow_array::new_null_array(field.data_type(), len))
 }
 
@@ -527,10 +531,18 @@ mod tests {
 
         // Assert
         assert_eq!(result.is_ok(), !parent_valid);
+        if parent_valid {
+            assert!(matches!(
+                result,
+                Err(DucklakeError::InvalidNullValue { .. })
+            ));
+        }
     }
 
-    #[test]
-    fn omitted_struct_write_is_null_even_with_nonnullable_children() {
+    #[rstest]
+    #[case::read(Defaults::InitialDefault)]
+    #[case::write(Defaults::DefaultValue)]
+    fn omitted_struct_is_null_even_with_nonnullable_children(#[case] defaults: Defaults) {
         // Arrange
         let column = Column::new(
             "s".into(),
@@ -540,11 +552,31 @@ mod tests {
         );
 
         // Act
-        let array = generate_column(&column, 2, Defaults::DefaultValue).unwrap();
+        let array = generate_column(&column, 2, defaults).unwrap();
 
         // Assert
         assert_eq!(array.null_count(), 2);
         assert_eq!(array.data_type(), column.to_arrow_field().data_type());
+    }
+
+    #[rstest]
+    #[case::struct_(DataType::Struct(vec![]), crate::Value::Struct(Default::default()))]
+    #[case::list(DataType::List(Box::new(Column::new("element".into(), DataType::Int64))), crate::Value::List(vec![]))]
+    fn nested_literal_defaults_are_unsupported(
+        #[case] dtype: DataType,
+        #[case] value: crate::Value,
+        #[values(Defaults::InitialDefault, Defaults::DefaultValue)] defaults: Defaults,
+    ) {
+        // Arrange
+        let column = Column::new("nested".into(), dtype)
+            .initial_default(Some(value.clone()))
+            .default_value(ColumnDefault::Literal(Some(value)));
+
+        // Act
+        let result = generate_column(&column, 1, defaults);
+
+        // Assert
+        assert!(matches!(result, Err(DucklakeError::SchemaError(_))));
     }
 
     #[rstest]
