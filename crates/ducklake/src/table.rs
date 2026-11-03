@@ -25,7 +25,7 @@ pub(crate) struct TableInfo {
     pub schema: crate::Schema,
     pub partitioning: Option<crate::Partition>,
     pub sort_info: Option<crate::SortInfo>,
-    pub tags: Vec<crate::Tag>,
+    pub tags: crate::Tags,
 }
 
 impl Table {
@@ -79,7 +79,7 @@ impl Table {
     }
 
     /// Get the tags of the table.
-    pub async fn tags(&self) -> DucklakeResult<Vec<crate::Tag>> {
+    pub async fn tags(&self) -> DucklakeResult<crate::Tags> {
         let tags = self
             .conn
             .current_snapshot()

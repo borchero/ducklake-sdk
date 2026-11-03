@@ -1,4 +1,4 @@
-use ducklake::{Column, ColumnDefault, DataType, Tag, Value};
+use ducklake::{Column, ColumnDefault, DataType, Tags, Value};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -12,17 +12,7 @@ impl FromPyObject<'_, '_> for Wrap<Column> {
         let name: String = ob.getattr("name")?.extract()?;
         let dtype = ob.getattr("data_type")?.extract::<Wrap<DataType>>()?;
         let nullable: bool = ob.getattr("nullable")?.extract()?;
-        let tags_obj = ob.getattr("tags")?;
-        let tags_dict: Bound<'_, PyDict> = tags_obj.to_owned().cast_into()?;
-        let tags: Vec<_> = tags_dict
-            .iter()
-            .map(|(k, v)| {
-                Ok(Tag {
-                    key: k.extract()?,
-                    value: v.extract()?,
-                })
-            })
-            .collect::<PyResult<_>>()?;
+        let tags = ob.getattr("tags")?.extract::<Wrap<Tags>>()?;
         let field_id: Option<i64> = ob.getattr("field_id")?.extract()?;
 
         let initial_default: Option<Wrap<Value>> = ob.getattr("initial_default")?.extract()?;
@@ -30,7 +20,7 @@ impl FromPyObject<'_, '_> for Wrap<Column> {
 
         let col = Column::new(name, dtype.0)
             .nullable(nullable)
-            .tags(tags)
+            .tags(tags.0)
             .field_id(field_id)
             .initial_default(initial_default.map(|w| w.0))
             .default_value(default_value.0);
@@ -51,8 +41,8 @@ impl<'py> IntoPyObject<'py> for Wrap<Column> {
             None
         } else {
             let dict = PyDict::new(py);
-            for tag in &self.0.tags {
-                dict.set_item(&tag.key, &tag.value)?;
+            for (key, value) in self.0.tags.iter() {
+                dict.set_item(key, value)?;
             }
             Some(dict)
         };

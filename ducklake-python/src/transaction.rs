@@ -130,7 +130,7 @@ impl PyTransaction {
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
         sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,
         data_path: Option<String>,
-        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        tags: Option<Wrap<ducklake::Tags>>,
         if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<PyTransactionTable> {
         self.tx()
@@ -140,7 +140,7 @@ impl PyTransaction {
                 partition.map(|v| v.into_iter().map(|p| p.0).collect()),
                 sort_info.map(|items| items.into_iter().map(|item| item.0).collect()),
                 data_path,
-                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                tags.map(|tags| tags.0),
                 if_exists.0,
             )
             .map_err(error::into_pyerr)?;
@@ -196,6 +196,23 @@ impl PyTransactionTable {
             .sort_info()
             .map_err(error::into_pyerr)?;
         Ok(sort.map(|c| c.into_iter().map(Into::into).collect()))
+    }
+
+    #[getter]
+    pub fn tags(&mut self) -> PyResult<Wrap<ducklake::Tags>> {
+        let table = self.table.clone();
+        let mut tx_guard = self.tx();
+        let tags = tx_guard
+            .table(table)
+            .map_err(error::into_pyerr)?
+            .tags()
+            .map_err(error::into_pyerr)?;
+        Ok(tags.into())
+    }
+
+    pub fn get_tag(&mut self, key: &str) -> PyResult<Option<String>> {
+        let tags = self.tags()?;
+        Ok(tags.0.get(key).map(Into::into))
     }
 
     fn get_write_info(

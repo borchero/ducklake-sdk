@@ -181,7 +181,7 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
         data_path.join(&self.inner().path)
     }
 
-    pub(crate) fn tags(&self) -> Vec<crate::Tag> {
+    pub(crate) fn tags(&self) -> crate::Tags {
         self.inner().tags.clone()
     }
 }

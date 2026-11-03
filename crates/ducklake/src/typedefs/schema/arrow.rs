@@ -247,7 +247,7 @@ impl Column {
             name: field.name().clone(),
             dtype,
             nullable: field.is_nullable(),
-            tags: Vec::new(),
+            tags: Default::default(),
             initial_default: None,
             default_value: ColumnDefault::Literal(None),
             field_id: field

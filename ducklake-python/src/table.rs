@@ -48,9 +48,14 @@ impl PyTable {
     }
 
     #[getter]
-    pub fn tags(&self, py: Python) -> PyResult<Vec<Wrap<ducklake::Tag>>> {
+    pub fn tags(&self, py: Python) -> PyResult<Wrap<ducklake::Tags>> {
         let tags = block_on(py, self.0.tags()).map_err(error::into_pyerr)?;
-        Ok(tags.into_iter().map(|tag| tag.into()).collect())
+        Ok(tags.into())
+    }
+
+    pub fn get_tag(&self, py: Python, key: &str) -> PyResult<Option<String>> {
+        let tags = block_on(py, self.0.tags()).map_err(error::into_pyerr)?;
+        Ok(tags.get(key).map(Into::into))
     }
 
     #[getter]

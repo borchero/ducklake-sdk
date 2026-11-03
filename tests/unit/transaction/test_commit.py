@@ -35,13 +35,20 @@ def test_edit_pending_tags(ducklake: dl.Ducklake, catalog_url: str) -> None:
     # Act
     with ducklake.transaction() as tx:
         table = tx.create_table("table", {"x": dl.Int64()}, tags=tags)
+        initial_tags = table.tags
         table.add_tag("env", "new")
         table.add_tag("temporary", "value")
         table.remove_tag("temporary")
+        pending_tags = table.tags
+        env = table.get_tag("env")
+        missing = table.get_tag("temporary")
 
     # Assert
+    assert initial_tags == tags
+    assert env == "new"
+    assert missing is None
     with dl.connect(catalog_url) as reopened:
-        assert reopened.table("table").tags == {"env": "new"}
+        assert reopened.table("table").tags == pending_tags == {"env": "new"}
 
 
 @pytest.fixture(params=[False, True], ids=["new-statistics", "existing-statistics"])

@@ -663,7 +663,7 @@ impl Ducklake {
         partition_columns: Option<Vec<PartitionColumn>>,
         sort_info: Option<Vec<crate::SortExpression>>,
         path: Option<String>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<Table> {
         let name = name.try_into().map_err(|e| e.into())?;
@@ -697,7 +697,7 @@ impl Ducklake {
         name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
         sql: String,
         column_aliases: Option<Vec<String>>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<View> {
         let name = name.try_into().map_err(|e| e.into())?;
