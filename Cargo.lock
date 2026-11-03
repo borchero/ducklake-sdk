@@ -735,7 +735,9 @@ version = "0.0.0"
 dependencies = [
  "arrow-arith",
  "arrow-array",
+ "arrow-cast",
  "arrow-schema",
+ "arrow-select",
  "async-recursion",
  "base64 0.23.1",
  "bytes",

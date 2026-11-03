@@ -200,6 +200,23 @@ impl DataType {
 }
 
 impl DataType {
+    /// Whether this type can be widened to the target type during schema evolution.
+    pub(crate) fn can_promote_to(&self, target: &Self) -> bool {
+        use DataType::*;
+
+        // https://ducklake.select/docs/stable/duckdb/usage/schema_evolution#type-promotion
+        matches!(
+            (self, target),
+            (Int8, Int16 | Int32 | Int64)
+                | (Int16, Int32 | Int64)
+                | (Int32, Int64)
+                | (UInt8, UInt16 | UInt32 | UInt64)
+                | (UInt16, UInt32 | UInt64)
+                | (UInt32, UInt64)
+                | (Float32, Float64)
+        )
+    }
+
     /// Whether the data type is a nested type (i.e. list, struct, or map).
     pub fn is_nested(&self) -> bool {
         matches!(

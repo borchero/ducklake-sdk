@@ -524,6 +524,11 @@ impl<'a> Transaction<'a> {
             data: data
                 .into_iter()
                 .map(|batch| {
+                    let batch = io::arrow::schema::match_to_schema(
+                        &batch,
+                        &schema,
+                        io::arrow::schema::Defaults::DefaultValue,
+                    )?;
                     let statistics = io::arrow::compute_record_batch_statistics(&schema, &batch);
                     let data = CommitInlineData {
                         record_batch: batch.clone(),
@@ -902,15 +907,7 @@ impl<'a> Transaction<'a> {
 
         // Otherwise, we update
         match (&existing_dtype, &target_dtype) {
-            // Type promotions, see also:
-            // https://ducklake.select/docs/stable/duckdb/usage/schema_evolution#type-promotion
-            (Int8, Int16 | Int32 | Int64)
-            | (Int16, Int32 | Int64)
-            | (Int32, Int64)
-            | (UInt8, UInt16 | UInt32 | UInt64)
-            | (UInt16, UInt32 | UInt64)
-            | (UInt32, UInt64)
-            | (Float32, Float64) => {
+            (source, target) if source.can_promote_to(target) => {
                 let mut table = self.catalog_mut().table_mut(table_name)?;
                 let mut column = table.column_mut(column_name)?;
                 column.update_primitive_data_type(target_dtype);

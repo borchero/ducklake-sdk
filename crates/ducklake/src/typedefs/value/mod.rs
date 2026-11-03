@@ -1,3 +1,4 @@
+mod arrow;
 mod format;
 mod parse;
 

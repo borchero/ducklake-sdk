@@ -94,6 +94,7 @@ async fn scan_table_inner(
     let catalog = snapshot.catalog().await?;
     let table = catalog.table(table_id)?;
     let column_dtypes = table.column_data_types();
+    let target_schema = &table.schema();
 
     // Build all queries
     let data_files_query = queries::build_data_files_query(table_id, snapshot_id);
@@ -153,7 +154,12 @@ async fn scan_table_inner(
                     schema.columns.keys(),
                     snapshot_id,
                 );
-                pool.fetch_all_arrow(&query, &schema.to_arrow()).await
+                let batch = pool.fetch_all_arrow(&query, &schema.to_arrow()).await?;
+                io::arrow::schema::match_to_schema(
+                    &batch,
+                    target_schema,
+                    io::arrow::schema::Defaults::InitialDefault,
+                )
             },
         ))
         .await?

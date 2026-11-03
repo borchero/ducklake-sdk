@@ -188,7 +188,7 @@ impl<E: TypeEncoder> ArrayExtractor<E> for StringArrayExtractor {
 /* ------------------------------------------ BINARY ------------------------------------------- */
 
 pub(super) struct BinaryArrayExtractor {
-    array: arrow_array::BinaryViewArray,
+    array: arrow_array::LargeBinaryArray,
 }
 
 impl BinaryArrayExtractor {
@@ -196,7 +196,7 @@ impl BinaryArrayExtractor {
         Self {
             array: array
                 .as_any()
-                .downcast_ref::<arrow_array::BinaryViewArray>()
+                .downcast_ref::<arrow_array::LargeBinaryArray>()
                 .unwrap()
                 .clone(),
         }
