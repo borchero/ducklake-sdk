@@ -22,7 +22,7 @@ def test_merge_adjacent_files(ducklake: dl.Ducklake, random_table_name: str) -> 
     # Assert
     assert result == [
         {
-            "table_name": dl.TableName("main", random_table_name),
+            "table_name": dl.QualifiedName("main", random_table_name),
             "files_processed": 3,
             "files_created": 1,
         }
@@ -51,7 +51,7 @@ def test_merge_adjacent_files_in_schema(
     # Assert
     assert result == [
         {
-            "table_name": dl.TableName(random_schema_name, random_table_name),
+            "table_name": dl.QualifiedName(random_schema_name, random_table_name),
             "files_processed": 2,
             "files_created": 1,
         }
@@ -77,7 +77,7 @@ def test_rewrite_data_files(ducklake: dl.Ducklake, random_table_name: str) -> No
     # Assert
     assert result == [
         {
-            "table_name": dl.TableName("main", random_table_name),
+            "table_name": dl.QualifiedName("main", random_table_name),
             "files_processed": 1,
             "files_created": 1,
         }

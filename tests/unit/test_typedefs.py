@@ -19,9 +19,9 @@ from ducklake.typedefs import _serialize_metadata_value
         ('with"quote', 'and"quote', '"with""quote"."and""quote"'),
     ],
 )
-def test_table_name_str(schema: str, name: str, expected: str) -> None:
+def test_qualified_name_str(schema: str, name: str, expected: str) -> None:
     # Arrange
-    table_name = dl.TableName(schema, name)
+    table_name = dl.QualifiedName(schema, name)
 
     # Act
     actual = str(table_name)

@@ -3,7 +3,7 @@ from typing import Any
 
 import duckdb
 
-from ducklake import MaintenanceResult, TableName
+from ducklake import MaintenanceResult, QualifiedName
 
 
 def fetch_result_dicts(
@@ -42,7 +42,7 @@ def parse_maintenance_result(rows: list[dict[str, Any]]) -> list[MaintenanceResu
     """Parse the result of a maintenance query into a more user-friendly format."""
     return [
         {
-            "table_name": TableName(row["schema_name"], row["table_name"]),
+            "table_name": QualifiedName(row["schema_name"], row["table_name"]),
             "files_processed": row["files_processed"],
             "files_created": row["files_created"],
         }

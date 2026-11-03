@@ -13,7 +13,7 @@ Schemas
 
     Schema
     Column
-    TableName
+    QualifiedName
     TableMetadata
 
 Primitive Data Types

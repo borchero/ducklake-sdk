@@ -300,7 +300,7 @@ impl Catalog {
             // 4) Construct the full table catalog object
             let catalog_table = CatalogTable {
                 id: Some(table.table_id),
-                name: crate::TableName {
+                name: crate::QualifiedName {
                     schema: schema.name().to_string(),
                     name: table_name.clone(),
                 },
@@ -344,7 +344,7 @@ impl Catalog {
             // 2) Construct the full view catalog object
             let catalog_view = CatalogView {
                 id: Some(view.view_id),
-                name: crate::TableName {
+                name: crate::QualifiedName {
                     schema: schema.name().to_string(),
                     name: view_name.clone(),
                 },
@@ -390,7 +390,7 @@ impl Catalog {
             // 2) Construct the full macro catalog object
             let catalog_macro = CatalogMacro::from_ducklake(
                 macro_.macro_id,
-                crate::TableName {
+                crate::QualifiedName {
                     schema: schema.name().to_string(),
                     name: macro_.macro_name.clone(),
                 },

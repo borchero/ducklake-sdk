@@ -24,7 +24,7 @@ use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};
 use crate::primitives::Borrowed;
 use crate::spec::*;
-use crate::{DucklakeError, DucklakeResult, TableName, db};
+use crate::{DucklakeError, DucklakeResult, QualifiedName, db};
 
 /// Transaction to make changes to the DuckLake.
 pub struct Transaction<'a> {
@@ -105,7 +105,7 @@ impl<'a> Transaction<'a> {
 
     /// List all tables in the transaction-local catalog, optionally restricted to a specific
     /// schema.
-    pub fn list_tables(&self, schema: Option<&str>) -> DucklakeResult<Vec<TableName>> {
+    pub fn list_tables(&self, schema: Option<&str>) -> DucklakeResult<Vec<QualifiedName>> {
         if let Some(schema) = schema {
             Ok(self
                 .catalog
@@ -130,7 +130,7 @@ impl<'a> Transaction<'a> {
 
     /// List all views in the transaction-local catalog, optionally restricted to a specific
     /// schema.
-    pub fn list_views(&self, schema: Option<&str>) -> DucklakeResult<Vec<TableName>> {
+    pub fn list_views(&self, schema: Option<&str>) -> DucklakeResult<Vec<QualifiedName>> {
         if let Some(schema) = schema {
             Ok(self
                 .catalog
@@ -157,7 +157,7 @@ impl<'a> Transaction<'a> {
     pub fn list_macros(
         &self,
         schema: Option<&str>,
-    ) -> DucklakeResult<Vec<(TableName, crate::MacroType)>> {
+    ) -> DucklakeResult<Vec<(QualifiedName, crate::MacroType)>> {
         if let Some(schema) = schema {
             Ok(self
                 .catalog

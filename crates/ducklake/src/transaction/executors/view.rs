@@ -9,7 +9,7 @@ pub(crate) fn create_view<'a>(
     state: &mut CommitState<'a>,
     schema_ref: &SchemaRef,
     view_ref: &ViewRef,
-    name: &crate::TableName,
+    name: &crate::QualifiedName,
     sql: &str,
     dialect: &str,
     column_aliases: &Option<Vec<String>>,

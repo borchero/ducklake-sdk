@@ -1,7 +1,7 @@
 use arrow_array::RecordBatch;
 
 use crate::ducklake::{DucklakeConnection, SnapshotAccess};
-use crate::{DucklakeResult, IntoColumnName, TableMetadata, TableName, scan, utils};
+use crate::{DucklakeResult, IntoColumnName, QualifiedName, TableMetadata, scan, utils};
 
 /// Handle to a table in the DuckLake catalog.
 #[derive(Clone)]
@@ -21,7 +21,7 @@ impl Eq for Table {}
 
 #[derive(Clone)]
 pub(crate) struct TableInfo {
-    pub name: TableName,
+    pub name: QualifiedName,
     pub schema: crate::Schema,
     pub partitioning: Option<crate::Partition>,
     pub sort_info: Option<crate::SortInfo>,
@@ -38,7 +38,7 @@ impl Table {
     }
 
     /// Get the name of the table.
-    pub async fn name(&self) -> DucklakeResult<crate::TableName> {
+    pub async fn name(&self) -> DucklakeResult<crate::QualifiedName> {
         let snapshot = self.conn.current_snapshot();
         let catalog = snapshot.catalog().await?;
         let table = catalog.table(self.id)?;

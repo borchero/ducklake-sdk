@@ -9,7 +9,7 @@ mod value;
 
 pub use data::*;
 pub use macro_::{MacroImplementation, MacroParameter, MacroType};
-pub use name::{ColumnName, IntoColumnName, TableName};
+pub use name::{ColumnName, IntoColumnName, QualifiedName};
 pub(crate) use partition::Partition;
 pub use partition::{PartitionColumn, PartitionTransform};
 pub(crate) use schema::Schema;

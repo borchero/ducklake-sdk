@@ -1,6 +1,6 @@
 use super::changes::Change;
 use super::{IfExistsStrategy, Transaction};
-use crate::{DucklakeError, DucklakeResult, TableName, Tag, ViewInfo, view};
+use crate::{DucklakeError, DucklakeResult, QualifiedName, Tag, ViewInfo, view};
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                           LIFECYCLE                                           */
@@ -14,7 +14,7 @@ impl<'a> Transaction<'a> {
     /// The provided SQL must be a single `SELECT` query (not a `CREATE VIEW` statement).
     pub fn create_view(
         &mut self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         sql: String,
         column_aliases: Option<Vec<String>>,
         tags: Option<Vec<Tag>>,
@@ -64,7 +64,7 @@ impl<'a> Transaction<'a> {
     /// Delete the view with the given name from the catalog.
     pub fn delete_view(
         &mut self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         if_not_exists: IfExistsStrategy,
     ) -> DucklakeResult<()> {
         let name = name.try_into().map_err(|e| e.into())?;

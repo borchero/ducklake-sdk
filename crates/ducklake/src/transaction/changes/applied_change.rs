@@ -67,8 +67,8 @@ impl FromStr for AppliedChangeSet {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(in crate::transaction) enum AppliedChange {
     CreatedSchema { name: SchemaName },
-    CreatedTable { name: crate::TableName },
-    CreatedView { name: crate::TableName },
+    CreatedTable { name: crate::QualifiedName },
+    CreatedView { name: crate::QualifiedName },
     CreatedScalarMacro { name: String },
     CreatedTableMacro { name: String },
     InsertedIntoTable { id: i64 },
@@ -136,7 +136,7 @@ impl AppliedChange {
             | (DroppedSchema { id: schema_id }, CreatedTableMacro { name })
             | (CreatedTableMacro { name }, DroppedSchema { id: schema_id }) => {
                 let schema = catalog.schema(*schema_id)?;
-                let macro_name: crate::TableName = name.parse()?;
+                let macro_name: crate::QualifiedName = name.parse()?;
                 if schema.name() == macro_name.schema {
                     format!(
                         "attempting to drop schema with ID {schema_id} but macro {macro_name} was created in it"

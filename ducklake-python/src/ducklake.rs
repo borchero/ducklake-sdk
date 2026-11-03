@@ -142,7 +142,7 @@ impl PyDucklake {
     pub fn delete_table(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         if_not_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {
         block_on(py, self.0.delete_table(name.0, if_not_exists.0)).map_err(error::into_pyerr)
@@ -151,7 +151,7 @@ impl PyDucklake {
     pub fn delete_view(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         if_not_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {
         block_on(py, self.0.delete_view(name.0, if_not_exists.0)).map_err(error::into_pyerr)
@@ -161,7 +161,7 @@ impl PyDucklake {
     pub fn create_table(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         schema: Vec<Wrap<ducklake::Column>>,
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
         sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,
@@ -207,20 +207,20 @@ impl PyDucklake {
         Ok(PyTransaction::new(tx))
     }
 
-    pub fn table(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<PyTable> {
+    pub fn table(&self, py: Python, name: Wrap<ducklake::QualifiedName>) -> PyResult<PyTable> {
         block_on(py, self.0.table(name.0))
             .map(PyTable::new)
             .map_err(error::into_pyerr)
     }
 
-    pub fn has_table(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<bool> {
+    pub fn has_table(&self, py: Python, name: Wrap<ducklake::QualifiedName>) -> PyResult<bool> {
         block_on(py, self.0.table_exists(name.0)).map_err(error::into_pyerr)
     }
 
     pub fn copy_tables(
         &self,
         py: Python,
-        tables: Vec<(Option<Wrap<ducklake::TableName>>, PyRef<PyTable>)>,
+        tables: Vec<(Option<Wrap<ducklake::QualifiedName>>, PyRef<PyTable>)>,
         target: &PyDucklake,
     ) -> PyResult<Vec<PyTable>> {
         let tables = tables
@@ -238,7 +238,7 @@ impl PyDucklake {
     pub fn move_tables(
         &self,
         py: Python,
-        tables: Vec<(Option<Wrap<ducklake::TableName>>, PyRef<PyTable>)>,
+        tables: Vec<(Option<Wrap<ducklake::QualifiedName>>, PyRef<PyTable>)>,
         target: &PyDucklake,
     ) -> PyResult<Vec<PyTable>> {
         let tables = tables
@@ -277,7 +277,7 @@ impl PyDucklake {
     pub fn create_view(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         sql: String,
         column_aliases: Option<Vec<String>>,
         tags: Option<Vec<Wrap<ducklake::Tag>>>,
@@ -297,7 +297,7 @@ impl PyDucklake {
         .map_err(error::into_pyerr)
     }
 
-    pub fn view(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<PyView> {
+    pub fn view(&self, py: Python, name: Wrap<ducklake::QualifiedName>) -> PyResult<PyView> {
         block_on(py, self.0.view(name.0))
             .map(PyView::new)
             .map_err(error::into_pyerr)
@@ -312,7 +312,7 @@ impl PyDucklake {
     pub fn create_macro(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         macro_type: &str,
         implementations: Vec<crate::macro_::PyMacroImplementation>,
         if_exists: Wrap<ducklake::IfExistsStrategy>,
@@ -331,7 +331,7 @@ impl PyDucklake {
     pub fn macro_(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         macro_type: &str,
     ) -> PyResult<PyMacro> {
         let macro_type = macro_type.parse().map_err(error::into_pyerr)?;
@@ -349,7 +349,7 @@ impl PyDucklake {
     pub fn delete_macro(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         macro_type: &str,
         if_not_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {

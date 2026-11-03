@@ -328,7 +328,7 @@ impl Ducklake {
     /// Get a handle to the table with the provided name.
     pub async fn table(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<Table> {
         let name = name.try_into().map_err(|e| e.into())?;
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -339,7 +339,7 @@ impl Ducklake {
     /// Returns whether a table with the provided name exists in the catalog.
     pub async fn table_exists(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<bool> {
         let name = name.try_into().map_err(|e| e.into())?;
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -350,7 +350,7 @@ impl Ducklake {
     fn maybe_table_from_catalog(
         &self,
         catalog: &Catalog,
-        name: &TableName,
+        name: &QualifiedName,
     ) -> DucklakeResult<Option<Table>> {
         let Some(schema_id) = catalog.schema(&name.schema)?.id() else {
             return Ok(None);
@@ -396,7 +396,7 @@ impl Ducklake {
     /// Get a handle to the view with the provided name.
     pub async fn view(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<View> {
         let name = name.try_into().map_err(|e| e.into())?;
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -407,7 +407,7 @@ impl Ducklake {
     fn maybe_view_from_catalog(
         &self,
         catalog: &Catalog,
-        name: &TableName,
+        name: &QualifiedName,
     ) -> DucklakeResult<Option<View>> {
         if catalog.schema(&name.schema)?.id().is_none() {
             return Ok(None);
@@ -445,7 +445,7 @@ impl Ducklake {
     /// Get a handle to the macro with the provided name.
     pub async fn macro_(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         macro_type: MacroType,
     ) -> DucklakeResult<Macro> {
         let name = name.try_into().map_err(|error| error.into())?;
@@ -459,7 +459,7 @@ impl Ducklake {
     fn maybe_macro_from_catalog(
         &self,
         catalog: &Catalog,
-        name: &TableName,
+        name: &QualifiedName,
         macro_type: MacroType,
     ) -> DucklakeResult<Option<Macro>> {
         if catalog.schema(&name.schema)?.id().is_none() {
@@ -646,11 +646,11 @@ within_transaction! {
     /// Delete an existing schema from the catalog, optionally deleting all of its tables and views.
     fn delete_schema(name: &str, cascade: bool, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
     /// Delete an existing table from the catalog.
-    fn delete_table(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
+    fn delete_table(name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
     /// Delete an existing view from the catalog.
-    fn delete_view(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
+    fn delete_view(name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
     /// Delete an existing macro from the catalog.
-    fn delete_macro(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, macro_type: MacroType, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
+    fn delete_macro(name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>, macro_type: MacroType, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
 }
 
 impl Ducklake {
@@ -658,7 +658,7 @@ impl Ducklake {
     #[allow(clippy::too_many_arguments)]
     pub async fn create_table(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         columns: Vec<Column>,
         partition_columns: Option<Vec<PartitionColumn>>,
         sort_info: Option<Vec<crate::SortExpression>>,
@@ -694,7 +694,7 @@ impl Ducklake {
     /// The provided SQL must be a single `SELECT` query (not a `CREATE VIEW` statement).
     pub async fn create_view(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         sql: String,
         column_aliases: Option<Vec<String>>,
         tags: Option<Vec<Tag>>,
@@ -718,7 +718,7 @@ impl Ducklake {
     /// Create a new macro in the catalog.
     pub async fn create_macro(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         macro_type: MacroType,
         implementations: Vec<MacroImplementation>,
         if_exists: IfExistsStrategy,

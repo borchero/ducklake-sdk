@@ -55,7 +55,7 @@ impl Catalog {
 
 /* ------------------------------------------ INTO REF ----------------------------------------- */
 
-impl TryIntoRef<TableRef> for &crate::TableName {
+impl TryIntoRef<TableRef> for &crate::QualifiedName {
     type Error = DucklakeError;
 
     fn try_into_ref(self, catalog: &Catalog) -> Result<TableRef, Self::Error> {
@@ -141,7 +141,7 @@ impl<'a, C: Deref<Target = Catalog>> TableView<'a, C> {
         }
     }
 
-    pub(crate) fn name(&self) -> &crate::TableName {
+    pub(crate) fn name(&self) -> &crate::QualifiedName {
         &self.inner().name
     }
 
@@ -232,13 +232,13 @@ impl<'a> TableViewMut<'a> {
         let mut schema = self.catalog.schema_mut(&name.schema)?;
         let catalog_schema = schema.inner_mut();
         if catalog_schema.tables.contains_key(new_name) {
-            return Err(DucklakeError::table_already_exists(&crate::TableName {
+            return Err(DucklakeError::table_already_exists(&crate::QualifiedName {
                 schema: name.schema.clone(),
                 name: new_name.to_string(),
             }));
         }
         if catalog_schema.views.contains_key(new_name) {
-            return Err(DucklakeError::view_already_exists(&crate::TableName {
+            return Err(DucklakeError::view_already_exists(&crate::QualifiedName {
                 schema: name.schema.clone(),
                 name: new_name.to_string(),
             }));
@@ -252,7 +252,7 @@ impl<'a> TableViewMut<'a> {
 
         // Rename the table itself
         let table = self.inner_mut();
-        table.name = crate::TableName {
+        table.name = crate::QualifiedName {
             schema: table.name.schema.clone(),
             name: new_name.to_string(),
         };

@@ -41,8 +41,8 @@ pub enum DucklakeError {
     InvalidNullOrder(String),
     #[error("invalid schema name '{name}': {reason}")]
     InvalidSchemaName { name: String, reason: &'static str },
-    #[error("invalid table name '{name}': {reason}")]
-    InvalidTableName { name: String, reason: &'static str },
+    #[error("invalid qualified name '{name}': {reason}")]
+    InvalidQualifiedName { name: String, reason: &'static str },
     #[error("invalid view definition: {reason}")]
     InvalidView { reason: String },
     #[error("invalid macro definition: {reason}")]
@@ -186,42 +186,42 @@ impl DucklakeError {
         }
     }
 
-    pub(crate) fn table_already_exists(name: &crate::TableName) -> Self {
+    pub(crate) fn table_already_exists(name: &crate::QualifiedName) -> Self {
         DucklakeError::AlreadyExists {
             entity: "table",
             name: name.to_string(),
         }
     }
 
-    pub(crate) fn table_not_found(name: &crate::TableName) -> Self {
+    pub(crate) fn table_not_found(name: &crate::QualifiedName) -> Self {
         DucklakeError::NotFound {
             entity: "table",
             name: name.to_string(),
         }
     }
 
-    pub(crate) fn view_already_exists(name: &crate::TableName) -> Self {
+    pub(crate) fn view_already_exists(name: &crate::QualifiedName) -> Self {
         DucklakeError::AlreadyExists {
             entity: "view",
             name: name.to_string(),
         }
     }
 
-    pub(crate) fn view_not_found(name: &crate::TableName) -> Self {
+    pub(crate) fn view_not_found(name: &crate::QualifiedName) -> Self {
         DucklakeError::NotFound {
             entity: "view",
             name: name.to_string(),
         }
     }
 
-    pub(crate) fn macro_already_exists(name: &crate::TableName) -> Self {
+    pub(crate) fn macro_already_exists(name: &crate::QualifiedName) -> Self {
         DucklakeError::AlreadyExists {
             entity: "macro",
             name: name.to_string(),
         }
     }
 
-    pub(crate) fn macro_not_found(name: &crate::TableName) -> Self {
+    pub(crate) fn macro_not_found(name: &crate::QualifiedName) -> Self {
         DucklakeError::NotFound {
             entity: "macro",
             name: name.to_string(),

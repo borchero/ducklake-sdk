@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use super::TryIntoRef;
 use crate::catalog::{ArenaIdx, Catalog, CatalogMacro, MacroRef};
-use crate::{DucklakeError, MacroImplementation, MacroType, TableName};
+use crate::{DucklakeError, MacroImplementation, MacroType, QualifiedName};
 
 pub(crate) struct MacroView<'a, C = &'a Catalog> {
     catalog: C,
@@ -39,7 +39,7 @@ impl<'a, C: Deref<Target = Catalog>> MacroView<'a, C> {
         self.inner().id
     }
 
-    pub(crate) fn name(&self) -> &TableName {
+    pub(crate) fn name(&self) -> &QualifiedName {
         &self.inner().name
     }
 
@@ -97,7 +97,7 @@ impl<'a> MacroViewMut<'a> {
     }
 }
 
-impl TryIntoRef<MacroRef> for (&TableName, MacroType) {
+impl TryIntoRef<MacroRef> for (&QualifiedName, MacroType) {
     type Error = DucklakeError;
 
     fn try_into_ref(self, catalog: &Catalog) -> Result<MacroRef, Self::Error> {

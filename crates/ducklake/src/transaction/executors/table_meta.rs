@@ -18,7 +18,7 @@ pub(crate) fn create_table<'a>(
     table_ref: &TableRef,
     column_refs: &[Vec<ColumnRef>],
     partition_column_refs: &Option<Vec<ColumnRef>>,
-    name: &crate::TableName,
+    name: &crate::QualifiedName,
     columns: &[crate::Column],
     retired_columns: &[DucklakeColumn],
     partition_columns: &Option<Vec<crate::PartitionColumn>>,
@@ -107,7 +107,7 @@ pub(crate) fn rename_table<'a>(
     changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
-    name: &crate::TableName,
+    name: &crate::QualifiedName,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
 

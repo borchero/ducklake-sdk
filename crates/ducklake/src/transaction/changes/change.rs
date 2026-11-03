@@ -296,7 +296,7 @@ pub(crate) enum Change {
         table_ref: TableRef,
         column_refs: Vec<Vec<ColumnRef>>,
         partition_column_refs: Option<Vec<ColumnRef>>,
-        name: crate::TableName,
+        name: crate::QualifiedName,
         columns: Vec<crate::Column>,
         retired_columns: Vec<crate::spec::DucklakeColumn>,
         partition_columns: Option<Vec<crate::PartitionColumn>>,
@@ -314,7 +314,7 @@ pub(crate) enum Change {
     },
     RenameTable {
         table_ref: TableRef,
-        name: crate::TableName,
+        name: crate::QualifiedName,
     },
     UpdateTablePartitioning {
         table_ref: TableRef,
@@ -341,7 +341,7 @@ pub(crate) enum Change {
     CreateView {
         schema_ref: SchemaRef,
         view_ref: ViewRef,
-        name: crate::TableName,
+        name: crate::QualifiedName,
         sql: String,
         dialect: String,
         column_aliases: Option<Vec<String>>,
@@ -354,7 +354,7 @@ pub(crate) enum Change {
     CreateMacro {
         schema_ref: SchemaRef,
         macro_ref: MacroRef,
-        name: crate::TableName,
+        name: crate::QualifiedName,
         macro_type: crate::MacroType,
         implementations: Vec<crate::MacroImplementation>,
     },
