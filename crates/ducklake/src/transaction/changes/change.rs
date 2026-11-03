@@ -27,15 +27,13 @@ impl ChangeSet {
     /// The change set retains the order of changes, but de-duplicates them based on their type.
     /// For example: if a table is renamed multiple times, only the last rename is kept.
     pub(crate) fn new(changes: Vec<Change>) -> Self {
-        // Keep the last metadata change for each key, but retain every inline write.
-        let mut seen = HashSet::new();
+        // Deduplicate in reverse to keep the last change for each key, then restore input order.
         let mut changes = changes
             .into_iter()
             .rev()
-            .filter(|change| {
-                matches!(change, Change::WriteTableInlineData { .. })
-                    || seen.insert(HashableChange::from(change))
-            })
+            .enumerate()
+            .unique_by(|(index, change)| HashableChange::new(change, *index))
+            .map(|(_, change)| change)
             .collect_vec();
         changes.reverse();
 
@@ -753,12 +751,13 @@ enum HashableChange {
         paths: Vec<io::DucklakePath>,
     },
     WriteTableInlineData {
-        table_ref: TableRef,
+        // Each write must be retained, even when its table and data match another write.
+        index: usize,
     },
 }
 
-impl From<&Change> for HashableChange {
-    fn from(change: &Change) -> Self {
+impl HashableChange {
+    fn new(change: &Change, index: usize) -> Self {
         use HashableChange::*;
         match change {
             Change::CreateSchema { schema_ref, .. } => CreateSchema {
@@ -826,9 +825,7 @@ impl From<&Change> for HashableChange {
                 table_ref: *table_ref,
                 paths: data_files.iter().map(|f| f.path.clone()).collect(),
             },
-            Change::WriteTableInlineData { table_ref, .. } => WriteTableInlineData {
-                table_ref: *table_ref,
-            },
+            Change::WriteTableInlineData { .. } => WriteTableInlineData { index },
         }
     }
 }
@@ -1012,24 +1009,39 @@ mod tests {
     }
 
     #[test]
+    fn test_retains_repeated_inline_writes() {
+        // Arrange
+        let write = Change::WriteTableInlineData {
+            table_ref: TableRef::mock(1),
+            data: vec![],
+        };
+
+        // Act
+        let set = ChangeSet::new(vec![write.clone(), write]);
+
+        // Assert
+        assert_eq!(set.changes.len(), 2);
+    }
+
+    #[test]
     fn test_hashable_change_distinguishes_by_table_ref() {
-        let a = HashableChange::from(&make_rename(1, "a.x"));
-        let b = HashableChange::from(&make_rename(2, "a.x"));
+        let a = HashableChange::new(&make_rename(1, "a.x"), 0);
+        let b = HashableChange::new(&make_rename(2, "a.x"), 1);
         assert_ne!(a, b);
     }
 
     #[test]
     fn test_hashable_change_ignores_rename_name_difference() {
         // Two renames of the same table dedup regardless of the target name
-        let a = HashableChange::from(&make_rename(1, "a.x"));
-        let b = HashableChange::from(&make_rename(1, "b.y"));
+        let a = HashableChange::new(&make_rename(1, "a.x"), 0);
+        let b = HashableChange::new(&make_rename(1, "b.y"), 1);
         assert_eq!(a, b);
     }
 
     #[test]
     fn test_hashable_change_tag_distinguishes_keys() {
-        let a = HashableChange::from(&make_add_tag(1, "k1", "v"));
-        let b = HashableChange::from(&make_add_tag(1, "k2", "v"));
+        let a = HashableChange::new(&make_add_tag(1, "k1", "v"), 0);
+        let b = HashableChange::new(&make_add_tag(1, "k2", "v"), 1);
         assert_ne!(a, b);
     }
 }
