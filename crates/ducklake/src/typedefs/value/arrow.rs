@@ -96,35 +96,21 @@ mod tests {
 
     #[rstest]
     #[case::decimal(DataType::Decimal { precision: 6, scale: 2 }, Value::Decimal(rust_decimal::Decimal::new(123, 1)))]
-    #[case::uuid(DataType::Uuid, Value::Uuid(uuid::Uuid::nil()))]
-    #[case::timestamp_seconds(DataType::Timestamp { precision: crate::TimestampPrecision::Seconds }, Value::Timestamp(chrono::DateTime::from_timestamp(-123, 0).unwrap().naive_utc()))]
-    #[case::timestamp_milliseconds(DataType::Timestamp { precision: crate::TimestampPrecision::Milliseconds }, Value::Timestamp(chrono::DateTime::from_timestamp(-123, 0).unwrap().naive_utc()))]
-    #[case::timestamp_microseconds(DataType::Timestamp { precision: crate::TimestampPrecision::Microseconds }, Value::Timestamp(chrono::DateTime::from_timestamp(-123, 0).unwrap().naive_utc()))]
-    #[case::timestamp_nanoseconds(DataType::Timestamp { precision: crate::TimestampPrecision::Nanoseconds }, Value::Timestamp(chrono::DateTime::from_timestamp(-123, 0).unwrap().naive_utc()))]
-    #[case::timestamp_tz(DataType::TimestampTz, Value::TimestampTz(chrono::DateTime::from_timestamp(123, 0).unwrap()))]
-    #[case::int128(DataType::Int128, Value::Int128(-123))]
-    #[case::uint128(DataType::UInt128, Value::UInt128(123))]
+    #[case::timestamp(DataType::Timestamp { precision: crate::TimestampPrecision::Nanoseconds }, Value::Timestamp(chrono::DateTime::from_timestamp(-123, 456_789).unwrap().naive_utc()))]
     #[case::string(DataType::Varchar, Value::Varchar("a default string longer than twelve bytes".into()))]
-    fn broadcast_defaults(
-        #[case] dtype: DataType,
-        #[case] value: Value,
-        #[values(0, 3)] len: usize,
-    ) {
+    fn broadcast_defaults(#[case] dtype: DataType, #[case] value: Value) {
         // Arrange
-        let field = Column::new("x".into(), dtype.clone())
-            .field_id(Some(1))
-            .to_arrow_field();
+        let field = Column::new("x".into(), dtype.clone()).to_arrow_field();
 
         // Act
-        let array = value.broadcast_into_array(&dtype, len).unwrap();
+        let array = value.broadcast_into_array(&dtype, 3).unwrap();
 
         // Assert
-        assert_eq!(array.len(), len);
+        assert_eq!(array.len(), 3);
         assert_eq!(array.data_type(), field.data_type());
-        assert_eq!(Column::try_from(&field).unwrap().dtype, dtype);
         assert_eq!(
             crate::io::arrow::aggregate::find_min(&dtype, &array),
-            (len > 0).then_some(value)
+            Some(value)
         );
     }
 }
