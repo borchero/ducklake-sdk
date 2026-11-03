@@ -66,7 +66,11 @@ class View:
     @property
     def tags(self) -> dict[str, str]:
         """The tags associated with the view."""
-        return dict(self._pyview.tags)
+        return self._pyview.tags
+
+    def get_tag(self, key: str) -> str | None:
+        """Get a tag by key, or ``None`` if it is absent, without copying all tags."""
+        return self._pyview.get_tag(key)
 
     @property
     def _duckdb_connection(self) -> duckdb.DuckDBPyConnection:

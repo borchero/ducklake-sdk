@@ -13,7 +13,7 @@ pub struct Column {
     /// Whether the column may contain null values.
     pub nullable: bool,
     /// Tags attached to the column.
-    pub tags: Vec<crate::Tag>,
+    pub tags: crate::Tags,
     /// The default value used when reading the column from data files written before the column
     /// was added.
     pub initial_default: Option<Value>,
@@ -41,7 +41,7 @@ impl Column {
             name,
             dtype,
             nullable: true,
-            tags: Vec::new(),
+            tags: Default::default(),
             initial_default: None,
             default_value: ColumnDefault::Literal(None),
             field_id: None,
@@ -56,7 +56,7 @@ impl Column {
 
     /// Set the tags of the column.
     pub fn tags(mut self, tags: Vec<crate::Tag>) -> Self {
-        self.tags = tags;
+        self.tags = tags.into_iter().collect();
         self
     }
 

@@ -1,8 +1,18 @@
-use ducklake::Tag;
+use ducklake::{Tag, Tags};
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
+use pyo3::types::{IntoPyDict, PyDict, PyTuple};
 
 use super::Wrap;
+
+impl<'py> IntoPyObject<'py> for Wrap<Tags> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        self.0.iter().into_py_dict(py)
+    }
+}
 
 impl FromPyObject<'_, '_> for Wrap<Tag> {
     type Error = PyErr;

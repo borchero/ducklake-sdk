@@ -59,6 +59,11 @@ impl<'a> Transaction<'a> {
 /* --------------------------------------------------------------------------------------------- */
 
 impl<'tx, 'a> TransactionTable<'tx, 'a> {
+    /// Get the tags of the table, including uncommitted changes, without copying the entries.
+    pub fn tags(&self) -> DucklakeResult<crate::Tags> {
+        Ok(self.tx.catalog().table(&self.name)?.tags())
+    }
+
     /// Get the schema of the table within the current transaction.
     pub fn columns(&self) -> DucklakeResult<impl Iterator<Item = crate::Column>> {
         let columns = self
@@ -138,7 +143,7 @@ impl<'a> Transaction<'a> {
             info.partitioning.map(|partition| partition.0),
             info.sort_info.map(|sort| sort.0),
             None,
-            Some(info.tags),
+            Some(info.tags.to_vec()),
             IfExistsStrategy::Fail,
             Some(retired_columns),
         )
@@ -172,7 +177,7 @@ impl<'a> Transaction<'a> {
             schema: columns.clone().try_into()?,
             partitioning: partition_columns.clone().map(Into::into),
             sort_info: sort_info.clone().map(Into::into),
-            tags: tags.clone().unwrap_or_default(),
+            tags: tags.iter().flatten().cloned().collect(),
         };
         let next_column_id = retired_columns.as_ref().map(|retired| {
             columns

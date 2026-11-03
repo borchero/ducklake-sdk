@@ -6,5 +6,5 @@ pub(in crate::catalog) struct CatalogView {
     pub sql: String,
     pub dialect: String,
     pub column_aliases: Option<Vec<String>>,
-    pub tags: Vec<crate::Tag>,
+    pub tags: crate::Tags,
 }

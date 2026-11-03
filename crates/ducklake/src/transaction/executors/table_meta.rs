@@ -482,14 +482,14 @@ fn add_column_to_buffers(
         };
         ducklake_columns.push(ducklake_column);
 
-        ducklake_column_tags.extend(flat_column.column.tags.into_iter().map(|t| {
+        ducklake_column_tags.extend(flat_column.column.tags.iter().map(|(key, value)| {
             DucklakeColumnTag {
                 table_id,
                 column_id,
                 begin_snapshot: state.snapshot_id(),
                 end_snapshot: None,
-                key: t.key,
-                value: t.value,
+                key: key.to_owned(),
+                value: value.to_owned(),
             }
         }));
     }

@@ -198,6 +198,23 @@ impl PyTransactionTable {
         Ok(sort.map(|c| c.into_iter().map(Into::into).collect()))
     }
 
+    #[getter]
+    pub fn tags(&mut self) -> PyResult<Wrap<ducklake::Tags>> {
+        let table = self.table.clone();
+        let mut tx_guard = self.tx();
+        let tags = tx_guard
+            .table(table)
+            .map_err(error::into_pyerr)?
+            .tags()
+            .map_err(error::into_pyerr)?;
+        Ok(tags.into())
+    }
+
+    pub fn get_tag(&mut self, key: &str) -> PyResult<Option<String>> {
+        let tags = self.tags()?;
+        Ok(tags.0.get(key).map(Into::into))
+    }
+
     fn get_write_info(
         &mut self,
     ) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator, bool, bool)> {

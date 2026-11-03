@@ -51,8 +51,8 @@ impl<'py> IntoPyObject<'py> for Wrap<Column> {
             None
         } else {
             let dict = PyDict::new(py);
-            for tag in &self.0.tags {
-                dict.set_item(&tag.key, &tag.value)?;
+            for (key, value) in self.0.tags.iter() {
+                dict.set_item(key, value)?;
             }
             Some(dict)
         };

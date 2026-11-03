@@ -45,9 +45,9 @@ fn arrow_field_from_column(column: &ducklake::Column) -> Field {
 
     // Then, we check for the comment tag to see if we need to attach metadata and/or convert to
     // a dictionary type
-    let comment_tag = column.tags.iter().find(|&t| t.key == COMMENT_TAG);
+    let comment_tag = column.tags.get(COMMENT_TAG);
     if let Some(tag) = comment_tag
-        && let Ok(metadata) = serde_json::from_str::<ArrowFieldMetadata>(&tag.value)
+        && let Ok(metadata) = serde_json::from_str::<ArrowFieldMetadata>(tag)
         && metadata.source == SOURCE_KEY
     {
         let field = if metadata.metadata.is_empty() {
@@ -106,10 +106,10 @@ fn column_from_arrow_field(field: &Field) -> DucklakeResult<ducklake::Column> {
             dictionary,
             metadata: field.metadata().clone(),
         };
-        column.tags.push(ducklake::Tag {
+        column = column.tags(vec![ducklake::Tag {
             key: COMMENT_TAG.to_string(),
             value: serde_json::to_string(&metadata).unwrap(),
-        });
+        }]);
     }
     Ok(column)
 }

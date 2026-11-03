@@ -238,6 +238,15 @@ class TransactionTable:
         return table
 
     @property
+    def tags(self) -> dict[str, str]:
+        """The table's tags, including changes made within this transaction."""
+        return self._pytxtable.tags
+
+    def get_tag(self, key: str) -> str | None:
+        """Get a tag by key, or ``None`` if it is absent, without copying all tags."""
+        return self._pytxtable.get_tag(key)
+
+    @property
     def schema(self) -> Schema:
         """The schema of the table."""
         return Schema(self._pytxtable.columns)

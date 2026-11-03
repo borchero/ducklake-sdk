@@ -39,7 +39,7 @@ impl<'a> Transaction<'a> {
             sql: sql.clone(),
             dialect: dialect.clone(),
             column_aliases: column_aliases.clone(),
-            tags: tags.clone().unwrap_or_default(),
+            tags: tags.iter().flatten().cloned().collect(),
         };
         let (schema_ref, view_ref) = self.catalog_mut().add_view(info)?;
 
