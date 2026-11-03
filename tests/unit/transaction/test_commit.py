@@ -3,6 +3,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 import sqlalchemy as sa
+from polars.testing import assert_frame_equal
 
 import ducklake as dl
 
@@ -153,6 +154,60 @@ def existing_table(ducklake: dl.Ducklake, request: pytest.FixtureRequest) -> boo
     if request.param:
         ducklake.create_table("table", {"x": dl.Int64()})
     return request.param
+
+
+@pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
+@pytest.mark.parametrize("write_first", [False, True])
+def test_inline_write_and_schema_change(ducklake: dl.Ducklake, write_first: bool) -> None:
+    # Arrange
+    ducklake.create_table("table", {"x": dl.Int32()})
+    data = pl.DataFrame({"x": [7]}, schema={"x": pl.Int32})
+
+    # Act
+    with ducklake.transaction() as tx:
+        table = tx.table("table")
+        if write_first:
+            table.write_polars(data)
+        table.rename_column("x", "y")
+        table.update_column_dtype("y", dl.Int64())
+        if not write_first:
+            table.write_polars(pl.DataFrame({"y": [7]}))
+
+    # Assert
+    table = ducklake.table("table")
+    assert not table.scan().data_files
+    assert_frame_equal(table.read_polars(), pl.DataFrame({"y": [7]}))
+
+
+@pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
+def test_inline_writes_across_column_replacement(
+    ducklake: dl.Ducklake, catalog_engine: sa.Engine, existing_table: bool
+) -> None:
+    # Arrange
+    before = pl.DataFrame({"x": [7]})
+    after = pl.DataFrame({"y": [9]})
+
+    # Act
+    with ducklake.transaction() as tx:
+        table = (
+            tx.table("table") if existing_table else tx.create_table("table", {"x": dl.Int64()})
+        )
+        table.write_polars(before)
+        table.remove_column("x")
+        table.add_column(dl.Column("y", dl.Int64(), initial_default=42, default_value=99))
+        table.write_polars(after)
+
+    # Assert
+    table = ducklake.table("table")
+    assert not table.scan().data_files
+    assert_frame_equal(table.read_polars().sort("y"), pl.DataFrame({"y": [9, 42]}))
+    with catalog_engine.connect() as connection:
+        assert connection.execute(
+            sa.text("SELECT record_count, next_row_id FROM ducklake_table_stats")
+        ).all() == [(2, 2)]
+        assert connection.execute(
+            sa.text("SELECT column_id, min_value, max_value FROM ducklake_table_column_stats")
+        ).all() == [(2, "9", "42")]
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")

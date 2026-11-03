@@ -27,13 +27,15 @@ impl ChangeSet {
     /// The change set retains the order of changes, but de-duplicates them based on their type.
     /// For example: if a table is renamed multiple times, only the last rename is kept.
     pub(crate) fn new(changes: Vec<Change>) -> Self {
-        // Reverse so `unique_by` keeps the LAST occurrence of each key, then reverse back to
-        // preserve input order. The double-`.rev()` is materialized between the two reversals
-        // because `Rev<UniqueBy<Rev<_>>>` cancels the reversals out via `DoubleEndedIterator`.
+        // Keep the last metadata change for each key, but retain every inline write.
+        let mut seen = HashSet::new();
         let mut changes = changes
             .into_iter()
             .rev()
-            .unique_by(|c| HashableChange::from(c))
+            .filter(|change| {
+                matches!(change, Change::WriteTableInlineData { .. })
+                    || seen.insert(HashableChange::from(change))
+            })
             .collect_vec();
         changes.reverse();
 
@@ -219,37 +221,6 @@ impl ChangeSet {
     /// essentially applies to all changes that do not insert or re-arrange data.
     pub(crate) fn changes_schema(&self) -> bool {
         self.changes.iter().any(|c| c.changes_schema())
-    }
-
-    /// Obtain the IDs of all tables for which inline data is written. This is necessary for
-    /// detecting writes of inline data in transactions where the table schema is changed.
-    /// This is currently not handled but we need to throw an error.
-    pub(crate) fn table_ids_with_inline_data_writes(
-        &self,
-        state: &mut CommitState<'_>,
-    ) -> Vec<i64> {
-        self.changes
-            .iter()
-            .filter_map(|c| {
-                if let Change::WriteTableInlineData { table_ref, .. } = c {
-                    Some(state.table_id(*table_ref))
-                } else {
-                    None
-                }
-            })
-            .unique()
-            .collect()
-    }
-
-    /// Obtain the IDs of newly created tables.
-    pub(crate) fn created_table_ids(&self, state: &mut CommitState<'_>) -> Vec<i64> {
-        self.changes
-            .iter()
-            .filter_map(|change| match change {
-                Change::CreateTable { table_ref, .. } => Some(state.table_id(*table_ref)),
-                _ => None,
-            })
-            .collect()
     }
 
     /// Obtain the IDs of all tables for which the schema changes in this change set. This includes
@@ -782,8 +753,6 @@ enum HashableChange {
         paths: Vec<io::DucklakePath>,
     },
     WriteTableInlineData {
-        // NOTE: We can only write inline data once per table within a transaction as, otherwise,
-        //  we might need to run into schema violations.
         table_ref: TableRef,
     },
 }

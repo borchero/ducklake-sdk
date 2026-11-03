@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -7,7 +8,7 @@ use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Schema as Arr
 use crate::catalog::TableRef;
 use crate::spec::*;
 use crate::transaction::{CommitDataFile, CommitInlineData, CommitState, TransactionChanges};
-use crate::{DucklakeResult, db};
+use crate::{DucklakeResult, db, io};
 
 /* ------------------------------------------- FILES ------------------------------------------- */
 
@@ -145,15 +146,36 @@ pub(crate) async fn write_table_inline_data(
     inline_data: &Vec<CommitInlineData>,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
+    let schema = state.table_schema(*table_ref);
+    let arrow_schema = schema.to_arrow();
     // Assign row IDs while collecting; persistence can then group writes by table.
     let snapshot_id = state.snapshot_id();
     let mut all_column_ids = HashSet::new();
     for data in inline_data {
+        // Queued batches may predate schema changes made later in this transaction.
+        let data = if data.record_batch.schema().as_ref() == &arrow_schema {
+            Cow::Borrowed(data)
+        } else {
+            let record_batch = io::arrow::schema::match_to_schema(
+                &data.record_batch,
+                &schema,
+                io::arrow::schema::Defaults::InitialDefault,
+            )?;
+            let statistics = io::arrow::compute_record_batch_statistics(&schema, &record_batch);
+            Cow::Owned(CommitInlineData {
+                record_batch,
+                column_stats: statistics
+                    .column_stats
+                    .into_iter()
+                    .map(|(id, stats)| Ok((state.column_ref(*table_ref, id)?, stats)))
+                    .collect::<DucklakeResult<_>>()?,
+            })
+        };
         let table_stats = state.table_stats(table_id).await?;
         let num_rows = data.record_batch.num_rows();
         let row_ids = {
             let row_ids = table_stats.next_row_id()..(table_stats.next_row_id() + num_rows as i64);
-            update_table_stats_from_inline_data(state, table_id, data).await?;
+            update_table_stats_from_inline_data(state, table_id, &data).await?;
             row_ids
         };
         let begin_snapshot = std::iter::repeat_n(snapshot_id, num_rows);

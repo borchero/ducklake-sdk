@@ -9,7 +9,6 @@ mod typedefs;
 mod view;
 
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use changes::{AppliedChangeSet, Change, ChangeSet};
@@ -313,21 +312,7 @@ impl<'a> Transaction<'a> {
         let applied_changes = change_set.applied_change_set(state);
 
         // Then, we extract information from the applied changes to finalize the commit
-        let table_ids_with_inline_data_writes: HashSet<_> = change_set
-            .table_ids_with_inline_data_writes(state)
-            .into_iter()
-            .collect();
-        let created_table_ids: HashSet<_> =
-            change_set.created_table_ids(state).into_iter().collect();
         let table_ids_with_schema_changes = change_set.table_ids_with_schema_changes(state);
-
-        if table_ids_with_inline_data_writes.iter().any(|id| {
-            table_ids_with_schema_changes.contains(id) && !created_table_ids.contains(id)
-        }) {
-            unimplemented!(
-                "Cannot currently write inline data to a table that has schema changes within the same transaction"
-            );
-        }
 
         // Only at this point, we start the database transaction and persist changes
         let mut tx = pool.begin().await?;
