@@ -147,3 +147,18 @@ def test_delete_table(
 
     # Assert
     assert not shared_ducklake.has_table(random_table_name)
+
+
+def test_rename_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    new_table_name = random_table_name + "_renamed"
+
+    # Act
+    with shared_ducklake.transaction() as tx:
+        table = tx.table(table.name)
+        table.rename(new_table_name)
+        table.add_column(dl.Column("y", dl.Int64()))
+
+    # Assert
+    assert {c.name for c in shared_ducklake.table(new_table_name).schema.columns} == {"x", "y"}

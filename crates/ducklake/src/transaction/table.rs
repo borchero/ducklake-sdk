@@ -554,7 +554,12 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
     ///
     /// Also see [`crate::Table::rename`].
     pub fn rename(&mut self, new_name: &str) -> DucklakeResult<()> {
-        self.tx.rename_table(&self.name, new_name)
+        self.tx.rename_table(&self.name, new_name)?;
+        self.name = TableName {
+            schema: self.name.schema.clone(),
+            name: new_name.to_string(),
+        };
+        Ok(())
     }
 }
 
