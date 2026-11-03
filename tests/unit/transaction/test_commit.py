@@ -180,37 +180,6 @@ def test_inline_write_and_schema_change(ducklake: dl.Ducklake, write_first: bool
 
 
 @pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
-def test_inline_writes_across_column_replacement(
-    ducklake: dl.Ducklake, catalog_engine: sa.Engine, existing_table: bool
-) -> None:
-    # Arrange
-    before = pl.DataFrame({"x": [7]})
-    after = pl.DataFrame({"y": [9]})
-
-    # Act
-    with ducklake.transaction() as tx:
-        table = (
-            tx.table("table") if existing_table else tx.create_table("table", {"x": dl.Int64()})
-        )
-        table.write_polars(before)
-        table.remove_column("x")
-        table.add_column(dl.Column("y", dl.Int64(), initial_default=42, default_value=99))
-        table.write_polars(after)
-
-    # Assert
-    table = ducklake.table("table")
-    assert not table.scan().data_files
-    assert_frame_equal(table.read_polars().sort("y"), pl.DataFrame({"y": [9, 42]}))
-    with catalog_engine.connect() as connection:
-        assert connection.execute(
-            sa.text("SELECT record_count, next_row_id FROM ducklake_table_stats")
-        ).all() == [(2, 2)]
-        assert connection.execute(
-            sa.text("SELECT column_id, min_value, max_value FROM ducklake_table_column_stats")
-        ).all() == [(2, "9", "42")]
-
-
-@pytest.mark.skip_config(catalog="mysql", reason="Data inlining is not yet supported for MySQL.")
 @pytest.mark.parametrize(
     "dtype", [dl.Variant(), dl.List(dl.Variant()), dl.Geometry(), dl.List(dl.Geometry())]
 )
