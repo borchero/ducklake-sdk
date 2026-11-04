@@ -1,5 +1,8 @@
 mod arrow;
+mod connection;
+pub(crate) use connection::Connection;
 mod dialects;
+mod options;
 #[cfg(feature = "postgres")]
 mod postgres_copy;
 pub(crate) mod sea_query_ext;
@@ -16,7 +19,7 @@ use sqlx::prelude::*;
 pub(crate) use types::chrono::UtcDateTime;
 pub(crate) use types::uuid::UuidText;
 
-use crate::{DucklakeError, DucklakeResult};
+use crate::{DatabaseOptions, DucklakeError, DucklakeResult};
 
 /* ------------------------------------------ DISPATCH ----------------------------------------- */
 
@@ -52,7 +55,7 @@ mod batch;
 
 /* -------------------------------------------- POOL ------------------------------------------- */
 
-/// Single-connection pool to a dynamic database backend (Postgres, MySQL, SQLite).
+/// Connection pool to a dynamic database backend (Postgres, MySQL, SQLite).
 #[derive(Clone)]
 pub(crate) struct Pool(AnyPool);
 
@@ -105,17 +108,12 @@ impl Pool {
         }
     }
 
-    pub(crate) async fn new(url: &str) -> DucklakeResult<Self> {
-        // NOTE: Choose 8 because this allows the highest concurrency query in this
-        //  repo to send all queries simultaneously.
-        #[cfg(any(feature = "postgres", feature = "mysql"))]
-        const POOL_SIZE: u32 = 8;
-
+    pub(crate) async fn new(url: &str, options: &DatabaseOptions) -> DucklakeResult<Self> {
         let pool = if url.starts_with("postgresql://") || url.starts_with("postgres://") {
             #[cfg(feature = "postgres")]
             {
-                let pool = sqlx::postgres::PgPoolOptions::new()
-                    .max_connections(POOL_SIZE)
+                let pool = options
+                    .pool_options::<sqlx::Postgres>(4)?
                     .connect(url)
                     .await?;
                 AnyPool::Postgres(pool)
@@ -125,10 +123,7 @@ impl Pool {
         } else if url.starts_with("mysql://") {
             #[cfg(feature = "mysql")]
             {
-                let pool = sqlx::mysql::MySqlPoolOptions::new()
-                    .max_connections(POOL_SIZE)
-                    .connect(url)
-                    .await?;
+                let pool = options.pool_options::<sqlx::MySql>(4)?.connect(url).await?;
                 AnyPool::MySql(pool)
             }
             #[cfg(not(feature = "mysql"))]
@@ -139,8 +134,8 @@ impl Pool {
                 use sqlx::sqlite::SqliteConnectOptions;
 
                 let connect_options = url.parse::<SqliteConnectOptions>()?.create_if_missing(true);
-                let pool = sqlx::sqlite::SqlitePoolOptions::new()
-                    .max_connections(1)
+                let pool = options
+                    .pool_options::<sqlx::Sqlite>(1)?
                     .connect_with(connect_options)
                     .await?;
                 AnyPool::Sqlite(pool)
@@ -294,26 +289,16 @@ impl Pool {
         }
     }
 
-    pub(crate) async fn begin(&self) -> DucklakeResult<Transaction> {
+    pub(crate) async fn begin(&self) -> DucklakeResult<Transaction<'static>> {
+        let sql = self.dialect().begin_statement();
+        log_sql(sql, None);
         let tx = match &self.0 {
             #[cfg(feature = "postgres")]
-            AnyPool::Postgres(pool) => {
-                let sql = "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ";
-                log_sql(sql, None);
-                AnyTransaction::Postgres(pool.begin_with(sql).await?)
-            }
+            AnyPool::Postgres(pool) => AnyTransaction::Postgres(pool.begin_with(sql).await?),
             #[cfg(feature = "mysql")]
-            AnyPool::MySql(pool) => {
-                let sql = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ; START TRANSACTION";
-                log_sql(sql, None);
-                AnyTransaction::MySql(pool.begin_with(sql).await?)
-            }
+            AnyPool::MySql(pool) => AnyTransaction::MySql(pool.begin_with(sql).await?),
             #[cfg(feature = "sqlite")]
-            AnyPool::Sqlite(pool) => {
-                let sql = "BEGIN IMMEDIATE";
-                log_sql(sql, None);
-                AnyTransaction::Sqlite(pool.begin_with(sql).await?)
-            }
+            AnyPool::Sqlite(pool) => AnyTransaction::Sqlite(pool.begin_with(sql).await?),
         };
         Ok(Transaction(tx))
     }
@@ -321,18 +306,18 @@ impl Pool {
 
 /* ---------------------------------------- TRANSACTION ---------------------------------------- */
 
-pub(crate) struct Transaction(AnyTransaction);
+pub(crate) struct Transaction<'c>(AnyTransaction<'c>);
 
-enum AnyTransaction {
+enum AnyTransaction<'c> {
     #[cfg(feature = "postgres")]
-    Postgres(sqlx::Transaction<'static, sqlx::Postgres>),
+    Postgres(sqlx::Transaction<'c, sqlx::Postgres>),
     #[cfg(feature = "mysql")]
-    MySql(sqlx::Transaction<'static, sqlx::MySql>),
+    MySql(sqlx::Transaction<'c, sqlx::MySql>),
     #[cfg(feature = "sqlite")]
-    Sqlite(sqlx::Transaction<'static, sqlx::Sqlite>),
+    Sqlite(sqlx::Transaction<'c, sqlx::Sqlite>),
 }
 
-impl Transaction {
+impl Transaction<'_> {
     pub(crate) fn dialect(&self) -> Dialect {
         match self.0 {
             #[cfg(feature = "postgres")]

@@ -87,3 +87,46 @@ def test_inline(
     assert len(scan_result.data_files) == 0
     assert len(scan_result.inline_data) == 1
     assert_frame_equal(df, table.read_polars())
+
+
+def test_inline_scan_matches_evolved_schema(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"a": dl.Int32(), "b": dl.Int64()})
+    table.write_polars(
+        pl.DataFrame({"a": [1, 2], "b": [10, 20]}, schema={"a": pl.Int32, "b": pl.Int64})
+    )
+    table.rename_column("a", "z")
+    table.update_column_dtype("z", dl.Int64())
+    table.remove_column("b")
+    table.add_column(dl.Column("b", dl.Int64(), initial_default=42))
+
+    # Act
+    result = table.scan()
+
+    # Assert
+    expected = pl.DataFrame({"z": [1, 2], "b": [42, 42]}, schema={"z": pl.Int64, "b": pl.Int64})
+    assert len(result.inline_data) == 1
+    assert_frame_equal(pl.DataFrame(result.inline_data[0]), expected)
+    assert_frame_equal(table.read_polars(), expected)
+
+
+def test_inline_write_fills_omitted_columns_and_preserves_nulls(
+    shared_ducklake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(
+        random_table_name,
+        [
+            dl.Column("z", dl.Int64(), default_value=42),
+            dl.Column("a", dl.Int64(), default_value=43),
+        ],
+    )
+    data = pl.DataFrame({"a": [None, 7]}, schema={"a": pl.Int32})
+
+    # Act
+    table._write_inline_data(data)
+
+    # Assert
+    assert_frame_equal(table.read_polars(), pl.DataFrame({"z": [42, 42], "a": [None, 7]}))

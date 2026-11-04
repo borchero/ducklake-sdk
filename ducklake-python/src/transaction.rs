@@ -19,7 +19,7 @@ pub struct PyTransaction(TransactionInner);
 #[pyclass]
 pub struct PyTransactionTable {
     transaction: TransactionInner,
-    table: ducklake::TableName,
+    table: ducklake::QualifiedName,
 }
 
 impl PyTransaction {
@@ -76,7 +76,7 @@ impl PyTransaction {
 
     fn delete_table(
         &mut self,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         if_not_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {
         self.tx()
@@ -86,7 +86,7 @@ impl PyTransaction {
 
     fn delete_view(
         &mut self,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         if_not_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {
         self.tx()
@@ -112,7 +112,7 @@ impl PyTransaction {
             .collect())
     }
 
-    fn table(&mut self, name: Wrap<ducklake::TableName>) -> PyResult<PyTransactionTable> {
+    fn table(&mut self, name: Wrap<ducklake::QualifiedName>) -> PyResult<PyTransactionTable> {
         // NOTE: We don't use the return value here as we'll run into lifetime issues in the
         //  Python bindings. We still use it to check that the table exists.
         self.tx().table(name.0.clone()).map_err(error::into_pyerr)?;
@@ -125,12 +125,12 @@ impl PyTransaction {
     #[allow(clippy::too_many_arguments)]
     fn create_table(
         &mut self,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         schema: Vec<Wrap<ducklake::Column>>,
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
         sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,
         data_path: Option<String>,
-        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        tags: Option<Wrap<ducklake::Tags>>,
         if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<PyTransactionTable> {
         self.tx()
@@ -140,7 +140,7 @@ impl PyTransaction {
                 partition.map(|v| v.into_iter().map(|p| p.0).collect()),
                 sort_info.map(|items| items.into_iter().map(|item| item.0).collect()),
                 data_path,
-                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                tags.map(|tags| tags.0),
                 if_exists.0,
             )
             .map_err(error::into_pyerr)?;
@@ -198,11 +198,28 @@ impl PyTransactionTable {
         Ok(sort.map(|c| c.into_iter().map(Into::into).collect()))
     }
 
+    #[getter]
+    pub fn tags(&mut self) -> PyResult<Wrap<ducklake::Tags>> {
+        let table = self.table.clone();
+        let mut tx_guard = self.tx();
+        let tags = tx_guard
+            .table(table)
+            .map_err(error::into_pyerr)?
+            .tags()
+            .map_err(error::into_pyerr)?;
+        Ok(tags.into())
+    }
+
+    pub fn get_tag(&mut self, key: &str) -> PyResult<Option<String>> {
+        let tags = self.tags()?;
+        Ok(tags.0.get(key).map(Into::into))
+    }
+
     fn get_write_info(
         &mut self,
-    ) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator, bool)> {
+    ) -> PyResult<(Wrap<TableMetadata>, PyDataFilePathGenerator, bool, bool)> {
         let table = self.table.clone();
-        let (metadata, generator, supports_inlining) = self
+        let (metadata, generator, supports_inlining, encrypted) = self
             .tx()
             .get_table_write_info(&table)
             .map_err(error::into_pyerr)?;
@@ -210,6 +227,7 @@ impl PyTransactionTable {
             metadata.into(),
             PyDataFilePathGenerator::new(generator),
             supports_inlining,
+            encrypted,
         ))
     }
 

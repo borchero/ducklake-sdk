@@ -9,6 +9,8 @@ except importlib.metadata.PackageNotFoundError as e:  # pragma: no cover
 
 from .connect import connect, create
 from .ducklake import Ducklake
+from .macro import Macro, MacroImplementation, MacroParameter, MacroType
+from .options import DatabaseOptions
 from .table import Table
 from .transaction import Transaction
 from .typedefs import (
@@ -37,6 +39,7 @@ from .typedefs import (
     Map,
     PartitionColumn,
     Partitioning,
+    QualifiedName,
     ScanDataFile,
     ScanResult,
     Schema,
@@ -45,7 +48,6 @@ from .typedefs import (
     SortInfo,
     Struct,
     TableMetadata,
-    TableName,
     TableStatistics,
     Time,
     Timestamp,
@@ -70,6 +72,7 @@ __all__ = [
     "ColumnStats",
     "connect",
     "create",
+    "DatabaseOptions",
     "DataFileStatistics",
     "DataType",
     "Date",
@@ -90,6 +93,10 @@ __all__ = [
     "List",
     "Map",
     "MaintenanceResult",
+    "Macro",
+    "MacroImplementation",
+    "MacroParameter",
+    "MacroType",
     "PartitionColumn",
     "Partitioning",
     "ScanDataFile",
@@ -101,7 +108,7 @@ __all__ = [
     "Struct",
     "Table",
     "TableMetadata",
-    "TableName",
+    "QualifiedName",
     "TableStatistics",
     "Transaction",
     "Time",

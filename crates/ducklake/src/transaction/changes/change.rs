@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use itertools::Itertools;
 
 use super::{AppliedChange, AppliedChangeSet};
-use crate::catalog::{ColumnRef, SchemaRef, TableRef, ViewRef};
+use crate::catalog::{ColumnRef, MacroRef, SchemaRef, TableRef, ViewRef};
 use crate::transaction::{
     CommitDataFile,
     CommitInlineData,
@@ -66,6 +66,27 @@ impl ChangeSet {
                 .affected_table_ref()
                 .map(|r| !deleted_tables.contains(&r))
                 .unwrap_or(true),
+        });
+
+        // The same logic applies to macros created and deleted in one transaction.
+        let created_macros: HashSet<_> = changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::CreateMacro { macro_ref, .. } => Some(*macro_ref),
+                _ => None,
+            })
+            .collect();
+        let deleted_macros: HashSet<_> = changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::DeleteMacro { macro_ref, .. } => Some(*macro_ref),
+                _ => None,
+            })
+            .collect();
+        changes.retain(|change| match change {
+            Change::DeleteMacro { macro_ref, .. } => !created_macros.contains(macro_ref),
+            Change::CreateMacro { macro_ref, .. } => !deleted_macros.contains(macro_ref),
+            _ => true,
         });
 
         // The same logic applies to views: if a view is created and deleted in the same
@@ -275,13 +296,13 @@ pub(crate) enum Change {
         table_ref: TableRef,
         column_refs: Vec<Vec<ColumnRef>>,
         partition_column_refs: Option<Vec<ColumnRef>>,
-        name: crate::TableName,
+        name: crate::QualifiedName,
         columns: Vec<crate::Column>,
         retired_columns: Vec<crate::spec::DucklakeColumn>,
         partition_columns: Option<Vec<crate::PartitionColumn>>,
         sort_info: Option<Vec<crate::SortExpression>>,
         path: io::DucklakePath,
-        tags: Option<Vec<crate::Tag>>,
+        tags: crate::Tags,
     },
     WriteTableDataFiles {
         table_ref: TableRef,
@@ -293,7 +314,7 @@ pub(crate) enum Change {
     },
     RenameTable {
         table_ref: TableRef,
-        name: crate::TableName,
+        name: crate::QualifiedName,
     },
     UpdateTablePartitioning {
         table_ref: TableRef,
@@ -320,14 +341,26 @@ pub(crate) enum Change {
     CreateView {
         schema_ref: SchemaRef,
         view_ref: ViewRef,
-        name: crate::TableName,
+        name: crate::QualifiedName,
         sql: String,
         dialect: String,
         column_aliases: Option<Vec<String>>,
-        tags: Option<Vec<crate::Tag>>,
+        tags: crate::Tags,
     },
     DeleteView {
         view_ref: ViewRef,
+    },
+    // --- MACRO CHANGES ---
+    CreateMacro {
+        schema_ref: SchemaRef,
+        macro_ref: MacroRef,
+        name: crate::QualifiedName,
+        macro_type: crate::MacroType,
+        implementations: Vec<crate::MacroImplementation>,
+    },
+    DeleteMacro {
+        macro_ref: MacroRef,
+        macro_type: crate::MacroType,
     },
     // --- COLUMN CHANGES ---
     AddTableColumn {
@@ -389,6 +422,27 @@ impl Change {
             },
             DeleteView { view_ref } => AppliedChange::DroppedView {
                 id: state.view_id(*view_ref),
+            },
+            CreateMacro {
+                name, macro_type, ..
+            } => match macro_type {
+                crate::MacroType::Scalar => AppliedChange::CreatedScalarMacro {
+                    name: name.to_string(),
+                },
+                crate::MacroType::Table => AppliedChange::CreatedTableMacro {
+                    name: name.to_string(),
+                },
+            },
+            DeleteMacro {
+                macro_ref,
+                macro_type,
+            } => match macro_type {
+                crate::MacroType::Scalar => AppliedChange::DroppedScalarMacro {
+                    id: state.macro_id(*macro_ref),
+                },
+                crate::MacroType::Table => AppliedChange::DroppedTableMacro {
+                    id: state.macro_id(*macro_ref),
+                },
             },
             WriteTableDataFiles { table_ref, .. } => AppliedChange::InsertedIntoTable {
                 id: state.table_id(*table_ref),
@@ -497,6 +551,23 @@ impl Change {
                 tags,
             ),
             DeleteView { view_ref } => executors::delete_view(changes, state, view_ref),
+            // --- MACRO CHANGES ---
+            CreateMacro {
+                schema_ref,
+                macro_ref,
+                name,
+                macro_type,
+                implementations,
+            } => executors::create_macro(
+                changes,
+                state,
+                schema_ref,
+                macro_ref,
+                name,
+                *macro_type,
+                implementations,
+            ),
+            DeleteMacro { macro_ref, .. } => executors::delete_macro(changes, state, macro_ref),
             // --- COLUMN CHANGES ---
             AddTableColumn {
                 parent_column_ref,
@@ -543,6 +614,8 @@ impl Change {
             | RemoveTableTag { .. }
             | CreateView { .. }
             | DeleteView { .. }
+            | CreateMacro { .. }
+            | DeleteMacro { .. }
             | AddTableColumn { .. }
             | UpdateTableColumn { .. }
             | RemoveTableColumn { .. }
@@ -570,9 +643,12 @@ impl Change {
             | AddTableColumnTag { column_ref, .. }
             | RemoveTableColumnTag { column_ref, .. } => Some(column_ref.table_ref),
             AddTableColumn { column_refs, .. } => column_refs.first().map(|r| r.table_ref),
-            CreateSchema { .. } | DeleteSchema { .. } | CreateView { .. } | DeleteView { .. } => {
-                None
-            }
+            CreateSchema { .. }
+            | DeleteSchema { .. }
+            | CreateView { .. }
+            | DeleteView { .. }
+            | CreateMacro { .. }
+            | DeleteMacro { .. } => None,
         }
     }
 
@@ -601,7 +677,9 @@ impl Change {
             | AddTableTag { .. }
             | RemoveTableTag { .. }
             | CreateView { .. }
-            | DeleteView { .. } => None,
+            | DeleteView { .. }
+            | CreateMacro { .. }
+            | DeleteMacro { .. } => None,
         }
     }
 
@@ -620,6 +698,8 @@ impl Change {
             | RemoveTableTag { .. }
             | CreateView { .. }
             | DeleteView { .. }
+            | CreateMacro { .. }
+            | DeleteMacro { .. }
             | AddTableColumn { .. }
             | UpdateTableColumn { .. }
             | RemoveTableColumn { .. }
@@ -670,6 +750,13 @@ enum HashableChange {
     },
     DeleteView {
         view_ref: ViewRef,
+    },
+    // --- MACRO CHANGES ---
+    CreateMacro {
+        macro_ref: MacroRef,
+    },
+    DeleteMacro {
+        macro_ref: MacroRef,
     },
     // --- COLUMN CHANGES ---
     AddTableColumn {
@@ -740,6 +827,12 @@ impl From<&Change> for HashableChange {
             Change::DeleteView { view_ref } => DeleteView {
                 view_ref: *view_ref,
             },
+            Change::CreateMacro { macro_ref, .. } => CreateMacro {
+                macro_ref: *macro_ref,
+            },
+            Change::DeleteMacro { macro_ref, .. } => DeleteMacro {
+                macro_ref: *macro_ref,
+            },
             Change::AddTableColumn { column_refs, .. } => AddTableColumn {
                 column_refs: column_refs.clone(),
             },
@@ -806,13 +899,30 @@ mod tests {
             sql: "SELECT 1".to_string(),
             dialect: "duckdb".to_string(),
             column_aliases: None,
-            tags: None,
+            tags: Default::default(),
         }
     }
 
     fn make_delete_view(view: usize) -> Change {
         Change::DeleteView {
             view_ref: ViewRef::mock(view),
+        }
+    }
+
+    fn make_create_macro(macro_id: usize, name: &str) -> Change {
+        Change::CreateMacro {
+            schema_ref: SchemaRef::mock(0),
+            macro_ref: MacroRef::mock(macro_id),
+            name: name.parse().unwrap(),
+            macro_type: crate::MacroType::Scalar,
+            implementations: vec![crate::MacroImplementation::new("42", vec![])],
+        }
+    }
+
+    fn make_delete_macro(macro_id: usize) -> Change {
+        Change::DeleteMacro {
+            macro_ref: MacroRef::mock(macro_id),
+            macro_type: crate::MacroType::Scalar,
         }
     }
 
@@ -832,6 +942,13 @@ mod tests {
     fn test_change_set_retains_create_view() {
         let set = ChangeSet::new(vec![make_create_view(1, "main.v")]);
         assert_eq!(changes_of(&set).len(), 1);
+    }
+
+    #[test]
+    fn test_change_set_cancels_create_and_delete_macro() {
+        let changes = vec![make_create_macro(1, "main.m"), make_delete_macro(1)];
+        let set = ChangeSet::new(changes);
+        assert!(changes_of(&set).is_empty());
     }
 
     #[test]

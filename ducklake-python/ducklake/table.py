@@ -9,13 +9,13 @@ from .typedefs import (
     MaintenanceResult,
     PartitionColumn,
     Partitioning,
+    QualifiedName,
     ScanResult,
     Schema,
     SortColumn,
     SortInfo,
     TableMetadata,
     TableMetadataUpdate,
-    TableName,
     Value,
     WriteDataFile,
     _serialize_metadata_value,
@@ -59,9 +59,9 @@ class Table:
     # ---------------------------------------- PROPERTIES --------------------------------------- #
 
     @property
-    def name(self) -> TableName:
+    def name(self) -> QualifiedName:
         """The fully qualified name of the table."""
-        return TableName(*self._pytable.name)
+        return QualifiedName(*self._pytable.name)
 
     @property
     def schema(self) -> Schema:
@@ -101,7 +101,11 @@ class Table:
     @property
     def tags(self) -> dict[str, str]:
         """The tags associated with the table."""
-        return dict(self._pytable.tags)
+        return self._pytable.tags
+
+    def get_tag(self, key: str) -> str | None:
+        """Get a tag by key, or ``None`` if it is absent, without copying all tags."""
+        return self._pytable.get_tag(key)
 
     @property
     def metadata(self) -> TableMetadata:
@@ -141,7 +145,7 @@ class Table:
             [WriteDataFile(f) if isinstance(f, str) else f for f in files]
         )
 
-    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator, bool]:
+    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator, bool, bool]:
         return self._pytable.get_write_info()
 
     def _write_inline_data(self, data: ArrowStreamExportable) -> None:

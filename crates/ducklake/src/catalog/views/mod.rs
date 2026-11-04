@@ -2,10 +2,12 @@ use crate::catalog::Catalog;
 use crate::{DucklakeError, DucklakeResult};
 
 mod column;
+mod macro_;
 mod schema;
 mod table;
 mod view;
 
+pub(crate) use macro_::MacroView;
 pub(crate) use schema::SchemaView;
 pub(crate) use table::TableView;
 pub(crate) use view::ViewView;
@@ -28,13 +30,12 @@ impl<Ref: Copy, Container> TryIntoRef<Ref, Container> for Ref {
 
 /* ------------------------------------------- UTILS ------------------------------------------- */
 
-fn upsert_tag(tags: &mut Vec<crate::Tag>, tag: crate::Tag) {
-    tags.retain(|t| t.key != tag.key);
-    tags.push(tag);
+fn upsert_tag(tags: &mut crate::Tags, tag: crate::Tag) {
+    tags.insert(tag);
 }
 
-fn remove_tag(tags: &mut Vec<crate::Tag>, key: &str) -> DucklakeResult<()> {
-    if tags.extract_if(.., |t| t.key == key).count() == 0 {
+fn remove_tag(tags: &mut crate::Tags, key: &str) -> DucklakeResult<()> {
+    if tags.remove(key).is_none() {
         return Err(DucklakeError::NotFound {
             entity: "tag",
             name: key.to_string(),

@@ -207,6 +207,15 @@ impl Column {
                 }
             }
             ArrowDataType::FixedSizeBinary(16)
+                if field.try_extension_type::<extension::Opaque>().is_ok() =>
+            {
+                match field.try_extension_type::<extension::Opaque>()?.type_name() {
+                    "hugeint" => Ok(DataType::int128()),
+                    "uhugeint" => Ok(DataType::uint128()),
+                    other => Err(DucklakeError::UnsupportedArrowDataType(other.to_string())),
+                }
+            }
+            ArrowDataType::FixedSizeBinary(16)
                 if field.try_extension_type::<extension::Uuid>().is_ok() =>
             {
                 Ok(DataType::uuid())
@@ -247,7 +256,7 @@ impl Column {
             name: field.name().clone(),
             dtype,
             nullable: field.is_nullable(),
-            tags: Vec::new(),
+            tags: Default::default(),
             initial_default: None,
             default_value: ColumnDefault::Literal(None),
             field_id: field

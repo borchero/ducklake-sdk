@@ -1,11 +1,11 @@
-import re
+import base64
+import secrets
 import warnings
 from functools import partial
 from typing import Literal, overload
 
 import polars as pl
 import polars.datatypes as pld
-import polars_hash  # noqa: F401
 from polars._typing import EngineType
 from polars.io.partition import FileProviderArgs, SinkedPathsCallbackArgs
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
@@ -19,8 +19,6 @@ from ducklake.typedefs import Column, Partitioning, WriteDataFile
 PARTITION_COLUMN_PREFIX = "__ducklake_partition__"
 # NOTE: This is taken from the polars Iceberg implementation
 ESTIMATED_COMPRESSION_RATIO = 4
-
-_POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
 
 
 @overload
@@ -55,7 +53,14 @@ def sink_ducklake(
 ) -> pl.LazyFrame | None:
     # 1) First, we need to read metadata information about the table to know how to write it. This
     #    also makes sure that the table metadata is up-to-date.
-    table_metadata, file_generator, _ = table._get_write_info()
+    table_metadata, file_generator, _, encrypted = table._get_write_info()
+    encryption_key = secrets.token_bytes(32) if encrypted else None
+    encryption = (
+        pl.ParquetEncryptionProperties(footer_key=encryption_key)
+        if encryption_key is not None
+        else None
+    )
+    catalog_key = base64.b64encode(encryption_key).decode("ascii") if encryption_key else None
 
     # 2) Then, we prepare the lazy frame contents
     lf = lf.pipe(_prepare_frame, table)
@@ -92,12 +97,7 @@ def sink_ducklake(
     #    committing the new data files to the Ducklake. This allows to perform the entire
     #    operation lazily if requested.
     sinked_paths_callback = partial(
-        _sinked_paths_callback, table, file_generator.base_path, partition_value_cache
-    )
-    callback_kwargs = (
-        {"sinked_paths_callback": sinked_paths_callback}
-        if _POLARS_VERSION >= (1, 44)
-        else {"_sinked_paths_callback": sinked_paths_callback}
+        _sinked_paths_callback, table, file_generator.base_path, partition_value_cache, catalog_key
     )
     return lf.sink_parquet(  # ty: ignore[no-matching-overload]
         target,
@@ -111,7 +111,8 @@ def sink_ducklake(
         optimizations=optimizations or DEFAULT_QUERY_OPT_FLAGS,
         lazy=lazy,
         arrow_schema=table.schema,
-        **callback_kwargs,
+        encryption=encryption,
+        sinked_paths_callback=sinked_paths_callback,
     )
 
 
@@ -128,7 +129,7 @@ def write_ducklake(df: pl.DataFrame, table: Table | TransactionTable) -> None:
             "allowed as inlining of categorical data is not yet supported."
         )
 
-    table_metadata, _, supports_inlining = table._get_write_info()
+    table_metadata, _, supports_inlining, _ = table._get_write_info()
     inline_limit = table_metadata["data_inlining_row_limit"]
     would_inline = inline_limit > 0 and df.height <= inline_limit
     if would_inline and supports_inlining:
@@ -316,18 +317,18 @@ def _apply_bucket_partition(
 
 
 def _create_bucket_partition(expr: pl.Expr, dtype: pl.DataType, num_buckets: int) -> pl.Expr:
-    # `.bytes`/`.nchash` are namespaces registered on `pl.Expr` by `polars_hash`
-    # at import time, so static type checkers cannot see them
     match dtype:
-        case pl.Boolean() | pl.Int8() | pl.Int16() | pl.Int32() | pl.Date() | pl.Datetime():
-            expr = expr.cast(pl.Int64).bytes.to_le()  # ty: ignore[unresolved-attribute]
+        case pl.Boolean() | pl.Date() | pl.Datetime():
+            # NOTE: DuckLake hashes the physical value, preserving the timestamp's time unit.
+            #  `_mm3_hash` otherwise normalizes timestamps to microseconds for Iceberg.
+            expr = expr.cast(pl.Int64)
         case pl.Float32() | pl.Float64():
             expr = expr.cast(pl.Float64)
             # Normalize all zeros to +0.0 to get rid of -0.0
-            expr = pl.when(expr == 0.0).then(0.0).otherwise(expr).bytes.to_le()  # ty: ignore[unresolved-attribute]
-        case pl.Int64():
-            expr = expr.bytes.to_le()  # ty: ignore[unresolved-attribute]
-        case pl.String() | pl.Binary():
+            expr = pl.when(expr == 0.0).then(0.0).otherwise(expr)
+            # NOTE: `_mm3_hash` does not support floats
+            expr = expr.reinterpret(dtype=pl.Int64)
+        case pl.Int8() | pl.Int16() | pl.Int32() | pl.Int64() | pl.String() | pl.Binary():
             pass
         case _:
             raise NotImplementedError(
@@ -336,7 +337,7 @@ def _create_bucket_partition(expr: pl.Expr, dtype: pl.DataType, num_buckets: int
                 "binary, date, and datetime columns are currently supported."
             )
 
-    return (expr.nchash.murmur32(seed=0) & 0x7FFFFFFF) % num_buckets  # ty: ignore[unresolved-attribute]
+    return (expr._mm3_hash() & 0x7FFFFFFF) % num_buckets
 
 
 # ------------------------------------------ CALLBACKS ------------------------------------------ #
@@ -361,6 +362,7 @@ def _sinked_paths_callback(
     table: Table | TransactionTable,
     base_path: str,
     partition_value_cache: dict[str, pl.DataFrame],
+    encryption_key: str | None,
     args: SinkedPathsCallbackArgs,
 ) -> None:
     new_data_files: list[WriteDataFile] = []
@@ -374,6 +376,7 @@ def _sinked_paths_callback(
         partitions = partition_value_cache[relative_path]
         data_file = WriteDataFile(
             path=relative_path,
+            encryption_key=encryption_key,
             partition_values={
                 name.removeprefix(PARTITION_COLUMN_PREFIX): value
                 for name, value in partitions.row(0, named=True).items()

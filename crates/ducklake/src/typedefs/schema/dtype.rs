@@ -1,4 +1,7 @@
 use std::fmt::Display;
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 use super::Column;
 
@@ -197,6 +200,23 @@ impl DataType {
 }
 
 impl DataType {
+    /// Whether this type can be widened to the target type during schema evolution.
+    pub(crate) fn can_promote_to(&self, target: &Self) -> bool {
+        use DataType::*;
+
+        // https://ducklake.select/docs/stable/duckdb/usage/schema_evolution#type-promotion
+        matches!(
+            (self, target),
+            (Int8, Int16 | Int32 | Int64)
+                | (Int16, Int32 | Int64)
+                | (Int32, Int64)
+                | (UInt8, UInt16 | UInt32 | UInt64)
+                | (UInt16, UInt32 | UInt64)
+                | (UInt32, UInt64)
+                | (Float32, Float64)
+        )
+    }
+
     /// Whether the data type is a nested type (i.e. list, struct, or map).
     pub fn is_nested(&self) -> bool {
         matches!(
@@ -217,6 +237,63 @@ impl DataType {
                 key.dtype.supports_data_inlining() && value.dtype.supports_data_inlining()
             }
             _ => true,
+        }
+    }
+}
+
+impl DataType {
+    /// Parse a non-nested DuckLake type name.
+    pub(crate) fn parse_primitive(s: &str) -> crate::DucklakeResult<Self> {
+        use crate::DataType::*;
+        match s {
+            "boolean" => Ok(Boolean),
+            "int8" => Ok(Int8),
+            "int16" => Ok(Int16),
+            "int32" => Ok(Int32),
+            "int64" => Ok(Int64),
+            "int128" => Ok(Int128),
+            "uint8" => Ok(UInt8),
+            "uint16" => Ok(UInt16),
+            "uint32" => Ok(UInt32),
+            "uint64" => Ok(UInt64),
+            "uint128" => Ok(UInt128),
+            "float32" => Ok(Float32),
+            "float64" => Ok(Float64),
+            "time" => Ok(Time),
+            "timetz" => Ok(TimeTz),
+            "date" => Ok(Date),
+            "timestamp" => Ok(Timestamp {
+                precision: crate::TimestampPrecision::Microseconds,
+            }),
+            "timestamp_s" => Ok(Timestamp {
+                precision: crate::TimestampPrecision::Seconds,
+            }),
+            "timestamp_ms" => Ok(Timestamp {
+                precision: crate::TimestampPrecision::Milliseconds,
+            }),
+            "timestamp_ns" => Ok(Timestamp {
+                precision: crate::TimestampPrecision::Nanoseconds,
+            }),
+            "timestamptz" => Ok(TimestampTz),
+            "interval" => Ok(Interval),
+            "varchar" => Ok(Varchar),
+            "blob" => Ok(Blob),
+            "json" => Ok(Json),
+            "variant" => Ok(Variant),
+            "geometry" => Ok(Geometry),
+            "uuid" => Ok(Uuid),
+            s => {
+                static RE_DECIMAL: LazyLock<Regex> =
+                    LazyLock::new(|| Regex::new(r"^decimal\((\d+),\s*(\d+)\)$").unwrap());
+                if let Some(caps) = RE_DECIMAL.captures(s)
+                    && let Ok(precision) = caps[1].parse::<u8>()
+                    && let Ok(scale) = caps[2].parse::<u8>()
+                {
+                    Ok(Decimal { precision, scale })
+                } else {
+                    Err(crate::DucklakeError::InvalidDataType(s.into()))
+                }
+            }
         }
     }
 }

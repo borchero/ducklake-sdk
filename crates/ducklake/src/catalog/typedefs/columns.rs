@@ -1,9 +1,7 @@
 use std::collections::HashMap;
-use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use itertools::Itertools;
-use regex::Regex;
 
 use super::*;
 use crate::spec::*;
@@ -32,7 +30,7 @@ pub(in crate::catalog) struct CatalogColumn {
     pub dtype: CatalogDataType,
     pub parent_column: Option<ArenaIdx>,
     pub nullable: bool,
-    pub tags: Vec<crate::Tag>,
+    pub tags: crate::Tags,
     pub initial_default: Option<crate::Value>,
     pub default_value: crate::ColumnDefault,
 }
@@ -553,7 +551,7 @@ impl CatalogColumn {
                 ))?;
                 CatalogDataType::Map(key_child.1, value_child.1)
             }
-            s => CatalogDataType::Primitive(parse_primitive_dtype(s)?),
+            s => CatalogDataType::Primitive(crate::DataType::parse_primitive(s)?),
         };
 
         // Parse initial_default
@@ -606,66 +604,10 @@ impl CatalogColumn {
             nullable: col.nulls_allowed,
             tags: tags
                 .extract_if(.., |tag| tag.column_id == column_id)
-                .map(|tag| tag.into())
+                .map(crate::Tag::from)
                 .collect(),
             initial_default,
             default_value,
         })
-    }
-}
-
-/* ----------------------------------------- DATA TYPE ----------------------------------------- */
-
-fn parse_primitive_dtype(s: &str) -> DucklakeResult<crate::DataType> {
-    use crate::DataType::*;
-    match s {
-        "boolean" => Ok(Boolean),
-        "int8" => Ok(Int8),
-        "int16" => Ok(Int16),
-        "int32" => Ok(Int32),
-        "int64" => Ok(Int64),
-        "int128" => Ok(Int128),
-        "uint8" => Ok(UInt8),
-        "uint16" => Ok(UInt16),
-        "uint32" => Ok(UInt32),
-        "uint64" => Ok(UInt64),
-        "uint128" => Ok(UInt128),
-        "float32" => Ok(Float32),
-        "float64" => Ok(Float64),
-        "time" => Ok(Time),
-        "timetz" => Ok(TimeTz),
-        "date" => Ok(Date),
-        "timestamp" => Ok(Timestamp {
-            precision: crate::TimestampPrecision::Microseconds,
-        }),
-        "timestamp_s" => Ok(Timestamp {
-            precision: crate::TimestampPrecision::Seconds,
-        }),
-        "timestamp_ms" => Ok(Timestamp {
-            precision: crate::TimestampPrecision::Milliseconds,
-        }),
-        "timestamp_ns" => Ok(Timestamp {
-            precision: crate::TimestampPrecision::Nanoseconds,
-        }),
-        "timestamptz" => Ok(TimestampTz),
-        "interval" => Ok(Interval),
-        "varchar" => Ok(Varchar),
-        "blob" => Ok(Blob),
-        "json" => Ok(Json),
-        "variant" => Ok(Variant),
-        "geometry" => Ok(Geometry),
-        "uuid" => Ok(Uuid),
-        s => {
-            static RE_DECIMAL: LazyLock<Regex> =
-                LazyLock::new(|| Regex::new(r"^decimal\((\d+),\s*(\d+)\)$").unwrap());
-            if let Some(caps) = RE_DECIMAL.captures(s)
-                && let Ok(precision) = caps[1].parse::<u8>()
-                && let Ok(scale) = caps[2].parse::<u8>()
-            {
-                Ok(Decimal { precision, scale })
-            } else {
-                Err(DucklakeError::InvalidDataType(s.into()))
-            }
-        }
     }
 }

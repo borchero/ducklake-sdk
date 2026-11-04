@@ -125,6 +125,15 @@ impl<'a, C: Deref<Target = Catalog>> SchemaView<'a, C> {
             .map(|arena_idx| super::ViewView::new(catalog, (*arena_idx).into()))
             .collect()
     }
+
+    pub(crate) fn list_macros(&self) -> Vec<super::MacroView<'_>> {
+        let catalog: &Catalog = &self.catalog;
+        self.inner()
+            .macros
+            .values()
+            .map(|arena_idx| super::MacroView::new(catalog, (*arena_idx).into()))
+            .collect()
+    }
 }
 
 /* ------------------------------------------ MUTATION ----------------------------------------- */
@@ -143,7 +152,7 @@ impl<'a> SchemaViewMut<'a> {
 
     pub(crate) fn delete(&mut self) -> DucklakeResult<()> {
         let schema = self.inner_mut();
-        if !schema.tables.is_empty() || !schema.views.is_empty() {
+        if !schema.tables.is_empty() || !schema.views.is_empty() || !schema.macros.is_empty() {
             return Err(DucklakeError::InvalidChanges(format!(
                 "cannot delete schema {} which is not empty",
                 schema.name

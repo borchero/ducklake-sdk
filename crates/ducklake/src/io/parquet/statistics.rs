@@ -3,20 +3,34 @@ use std::sync::Arc;
 
 use arrow_arith::aggregate;
 use arrow_schema::{DataType, Field, Schema};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use object_store::ObjectStoreExt;
+use parquet::arrow::arrow_reader::ArrowReaderOptions;
 use parquet::arrow::arrow_reader::statistics::StatisticsConverter;
 use parquet::arrow::async_reader::AsyncFileReader;
 use parquet::arrow::{PARQUET_FIELD_ID_META_KEY, parquet_to_arrow_schema};
+use parquet::encryption::decrypt::FileDecryptionProperties;
 use parquet::file::metadata::{ParquetMetaData, RowGroupMetaData};
 use parquet::schema::types::{SchemaDescriptor, Type};
 
 use super::async_reader::ObjectStoreReader;
-use crate::{DucklakeResult, FileColumnStats, io};
+use crate::{DucklakeError, DucklakeResult, FileColumnStats, io};
 
 pub(crate) async fn read_file_statistics(
     path: io::Path,
     io_options: Option<Vec<(String, String)>>,
+    encryption_key: Option<&str>,
 ) -> DucklakeResult<crate::DataFileStatistics> {
+    let mut options = ArrowReaderOptions::new();
+    if let Some(key) = encryption_key {
+        let key = STANDARD
+            .decode(key)
+            .map_err(|_| DucklakeError::InvalidEncryptionKey)?;
+        let properties = FileDecryptionProperties::builder(key).build()?;
+        options = options.with_file_decryption_properties(properties);
+    }
+
     // Get the store to read the file
     let store = path.object_store(io_options);
     let object_path = path.path();
@@ -24,7 +38,7 @@ pub(crate) async fn read_file_statistics(
 
     // Read the parquet metadata using the async reader
     let mut reader = ObjectStoreReader::new(store, object_path, file_meta.size);
-    let metadata = reader.get_metadata(None).await?;
+    let metadata = reader.get_metadata(Some(&options)).await?;
 
     // Read column statistics from the metadata
     let file_metadata = metadata.file_metadata();

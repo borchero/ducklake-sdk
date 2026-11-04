@@ -18,6 +18,7 @@
 //    a full catalog to a DuckLake representation. Hence, the transform is implemented during
 //    commit.
 mod columns;
+mod macro_;
 mod partition;
 mod schema;
 mod sort;
@@ -25,6 +26,7 @@ mod table;
 mod view;
 
 pub(super) use columns::{CatalogColumn, CatalogColumns, CatalogDataType};
+pub(super) use macro_::CatalogMacro;
 pub(super) use partition::CatalogTablePartition;
 pub(super) use schema::CatalogSchema;
 pub(super) use sort::CatalogTableSortInfo;

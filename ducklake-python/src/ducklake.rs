@@ -2,6 +2,7 @@ use ducklake::{
     AuthorInfo,
     ConnectOptions,
     CreateOptions,
+    DatabaseOptions,
     DryRun,
     Ducklake,
     GlobalMetadata,
@@ -11,7 +12,7 @@ use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
 use crate::utils::runtime::block_on;
-use crate::{PyTable, PyTransaction, PyView, error};
+use crate::{PyMacro, PyTable, PyTransaction, PyView, error};
 
 #[pyclass]
 pub struct PyDucklake(Ducklake);
@@ -25,9 +26,13 @@ pub(crate) fn create(
     data_path: &str,
     storage_options: Vec<(String, String)>,
     time_zone: &str,
+    database_options: Wrap<DatabaseOptions>,
+    encrypted: bool,
 ) -> PyResult<PyDucklake> {
     let options = CreateOptions::new(url, data_path)
+        .with_encrypted(encrypted)
         .with_storage_options(storage_options)
+        .with_database_options(database_options.0)
         .with_time_zone(time_zone)
         .map_err(error::into_pyerr)?;
     let ducklake = block_on(py, Ducklake::create(options)).map_err(error::into_pyerr)?;
@@ -45,12 +50,13 @@ pub(crate) fn connect(
     readonly: bool,
     storage_options: Vec<(String, String)>,
     time_zone: &str,
+    database_options: Wrap<DatabaseOptions>,
 ) -> PyResult<PyDucklake> {
-    let options = ConnectOptions::new(url)
+    let mut options = ConnectOptions::new(url)
         .with_upgrade(upgrade)
         .with_readonly(readonly)
-        .with_storage_options(storage_options);
-    let mut options = options
+        .with_storage_options(storage_options)
+        .with_database_options(database_options.0)
         .with_time_zone(time_zone)
         .map_err(error::into_pyerr)?;
     if let Some(id) = snapshot_id {
@@ -136,7 +142,7 @@ impl PyDucklake {
     pub fn delete_table(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         if_not_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {
         block_on(py, self.0.delete_table(name.0, if_not_exists.0)).map_err(error::into_pyerr)
@@ -145,7 +151,7 @@ impl PyDucklake {
     pub fn delete_view(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         if_not_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<()> {
         block_on(py, self.0.delete_view(name.0, if_not_exists.0)).map_err(error::into_pyerr)
@@ -155,12 +161,12 @@ impl PyDucklake {
     pub fn create_table(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         schema: Vec<Wrap<ducklake::Column>>,
         partition: Option<Vec<Wrap<ducklake::PartitionColumn>>>,
         sort_info: Option<Vec<Wrap<ducklake::SortExpression>>>,
         data_path: Option<String>,
-        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        tags: Option<Wrap<ducklake::Tags>>,
         if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<PyTable> {
         block_on(
@@ -171,7 +177,7 @@ impl PyDucklake {
                 partition.map(|v| v.into_iter().map(|p| p.0).collect()),
                 sort_info.map(|v| v.into_iter().map(|s| s.0).collect()),
                 data_path,
-                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                tags.map(|tags| tags.0),
                 if_exists.0,
             ),
         )
@@ -201,20 +207,20 @@ impl PyDucklake {
         Ok(PyTransaction::new(tx))
     }
 
-    pub fn table(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<PyTable> {
+    pub fn table(&self, py: Python, name: Wrap<ducklake::QualifiedName>) -> PyResult<PyTable> {
         block_on(py, self.0.table(name.0))
             .map(PyTable::new)
             .map_err(error::into_pyerr)
     }
 
-    pub fn has_table(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<bool> {
+    pub fn has_table(&self, py: Python, name: Wrap<ducklake::QualifiedName>) -> PyResult<bool> {
         block_on(py, self.0.table_exists(name.0)).map_err(error::into_pyerr)
     }
 
     pub fn copy_tables(
         &self,
         py: Python,
-        tables: Vec<(Option<Wrap<ducklake::TableName>>, PyRef<PyTable>)>,
+        tables: Vec<(Option<Wrap<ducklake::QualifiedName>>, PyRef<PyTable>)>,
         target: &PyDucklake,
     ) -> PyResult<Vec<PyTable>> {
         let tables = tables
@@ -232,7 +238,7 @@ impl PyDucklake {
     pub fn move_tables(
         &self,
         py: Python,
-        tables: Vec<(Option<Wrap<ducklake::TableName>>, PyRef<PyTable>)>,
+        tables: Vec<(Option<Wrap<ducklake::QualifiedName>>, PyRef<PyTable>)>,
         target: &PyDucklake,
     ) -> PyResult<Vec<PyTable>> {
         let tables = tables
@@ -271,10 +277,10 @@ impl PyDucklake {
     pub fn create_view(
         &self,
         py: Python,
-        name: Wrap<ducklake::TableName>,
+        name: Wrap<ducklake::QualifiedName>,
         sql: String,
         column_aliases: Option<Vec<String>>,
-        tags: Option<Vec<Wrap<ducklake::Tag>>>,
+        tags: Option<Wrap<ducklake::Tags>>,
         if_exists: Wrap<ducklake::IfExistsStrategy>,
     ) -> PyResult<PyView> {
         block_on(
@@ -283,7 +289,7 @@ impl PyDucklake {
                 name.0,
                 sql,
                 column_aliases,
-                tags.map(|v| v.into_iter().map(|t| t.0).collect()),
+                tags.map(|tags| tags.0),
                 if_exists.0,
             ),
         )
@@ -291,7 +297,7 @@ impl PyDucklake {
         .map_err(error::into_pyerr)
     }
 
-    pub fn view(&self, py: Python, name: Wrap<ducklake::TableName>) -> PyResult<PyView> {
+    pub fn view(&self, py: Python, name: Wrap<ducklake::QualifiedName>) -> PyResult<PyView> {
         block_on(py, self.0.view(name.0))
             .map(PyView::new)
             .map_err(error::into_pyerr)
@@ -300,6 +306,55 @@ impl PyDucklake {
     pub fn list_views(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyView>> {
         block_on(py, self.0.list_views(schema.as_deref()))
             .map(|views| views.into_iter().map(PyView::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn create_macro(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::QualifiedName>,
+        macro_type: &str,
+        implementations: Vec<crate::macro_::PyMacroImplementation>,
+        if_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<PyMacro> {
+        let macro_type = macro_type.parse().map_err(error::into_pyerr)?;
+        let implementations = crate::macro_::macro_implementations_from_python(implementations);
+        block_on(
+            py,
+            self.0
+                .create_macro(name.0, macro_type, implementations, if_exists.0),
+        )
+        .map(PyMacro::new)
+        .map_err(error::into_pyerr)
+    }
+
+    pub fn macro_(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::QualifiedName>,
+        macro_type: &str,
+    ) -> PyResult<PyMacro> {
+        let macro_type = macro_type.parse().map_err(error::into_pyerr)?;
+        block_on(py, self.0.macro_(name.0, macro_type))
+            .map(PyMacro::new)
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn list_macros(&self, py: Python, schema: Option<String>) -> PyResult<Vec<PyMacro>> {
+        block_on(py, self.0.list_macros(schema.as_deref()))
+            .map(|macros| macros.into_iter().map(PyMacro::new).collect())
+            .map_err(error::into_pyerr)
+    }
+
+    pub fn delete_macro(
+        &self,
+        py: Python,
+        name: Wrap<ducklake::QualifiedName>,
+        macro_type: &str,
+        if_not_exists: Wrap<ducklake::IfExistsStrategy>,
+    ) -> PyResult<()> {
+        let macro_type = macro_type.parse().map_err(error::into_pyerr)?;
+        block_on(py, self.0.delete_macro(name.0, macro_type, if_not_exists.0))
             .map_err(error::into_pyerr)
     }
 

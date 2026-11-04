@@ -122,7 +122,7 @@ def test_read_polars_with_qualified_table_reference(
 ) -> None:
     # Arrange
     shared_ducklake.create_schema(random_schema_name)
-    table_name = dl.TableName(random_schema_name, random_table_name)
+    table_name = dl.QualifiedName(random_schema_name, random_table_name)
     table = shared_ducklake.create_table(table_name, {"x": dl.Int64()})
     table.sink_polars(pl.LazyFrame({"x": [1, 2, 3]}, schema={"x": pl.Int64}))
     view = shared_ducklake.create_view(random_view_name, f"SELECT x FROM {table_name} WHERE x > 1")

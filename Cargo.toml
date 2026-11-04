@@ -5,8 +5,11 @@ resolver = "2"
 [workspace.dependencies]
 arrow-arith = "59.2"
 arrow-array = "59.2"
+arrow-cast = "59.2"
 arrow-schema = "59.2"
+arrow-select = "59.2"
 async-recursion = "1.1"
+base64 = "0.23"
 bytes = "1.12"
 chrono = "0.4"
 chrono-tz = "0.10"
@@ -23,7 +26,7 @@ pyo3 = "0.28"
 pyo3-arrow = { version = "0.18", default-features = false }
 quote = "1.0"
 regex = "1.12"
-rstest = "0.27"
+rstest = "0.28"
 rust_decimal = "1.42"
 sea-query = "1.0"
 sea-query-sqlx = "0.9"
@@ -41,15 +44,15 @@ uuid = "1.23"
 ducklake = { path = "crates/ducklake", version = "0.0.0" }
 ducklake-macros = { path = "crates/ducklake-macros", version = "0.0.0" }
 
-[profile.release]
-codegen-units = 1
-lto = true
-strip = "symbols"
-
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
 unreachable_pub = "deny"
 
 [workspace.lints.clippy]
 print_stderr = "warn"
 print_stdout = "warn"
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = "symbols"

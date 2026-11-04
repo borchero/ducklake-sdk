@@ -5,10 +5,10 @@ use crate::io;
 #[derive(Debug, Clone)]
 pub(in crate::catalog) struct CatalogTable {
     pub id: Option<i64>,
-    pub name: crate::TableName,
+    pub name: crate::QualifiedName,
     pub columns: CatalogColumns,
     pub partition: Option<CatalogTablePartition>,
     pub sort_info: Option<CatalogTableSortInfo>,
-    pub tags: Vec<crate::Tag>,
+    pub tags: crate::Tags,
     pub path: io::DucklakePath,
 }

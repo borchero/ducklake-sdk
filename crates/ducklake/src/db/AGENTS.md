@@ -19,7 +19,7 @@ This design allows the same code to work with any supported database without run
 
 The module exposes two primary types:
 
-- `Pool`: A single-connection pool to the metadata database. Provides methods for querying (`fetch_one`,
+- `Pool`: A configurable connection pool to the metadata database. Provides methods for querying (`fetch_one`,
   `fetch_optional`, `fetch_all`), executing statements (`execute`), checking table existence (`table_exists`), and
   beginning transactions (`begin`).
 - `Transaction`: A database transaction with `REPEATABLE READ` isolation level. Provides methods for executing
@@ -49,11 +49,6 @@ The `RowType` trait alias provides a unified bound for types that can be deseria
 conditionally based on enabled features to ensure compatibility with all active backends.
 
 ## Design Principles
-
-### Single-Connection Pools
-
-All pools are configured with `max_connections(1)` to ensure serializable access to the metadata store. This simplifies
-concurrency handling and matches DuckLake's transaction model.
 
 ### Transaction Isolation
 

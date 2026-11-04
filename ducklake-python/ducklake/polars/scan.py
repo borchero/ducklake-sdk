@@ -1,177 +1,41 @@
 from __future__ import annotations
 
-import re
+import base64
 import tempfile
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import polars as pl
 import polars.datatypes as pld
+import polars.exceptions as plexc
 import polars.selectors as cs
+from polars.lazyframe.resolver import LazyFrameResolver, ResolvedLazyFrameProps
 
 from ducklake import typedefs
-from ducklake._native import arrow_schema_field_ids
 from ducklake.table import Table
 from ducklake.view import View
 
 if TYPE_CHECKING:
-    from ducklake.typedefs import Column, ScanDataFile, Schema
+    from polars.lazyframe.resolver import FilterExpr
+
+    from ducklake.typedefs import Column, ScanDataFile, ScanResult, Schema
 
 DROP_COLUMN_PREFIX = "__ducklake_drop__"
 
-_POLARS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pl.__version__)[:2])
+# ------------------------------------------ PUBLIC API ----------------------------------------- #
 
 
 def scan_ducklake(
     table: Table, *, include_file_paths: str | None = None, time_zone: str | None = None
 ) -> pl.LazyFrame:
-    cache_path = Path(tempfile.mkdtemp())
-
-    # 1) First, we read all relevant data from the table. We first scan, then get the
-    #    schema because this ensures that the schema is up-to-date.
-    scan_result = table.scan()
-    schema = table.schema
-
-    # 2) Then, we have to build all the inputs for the scan
-    # 2.1) Deletion files: DuckLake's deletion files are the same as the ones used by Iceberg.
-    #      For inlined deletions, we need to currently create separate files
-    iceberg_position_deletes: defaultdict[int, list[str]] = defaultdict(list)
-    inline_delete_count = 0
-    for i, data_file in enumerate(scan_result.data_files):
-        if data_file.delete_files:
-            iceberg_position_deletes[i].extend([file.path for file in data_file.delete_files])
-        if data_file.inline_deletes is not None:
-            # TODO: Writing to a temp directory here is an ugly workaround. Instead, we should be
-            #  able to apply these inline deletes in-memory
-            df = pl.DataFrame({"file_path": data_file.path, "pos": data_file.inline_deletes})
-            write_path = cache_path / f"inline_deletes_{i}.parquet"
-            df.write_parquet(write_path)
-            iceberg_position_deletes[i].append(str(write_path))
-            inline_delete_count += df.height
-
-    if _POLARS_VERSION >= (1, 44):
-        deletion_files = ("iceberg", (dict(iceberg_position_deletes), {}))
-    else:
-        deletion_files = ("iceberg-position-delete", dict(iceberg_position_deletes))
-
-    # 2.2) Row counts
-    physical_rows = sum(data_file.statistics.num_rows for data_file in scan_result.data_files)
-    deleted_rows = (
-        sum(
-            sum(delete_file.num_deletes for delete_file in data_file.delete_files)
-            for data_file in scan_result.data_files
-        )
-        + inline_delete_count
-    )
-
-    # 2.3) Schema and defaults. DuckLake's column-level defaults map to Iceberg's per-column
-    #      `initial-default`, which is applied wherever a column is missing from a data file.
-    target_schema = pl.Schema(schema)
-    columns_with_defaults = [
-        col
-        for col in schema.columns
-        if col.initial_default is not None and col.field_id is not None
-    ]
-    if _POLARS_VERSION >= (1, 43):
-        # polars 1.43 introduced a dedicated slot for per-column initial defaults, passed as a
-        # 2-tuple of `(identity_transformed_values, initial_defaults)`.
-        default_values = (
-            {},
-            {
-                col.field_id: pl.Series([col.initial_default], dtype=target_schema[col.name])
-                for col in columns_with_defaults
-            },
-        )
-    else:
-        # Older polars only exposes the per-file `identity_transformed_values` slot, so the
-        # constant default has to be repeated once per data file.
-        default_values = {
-            col.field_id: pl.repeat(
-                col.initial_default,
-                len(scan_result.data_files),
-                dtype=target_schema[col.name],
-                eager=True,
-            )
-            for col in columns_with_defaults
-        }
-
-    # 2.4) Statistics
-    stat_len = pl.Series(
-        [file.statistics.num_rows for file in scan_result.data_files], dtype=pl.get_index_type()
-    )
-    statistics = {"len": stat_len}
-    for column in schema.columns:
-        if column.field_id is None:
-            continue
-        minimum, maximum, null_count = _column_statistics(
-            column, target_schema[column.name], scan_result.data_files
-        )
-        statistics[f"{column.name}_min"] = minimum
-        statistics[f"{column.name}_max"] = maximum
-        statistics[f"{column.name}_nc"] = null_count
-    table_statistics = pl.DataFrame(statistics)
-
-    # 3) Then, we create the lazy frame by scanning all data files
-    if scan_result.data_files:
-        result = pl.scan_parquet(
-            # --- Files ---
-            [data_file.path for data_file in scan_result.data_files],
-            glob=False,
-            hive_partitioning=False,
-            include_file_paths=include_file_paths,
-            storage_options=table._storage_options.to_dict(),
-            # --- Schema ---
-            schema=target_schema,
-            missing_columns="insert",
-            extra_columns="ignore",
-            cast_options=pl.ScanCastOptions(
-                integer_cast="upcast",
-                float_cast="upcast",
-                missing_struct_fields="insert",
-                extra_struct_fields="ignore",
-                categorical_to_string="allow",
-            ),
-            # --- Optimization ---
-            _column_mapping=("iceberg-column-mapping", schema),
-            _deletion_files=deletion_files,  # ty: ignore[invalid-argument-type]
-            _default_values=("iceberg", default_values),  # ty: ignore[invalid-argument-type]
-            _table_statistics=table_statistics,
-            _row_count=(physical_rows, deleted_rows),
-        )
-    else:
-        result = pl.LazyFrame(schema=target_schema)
-        if include_file_paths is not None:
-            result = result.with_columns(pl.lit(None, dtype=pl.String).alias(include_file_paths))
-
-    # 4) If we had any inline data, we also want to include that in the scan result
-    if scan_result.inline_data:
-        for inline_data in scan_result.inline_data:
-            inline_lf = (
-                pl.LazyFrame(inline_data)
-                .pipe(
-                    _align_schema,
-                    ducklake_schema=schema,
-                    polars_schema=target_schema,
-                    field_id_mapping=arrow_schema_field_ids(inline_data),
-                )
-                .match_to_schema(target_schema, integer_cast="upcast", float_cast="upcast")
-            )
-            if include_file_paths is not None:
-                inline_lf = inline_lf.with_columns(
-                    pl.lit(None, dtype=pl.String).alias(include_file_paths)
-                )
-            result = pl.concat([result, inline_lf])
-
-    # 5) Represent timezone-aware timestamps in the requested connection or per-read time zone.
-    result_time_zone = table._time_zone if time_zone is None else time_zone
-    result = result.with_columns(
-        pl.col(name).cast(_convert_datetime_time_zone(dtype, result_time_zone))
-        for name, dtype in target_schema.items()
-    )
-
-    return result
+    return DuckLakeScanResolver(
+        table=table,
+        include_file_paths=include_file_paths,
+        time_zone=table._time_zone if time_zone is None else time_zone,
+    ).lazy()
 
 
 def read_ducklake(
@@ -182,7 +46,278 @@ def read_ducklake(
     ).collect(optimizations=pl.QueryOptFlags._eager())
 
 
-# -------------------------------------------- VIEWS -------------------------------------------- #
+# ---------------------------------------- SCAN RESOLVER ---------------------------------------- #
+
+
+@dataclass(kw_only=True)
+class DuckLakeScanResolver(LazyFrameResolver):
+    table: Table
+    include_file_paths: str | None
+    time_zone: str
+    _schema: Schema | None = field(default=None, init=False, repr=False)
+
+    def schema(self) -> pl.Schema:
+        # Cache the schema upon access
+        if self._schema is None:
+            self._schema = self.table.schema
+
+        # Translate to polars schema
+        schema = pl.Schema(
+            {
+                name: _convert_datetime_time_zone(dtype, self.time_zone)
+                for name, dtype in pl.Schema(self._schema).items()
+            }
+        )
+        if self.include_file_paths is not None:
+            if self.include_file_paths in schema:
+                raise plexc.DuplicateError(
+                    f"File path column {self.include_file_paths!r} already exists in the table"
+                )
+            schema[self.include_file_paths] = pl.String
+        return schema
+
+    def resolve_lazyframe(
+        self,
+        *,
+        projection: list[str] | None,
+        limit: int | None,
+        filters: list[FilterExpr],
+        filter_columns: list[str],
+        filter_drop_columns_idx: int | None,
+        existing_resolved_version_key: str | None,
+    ) -> tuple[pl.LazyFrame, ResolvedLazyFrameProps]:
+        # Scan and ensure that the schema has not been changed. This reads from the catalog
+        # database.
+        scan_result = self.table.scan()
+        schema = self.table.schema
+        if self._schema is not None and schema != self._schema:
+            raise plexc.SchemaError(
+                "DuckLake table schema changed after the scan was planned; create a new scan"
+            )
+
+        # Translate the metadata into parquet scans.
+        result = _scan_ducklake(
+            self.table,
+            scan_result,
+            schema,
+            include_file_paths=self.include_file_paths,
+            time_zone=self.time_zone,
+        )
+        # NOTE: `version_key=""` disables caching on re-evaluation
+        return result, ResolvedLazyFrameProps(version_key="")
+
+
+def _scan_ducklake(
+    table: Table,
+    scan_result: ScanResult,
+    schema: Schema,
+    *,
+    include_file_paths: str | None,
+    time_zone: str,
+) -> pl.LazyFrame:
+    frames: list[pl.LazyFrame] = []
+    data_files = scan_result.data_files
+    if data_files:
+        # All files share encryption status, but each encrypted file has its own key.
+        if data_files[0].encryption_key is not None:
+            # NOTE: We process each encrypted file individually as they potentially carry separate
+            #  encryption keys.
+            frames += [
+                _scan_encrypted_file(table, file, schema, include_file_paths=include_file_paths)
+                for file in data_files
+            ]
+        else:
+            lf = _scan_unencrypted_files(
+                table, data_files, schema, include_file_paths=include_file_paths
+            )
+            frames.append(lf)
+
+    for inline_data in scan_result.inline_data:
+        frames.append(_scan_inline_data(inline_data, include_file_paths=include_file_paths))
+
+    if frames:
+        result = pl.concat(frames)
+    else:
+        result = pl.LazyFrame(schema=pl.Schema(schema))
+        if include_file_paths is not None:
+            result = result.with_columns(pl.lit(None, dtype=pl.String).alias(include_file_paths))
+
+    return result.with_columns(
+        pl.col(name).cast(_convert_datetime_time_zone(dtype, time_zone))
+        for name, dtype in pl.Schema(schema).items()
+    )
+
+
+def _scan_encrypted_file(
+    table: Table,
+    data_file: ScanDataFile,
+    schema: Schema,
+    *,
+    include_file_paths: str | None,
+) -> pl.LazyFrame:
+    if not data_file.delete_files and data_file.inline_deletes is None:
+        return _scan_data_files(table, [data_file], schema, include_file_paths=include_file_paths)
+
+    # NOTE: The Iceberg deletion-file interface cannot accept decryption keys. Scan exactly one
+    #  data file and apply all its deletes together against the original physical positions.
+    row_index = "__ducklake_row_index"
+    result = _scan_data_files(
+        table, [data_file], schema, include_file_paths=include_file_paths, row_index=row_index
+    )
+    deletes = _scan_delete_positions(table, data_file, row_index=row_index)
+    return result.join(deletes, on=row_index, how="anti", maintain_order="left").drop(row_index)
+
+
+def _scan_unencrypted_files(
+    table: Table,
+    data_files: list[ScanDataFile],
+    schema: Schema,
+    *,
+    include_file_paths: str | None,
+) -> pl.LazyFrame:
+    position_deletes, deleted_rows = _prepare_position_deletes(data_files)
+    return _scan_data_files(
+        table,
+        data_files,
+        schema,
+        include_file_paths=include_file_paths,
+        position_deletes=position_deletes,
+        deleted_rows=deleted_rows,
+    )
+
+
+def _scan_data_files(
+    table: Table,
+    data_files: list[ScanDataFile],
+    schema: Schema,
+    *,
+    include_file_paths: str | None,
+    row_index: str | None = None,
+    position_deletes: dict[int, list[str]] | None = None,
+    deleted_rows: int = 0,
+) -> pl.LazyFrame:
+    source_sizes = [
+        size for file in data_files if (size := file.statistics.file_size_bytes) is not None
+    ]
+    return pl.scan_parquet(
+        # --- Files ---
+        [file.path for file in data_files],
+        glob=False,
+        hive_partitioning=False,
+        include_file_paths=include_file_paths,
+        storage_options=table._storage_options.to_dict(),
+        decryption=_decryption_properties(data_files[0].encryption_key),
+        row_index_name=row_index,
+        # --- Schema ---
+        schema=pl.Schema(schema),
+        missing_columns="insert",
+        extra_columns="ignore",
+        cast_options=pl.ScanCastOptions(
+            integer_cast="upcast",
+            float_cast="upcast",
+            missing_struct_fields="insert",
+            extra_struct_fields="ignore",
+            categorical_to_string="allow",
+        ),
+        # --- Optimization ---
+        _column_mapping=("iceberg-column-mapping", schema),
+        _deletion_files=("iceberg", (position_deletes or {}, {})),
+        _default_values=("iceberg", ({}, _initial_defaults(schema))),
+        _table_statistics=_table_statistics(data_files, schema),
+        _row_count=(sum(file.statistics.num_rows for file in data_files), deleted_rows),
+        _source_sizes=source_sizes if len(source_sizes) == len(data_files) else None,
+    )
+
+
+def _scan_inline_data(
+    inline_data: typedefs.ArrowArrayExportable,
+    *,
+    include_file_paths: str | None,
+) -> pl.LazyFrame:
+    result = pl.LazyFrame(inline_data)
+    if include_file_paths is not None:
+        result = result.with_columns(pl.lit(None, dtype=pl.String).alias(include_file_paths))
+    return result
+
+
+def _scan_delete_positions(
+    table: Table, data_file: ScanDataFile, *, row_index: str
+) -> pl.LazyFrame:
+    # Keep decrypted positions in memory, including inline deletes, without temporary files.
+    deletes = [
+        pl.scan_parquet(
+            file.path,
+            glob=False,
+            storage_options=table._storage_options.to_dict(),
+            decryption=_decryption_properties(file.encryption_key),
+        ).select(pl.col("pos").cast(pl.get_index_type()).alias(row_index))
+        for file in data_file.delete_files
+    ]
+    if data_file.inline_deletes is not None:
+        deletes.append(
+            pl.LazyFrame({row_index: data_file.inline_deletes}).select(
+                pl.col(row_index).cast(pl.get_index_type())
+            )
+        )
+    return pl.concat(deletes)
+
+
+def _prepare_position_deletes(data_files: list[ScanDataFile]) -> tuple[dict[int, list[str]], int]:
+    # DuckLake's Parquet deletion files use Iceberg's positional-delete format.
+    position_deletes: defaultdict[int, list[str]] = defaultdict(list)
+    deleted_rows = 0
+    for i, data_file in enumerate(data_files):
+        for delete_file in data_file.delete_files:
+            position_deletes[i].append(delete_file.path)
+            deleted_rows += delete_file.num_deletes
+        if data_file.inline_deletes is not None:
+            # TODO: Polars currently needs inline deletes written to a temporary file.
+            df = pl.DataFrame({"file_path": data_file.path, "pos": data_file.inline_deletes})
+            write_path = Path(tempfile.mkdtemp()) / f"inline_deletes_{i}.parquet"
+            df.write_parquet(write_path)
+            position_deletes[i].append(str(write_path))
+            deleted_rows += df.height
+    return dict(position_deletes), deleted_rows
+
+
+def _initial_defaults(schema: Schema) -> dict[int, pl.Series]:
+    # DuckLake defaults map to Iceberg's initial-default for missing Parquet columns.
+    target_schema = pl.Schema(schema)
+    return {
+        col.field_id: pl.Series([col.initial_default], dtype=target_schema[col.name])
+        for col in schema.columns
+        if col.initial_default is not None and col.field_id is not None
+    }
+
+
+def _table_statistics(data_files: list[ScanDataFile], schema: Schema) -> pl.DataFrame:
+    target_schema = pl.Schema(schema)
+    statistics = {
+        "len": pl.Series(
+            [file.statistics.num_rows for file in data_files], dtype=pl.get_index_type()
+        )
+    }
+    for column in schema.columns:
+        if column.field_id is None:
+            continue
+        minimum, maximum, null_count = _column_statistics(
+            column, target_schema[column.name], data_files
+        )
+        statistics[f"{column.name}_min"] = minimum
+        statistics[f"{column.name}_max"] = maximum
+        statistics[f"{column.name}_nc"] = null_count
+    return pl.DataFrame(statistics)
+
+
+def _decryption_properties(key: str | None) -> pl.ParquetDecryptionProperties | None:
+    if key is None:
+        return None
+    return pl.ParquetDecryptionProperties(footer_key=base64.b64decode(key, validate=True))
+
+
+# ----------------------------------------------------------------------------------------------- #
+#                                              VIEWS                                              #
+# ----------------------------------------------------------------------------------------------- #
 
 
 def scan_view(view: View) -> pl.LazyFrame:
@@ -190,12 +325,12 @@ def scan_view(view: View) -> pl.LazyFrame:
     return _scan_view(view, frozenset())
 
 
-def _scan_view(view: View, ancestors: frozenset[typedefs.TableName]) -> pl.LazyFrame:
+def _scan_view(view: View, ancestors: frozenset[typedefs.QualifiedName]) -> pl.LazyFrame:
     name = view.name
     if name in ancestors:
         raise ValueError(f"cyclic view reference involving {name}")
 
-    sql, pytables, pyviews = view._pyview.polars_query()
+    sql, pytables, pyviews = view._pyview.polars_definition()
     frames = {
         alias: Table._from_pytable(
             pytable, view._duckdb_connection_fn, view._storage_options, view._time_zone
@@ -225,7 +360,9 @@ def read_view(view: View) -> pl.DataFrame:
     return scan_view(view).collect(optimizations=pl.QueryOptFlags._eager())
 
 
-# -------------------------------------------- UTILS -------------------------------------------- #
+# ----------------------------------------------------------------------------------------------- #
+#                                              UTILS                                              #
+# ----------------------------------------------------------------------------------------------- #
 
 
 def _column_statistics(
@@ -312,106 +449,3 @@ def _convert_datetime_time_zone(
             return pl.List(_convert_datetime_time_zone(inner, time_zone))
         case _:
             return dtype
-
-
-def _align_schema(
-    lf: pl.LazyFrame,
-    ducklake_schema: Schema,
-    polars_schema: pl.Schema,
-    field_id_mapping: dict[int, str],
-) -> pl.LazyFrame:
-    projections = _derive_projections(ducklake_schema.columns, polars_schema, field_id_mapping)
-    return lf.select(projections)
-
-
-def _derive_projections(
-    columns: list[Column], target_schema: pl.Schema, field_id_mapping: dict[int, str]
-) -> list[pl.Expr]:
-    projections: list[pl.Expr] = []
-    for column in columns:
-        field_id = cast(int, column.field_id)
-        existing_column_name = field_id_mapping.get(field_id)
-        target_dtype = target_schema[column.name]
-        if existing_column_name is not None:
-            # "Existing column" -> reference it and reshape to match the target dtype,
-            # recursively descending into nested types (renames, inserted fields, etc.).
-            projection = _reshape_existing(
-                pl.col(existing_column_name), column, target_dtype, field_id_mapping
-            )
-        else:
-            # "Missing column" -> create new expression with (possibly nested) defaults.
-            projection = _new_column_expression(column, target_dtype)
-
-        # Select the expression and apply the alias to apply renames
-        projections.append(projection.alias(column.name))
-
-    return projections
-
-
-def _reshape_existing(
-    base: pl.Expr,
-    column: Column,
-    target_dtype: pl.DataType | pld.DataTypeClass,
-    field_id_mapping: dict[int, str],
-) -> pl.Expr:
-    """Reshape an expression for column so that it matches `target_dtype`.
-
-    This recursively handles nested renames and inserted fields for Struct/List types.
-    `base` may be any expression: `pl.col(name)` at the top level, `pl.element()` inside
-    a `list.eval`, or `<parent>.struct.field(name)` inside a struct.
-    """
-    if isinstance(column.data_type, typedefs.Struct):
-        struct_dtype = cast(pl.Struct, target_dtype)
-        target_fields = {field.name: field.dtype for field in struct_dtype.fields}
-        rebuilt: list[pl.Expr] = []
-        for field in column.data_type.fields:
-            sub_target = target_fields[field.name]
-            existing_name = field_id_mapping.get(cast(int, field.field_id))
-            if existing_name is None:
-                rebuilt.append(_new_column_expression(field, sub_target).alias(field.name))
-            else:
-                sub_base = base.struct.field(existing_name)
-                rebuilt.append(
-                    _reshape_existing(sub_base, field, sub_target, field_id_mapping).alias(
-                        field.name
-                    )
-                )
-        return pl.struct(rebuilt)
-
-    if isinstance(column.data_type, typedefs.List):
-        inner_target = cast(pl.List, target_dtype).inner
-        inner_column = column.data_type.inner
-        existing_name = field_id_mapping.get(cast(int, inner_column.field_id))
-        if existing_name is None:
-            # The inner element itself was replaced with a new field. Fall back to a
-            # default expression per element.
-            inner_expr = _new_column_expression(inner_column, inner_target)
-        else:
-            inner_expr = _reshape_existing(
-                pl.element(), inner_column, inner_target, field_id_mapping
-            )
-        return base.list.eval(inner_expr)
-
-    # Leaf scalar: nothing to reshape.
-    return base
-
-
-def _new_column_expression(column: Column, dtype: pl.DataType | pld.DataTypeClass) -> pl.Expr:
-    if isinstance(column.data_type, typedefs.Struct):
-        if column.initial_default is not None:
-            raise NotImplementedError("Initial defaults for struct columns are not supported")
-        struct_schema = cast(pl.Struct, dtype).to_schema()
-        return pl.struct(
-            _new_column_expression(field, struct_schema[field.name]).alias(field.name)
-            for field in column.data_type.fields
-        )
-    if isinstance(column.data_type, typedefs.List):
-        if column.initial_default is not None:
-            raise NotImplementedError("Initial defaults for list columns are not supported")
-        inner_dtype = cast(pl.List, dtype).inner
-        inner_expr = _new_column_expression(column.data_type.inner, inner_dtype)
-        return pl.concat_list([inner_expr]).alias(column.name)
-
-    if column.initial_default is None:
-        return pl.lit(None, dtype=dtype).alias(column.name)
-    return pl.lit(column.initial_default, dtype=dtype).alias(column.name)

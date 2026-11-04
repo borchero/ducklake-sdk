@@ -31,6 +31,8 @@ pub enum DucklakeError {
     InvalidPartitions(String),
     #[error("invalid time zone '{0}'")]
     InvalidTimeZone(String),
+    #[error("invalid database options: {0}")]
+    InvalidDatabaseOptions(String),
     #[error("invalid partition transform: {0}")]
     InvalidPartitionTransform(String),
     #[error("invalid sort direction: {0}")]
@@ -39,10 +41,12 @@ pub enum DucklakeError {
     InvalidNullOrder(String),
     #[error("invalid schema name '{name}': {reason}")]
     InvalidSchemaName { name: String, reason: &'static str },
-    #[error("invalid table name '{name}': {reason}")]
-    InvalidTableName { name: String, reason: &'static str },
+    #[error("invalid qualified name '{name}': {reason}")]
+    InvalidQualifiedName { name: String, reason: &'static str },
     #[error("invalid view definition: {reason}")]
     InvalidView { reason: String },
+    #[error("invalid macro definition: {reason}")]
+    InvalidMacro { reason: String },
     #[error("invalid column name '{name}': {reason}")]
     InvalidColumnName { name: String, reason: &'static str },
     #[error("cannot cast column from type '{old}' to type '{new}'")]
@@ -91,6 +95,8 @@ pub enum DucklakeError {
     UnsupportedUrlScheme(String),
     #[error("unsupported Arrow data type: {0}")]
     UnsupportedArrowDataType(String),
+    #[error("encryption key must be valid base64")]
+    InvalidEncryptionKey,
     #[error("parquet error: {0}")]
     Parquet(#[from] parquet::errors::ParquetError),
     #[error("object store error: {0}")]
@@ -103,6 +109,8 @@ pub enum DucklakeError {
     InvalidTableTransfer(String),
     #[error("the table changed while it was being transferred")]
     TableChangedDuringTransfer,
+    #[error("schema error: {0}")]
+    SchemaError(String),
 }
 
 impl From<Infallible> for DucklakeError {
@@ -180,30 +188,44 @@ impl DucklakeError {
         }
     }
 
-    pub(crate) fn table_already_exists(name: &crate::TableName) -> Self {
+    pub(crate) fn table_already_exists(name: &crate::QualifiedName) -> Self {
         DucklakeError::AlreadyExists {
             entity: "table",
             name: name.to_string(),
         }
     }
 
-    pub(crate) fn table_not_found(name: &crate::TableName) -> Self {
+    pub(crate) fn table_not_found(name: &crate::QualifiedName) -> Self {
         DucklakeError::NotFound {
             entity: "table",
             name: name.to_string(),
         }
     }
 
-    pub(crate) fn view_already_exists(name: &crate::TableName) -> Self {
+    pub(crate) fn view_already_exists(name: &crate::QualifiedName) -> Self {
         DucklakeError::AlreadyExists {
             entity: "view",
             name: name.to_string(),
         }
     }
 
-    pub(crate) fn view_not_found(name: &crate::TableName) -> Self {
+    pub(crate) fn view_not_found(name: &crate::QualifiedName) -> Self {
         DucklakeError::NotFound {
             entity: "view",
+            name: name.to_string(),
+        }
+    }
+
+    pub(crate) fn macro_already_exists(name: &crate::QualifiedName) -> Self {
+        DucklakeError::AlreadyExists {
+            entity: "macro",
+            name: name.to_string(),
+        }
+    }
+
+    pub(crate) fn macro_not_found(name: &crate::QualifiedName) -> Self {
+        DucklakeError::NotFound {
+            entity: "macro",
             name: name.to_string(),
         }
     }

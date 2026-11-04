@@ -1,6 +1,6 @@
 use super::changes::Change;
 use super::{IfExistsStrategy, Transaction};
-use crate::{DucklakeError, DucklakeResult, TableName, Tag, ViewInfo, view};
+use crate::{DucklakeError, DucklakeResult, QualifiedName, Tags, ViewInfo, view};
 
 /* --------------------------------------------------------------------------------------------- */
 /*                                           LIFECYCLE                                           */
@@ -14,10 +14,10 @@ impl<'a> Transaction<'a> {
     /// The provided SQL must be a single `SELECT` query (not a `CREATE VIEW` statement).
     pub fn create_view(
         &mut self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         sql: String,
         column_aliases: Option<Vec<String>>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<()> {
         let name = name.try_into().map_err(|e| e.into())?;
@@ -33,13 +33,14 @@ impl<'a> Transaction<'a> {
         let sql = format!("{statement:#}");
 
         // Insert the view into the catalog
+        let tags = tags.unwrap_or_default();
         let dialect = "duckdb".to_string();
         let info = ViewInfo {
             name: name.clone(),
             sql: sql.clone(),
             dialect: dialect.clone(),
             column_aliases: column_aliases.clone(),
-            tags: tags.clone().unwrap_or_default(),
+            tags: tags.clone(),
         };
         let (schema_ref, view_ref) = self.catalog_mut().add_view(info)?;
 
@@ -64,7 +65,7 @@ impl<'a> Transaction<'a> {
     /// Delete the view with the given name from the catalog.
     pub fn delete_view(
         &mut self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         if_not_exists: IfExistsStrategy,
     ) -> DucklakeResult<()> {
         let name = name.try_into().map_err(|e| e.into())?;

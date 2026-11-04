@@ -7,11 +7,11 @@ from .typedefs import (
     DataType,
     PartitionColumn,
     Partitioning,
+    QualifiedName,
     Schema,
     SortColumn,
     SortInfo,
     TableMetadata,
-    TableName,
     Value,
     WriteDataFile,
 )
@@ -91,7 +91,7 @@ class Transaction:
             for table in self._pytx.list_tables(schema)
         ]
 
-    def table(self, name: str | TableName) -> TransactionTable:
+    def table(self, name: str | QualifiedName) -> TransactionTable:
         pytransaction_table = self._pytx.table(name)
         return TransactionTable._from_pytransaction_table(
             pytransaction_table, self._storage_options
@@ -99,7 +99,7 @@ class Transaction:
 
     def create_table(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         schema: Schema | Sequence[Column] | Mapping[str, DataType],
         *,
         partition_by: (
@@ -152,7 +152,7 @@ class Transaction:
                 else None
             ),
             data_path=data_path,
-            tags=list(tags.items()) if tags else None,
+            tags=dict(tags) if tags is not None else None,
             if_exists=if_exists,
         )
         return TransactionTable._from_pytransaction_table(
@@ -161,7 +161,7 @@ class Transaction:
 
     def delete_table(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         *,
         if_not_exists: Literal["fail", "skip"] = "fail",
     ) -> None:
@@ -183,7 +183,7 @@ class Transaction:
 
     def delete_view(
         self,
-        name: str | tuple[str, str] | TableName,
+        name: str | tuple[str, str] | QualifiedName,
         *,
         if_not_exists: Literal["fail", "skip"] = "fail",
     ) -> None:
@@ -238,6 +238,15 @@ class TransactionTable:
         return table
 
     @property
+    def tags(self) -> dict[str, str]:
+        """The table's tags, including changes made within this transaction."""
+        return self._pytxtable.tags
+
+    def get_tag(self, key: str) -> str | None:
+        """Get a tag by key, or ``None`` if it is absent, without copying all tags."""
+        return self._pytxtable.get_tag(key)
+
+    @property
     def schema(self) -> Schema:
         """The schema of the table."""
         return Schema(self._pytxtable.columns)
@@ -277,9 +286,9 @@ class TransactionTable:
     # ------------------------------------------------------------------------------------------- #
 
     @property
-    def name(self) -> TableName:
+    def name(self) -> QualifiedName:
         """The fully qualified name of the table."""
-        return TableName(*self._pytxtable.name)
+        return QualifiedName(*self._pytxtable.name)
 
     # ------------------------------------------------------------------------------------------- #
     #                                            WRITES                                           #
@@ -306,7 +315,7 @@ class TransactionTable:
             [WriteDataFile(f) if isinstance(f, str) else f for f in files]
         )
 
-    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator, bool]:
+    def _get_write_info(self) -> tuple[TableMetadata, PyDataFilePathGenerator, bool, bool]:
         return self._pytxtable.get_write_info()
 
     def _write_inline_data(self, data: ArrowStreamExportable) -> None:

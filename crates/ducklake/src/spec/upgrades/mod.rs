@@ -55,15 +55,15 @@ impl Upgrades {
         }
     }
 
-    async fn upgrade(&self, pool: &db::Pool) -> DucklakeResult<()> {
-        let mut tx = pool.begin().await?;
+    async fn upgrade(&self, conn: &mut db::Connection) -> DucklakeResult<()> {
+        let mut tx = conn.begin().await?;
         self.upgrade_tables(&mut tx).await?;
         set_version(&mut tx, self.version()).await?;
         tx.commit().await?;
         Ok(())
     }
 
-    async fn upgrade_tables(&self, tx: &mut db::Transaction) -> DucklakeResult<()> {
+    async fn upgrade_tables(&self, tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
         use Upgrades::*;
         match self {
             V0_2 => v0_2::upgrade(tx).await,
@@ -74,7 +74,7 @@ impl Upgrades {
     }
 }
 
-async fn set_version(tx: &mut db::Transaction, version: &str) -> DucklakeResult<()> {
+async fn set_version(tx: &mut db::Transaction<'_>, version: &str) -> DucklakeResult<()> {
     execute_upgrade!(
         tx,
         Query::update()
@@ -88,12 +88,15 @@ async fn set_version(tx: &mut db::Transaction, version: &str) -> DucklakeResult<
 /* ------------------------------------------ UPGRADE ------------------------------------------ */
 
 /// Upgrade the catalog database to the most up-to-date DuckLake schema.
-pub(crate) async fn upgrade_catalog(pool: &db::Pool, current_version: &str) -> DucklakeResult<()> {
+pub(crate) async fn upgrade_catalog(
+    conn: &mut db::Connection,
+    current_version: &str,
+) -> DucklakeResult<()> {
     let current_semver = current_version.parse::<DucklakeVersion>()?;
     for upgrade in Upgrades::iter() {
         let upgrade_semver = upgrade.version().parse::<DucklakeVersion>()?;
         if upgrade_semver > current_semver {
-            upgrade.upgrade(pool).await?;
+            upgrade.upgrade(conn).await?;
         }
     }
     Ok(())

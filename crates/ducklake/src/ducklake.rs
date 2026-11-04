@@ -84,7 +84,7 @@ impl Ducklake {
     /// [`Ducklake::connect`] instead.
     pub async fn create(options: CreateOptions) -> DucklakeResult<Self> {
         // Initialize the database pool and create the catalog schema if it doesn't exist
-        let pool = db::Pool::new(&options.url).await?;
+        let pool = db::Pool::new(&options.url, &options.database_options).await?;
         if pool
             .table_exists(&spec::ducklake_metadata::Table.to_string())
             .await?
@@ -94,12 +94,15 @@ impl Ducklake {
 
         let config = spec::InitConfig {
             data_path: options.data_path,
+            encrypted: options.encrypted,
         };
         spec::init_catalog(&pool, config).await?;
 
         // Create the ducklake instance
+        let mut conn = pool.acquire().await?;
         Self::new(
             pool,
+            &mut conn,
             None,
             false,
             options.storage_options,
@@ -119,16 +122,20 @@ impl Ducklake {
     /// Returns an error if the catalog database is not initialized yet. In this case, use
     /// [`Ducklake::create`] instead.
     pub async fn connect(options: ConnectOptions) -> DucklakeResult<Self> {
-        let pool = Self::init_catalog(&options.url, options.upgrade).await?;
+        let (pool, mut conn) =
+            Self::init_catalog(&options.url, options.upgrade, &options.database_options).await?;
         let snapshot = match options.connection_type {
             ConnectionType::Latest => None,
-            ConnectionType::SnapshotId(id) => Some(SnapshotInfo::load_for_id(&pool, id).await?),
+            ConnectionType::SnapshotId(id) => {
+                Some(SnapshotInfo::load_for_id(&mut conn, id).await?)
+            }
             ConnectionType::SnapshotTimestamp(timestamp) => {
-                Some(SnapshotInfo::load_for_timestamp(&pool, timestamp).await?)
+                Some(SnapshotInfo::load_for_timestamp(&mut conn, timestamp).await?)
             }
         };
         Self::new(
             pool,
+            &mut conn,
             snapshot,
             options.readonly,
             options.storage_options,
@@ -151,20 +158,24 @@ impl Ducklake {
 
     /* ----------------------------------------- SETUP ----------------------------------------- */
 
-    async fn init_catalog(url: &str, upgrade: bool) -> DucklakeResult<db::Pool> {
+    async fn init_catalog(
+        url: &str,
+        upgrade: bool,
+        database_options: &DatabaseOptions,
+    ) -> DucklakeResult<(db::Pool, db::Connection)> {
         // Initialize the database pool and query the current catalog version to run upgrades
-        let pool = db::Pool::new(url).await?;
-        if !pool
-            .table_exists(&spec::ducklake_metadata::Table.to_string())
-            .await?
-        {
-            return Err(DucklakeError::CatalogNotInitialized);
-        }
+        let pool = db::Pool::new(url, database_options).await?;
+        let mut conn = pool.acquire().await?;
 
         // NOTE: We do not load the full metadata here but only the version field to not rely on
         //  the current schema of the ducklake_metadata table. This allows to correctly read this
         //  field for older versions of the catalog (e.g. DuckLake v0.1).
-        let version = get_version(&pool).await?;
+        let version = match get_version(&mut conn).await {
+            Err(error) if conn.dialect().is_table_not_found_error(&error) => {
+                return Err(DucklakeError::CatalogNotInitialized);
+            }
+            result => result?,
+        };
         if !spec::SUPPORTED_VERSIONS.contains(&version.as_str()) {
             return Err(DucklakeError::UnsupportedVersion(version));
         }
@@ -174,13 +185,14 @@ impl Ducklake {
                 spec::LATEST_VERSION.to_string(),
             ));
         }
-        spec::upgrade_catalog(&pool, &version).await?;
+        spec::upgrade_catalog(&mut conn, &version).await?;
 
-        Ok(pool)
+        Ok((pool, conn))
     }
 
     async fn new(
         pool: db::Pool,
+        conn: &mut db::Connection,
         travel_snapshot: Option<SnapshotInfo>,
         readonly: bool,
         storage_options: Vec<(String, String)>,
@@ -189,8 +201,8 @@ impl Ducklake {
         let has_travel_snapshot = travel_snapshot.is_some();
 
         // Initialize the caches
-        let snapshot_cache = SnapshotCache::new(pool.clone(), travel_snapshot).await?;
-        let metadata_cache = MetadataCache::new(pool.clone()).await?;
+        let snapshot_cache = SnapshotCache::new(pool.clone(), conn, travel_snapshot).await?;
+        let metadata_cache = MetadataCache::new(pool.clone(), conn).await?;
 
         // Determine the access mode
         let mode = if has_travel_snapshot {
@@ -220,7 +232,8 @@ impl Ducklake {
 impl Ducklake {
     /// Connect to the DuckLake at the provided snapshot ID.
     pub async fn at_snapshot_id(&self, snapshot_id: i64) -> DucklakeResult<Self> {
-        let snapshot_info = SnapshotInfo::load_for_id(self.conn.pool(), snapshot_id).await?;
+        let mut conn = self.conn.pool().acquire().await?;
+        let snapshot_info = SnapshotInfo::load_for_id(&mut conn, snapshot_id).await?;
         self.at_snapshot(snapshot_info)
     }
 
@@ -229,7 +242,8 @@ impl Ducklake {
         &self,
         timestamp: chrono::DateTime<chrono::Utc>,
     ) -> DucklakeResult<Self> {
-        let snapshot_info = SnapshotInfo::load_for_timestamp(self.conn.pool(), timestamp).await?;
+        let mut conn = self.conn.pool().acquire().await?;
+        let snapshot_info = SnapshotInfo::load_for_timestamp(&mut conn, timestamp).await?;
         self.at_snapshot(snapshot_info)
     }
 
@@ -314,7 +328,7 @@ impl Ducklake {
     /// Get a handle to the table with the provided name.
     pub async fn table(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<Table> {
         let name = name.try_into().map_err(|e| e.into())?;
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -325,7 +339,7 @@ impl Ducklake {
     /// Returns whether a table with the provided name exists in the catalog.
     pub async fn table_exists(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<bool> {
         let name = name.try_into().map_err(|e| e.into())?;
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -336,7 +350,7 @@ impl Ducklake {
     fn maybe_table_from_catalog(
         &self,
         catalog: &Catalog,
-        name: &TableName,
+        name: &QualifiedName,
     ) -> DucklakeResult<Option<Table>> {
         let Some(schema_id) = catalog.schema(&name.schema)?.id() else {
             return Ok(None);
@@ -382,7 +396,7 @@ impl Ducklake {
     /// Get a handle to the view with the provided name.
     pub async fn view(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<View> {
         let name = name.try_into().map_err(|e| e.into())?;
         let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
@@ -393,7 +407,7 @@ impl Ducklake {
     fn maybe_view_from_catalog(
         &self,
         catalog: &Catalog,
-        name: &TableName,
+        name: &QualifiedName,
     ) -> DucklakeResult<Option<View>> {
         if catalog.schema(&name.schema)?.id().is_none() {
             return Ok(None);
@@ -425,6 +439,59 @@ impl Ducklake {
             .list_views()
             .into_iter()
             .map(|v| View::new(self.conn.clone(), v.id().unwrap()))
+            .collect()
+    }
+
+    /// Get a handle to the macro with the provided name.
+    pub async fn macro_(
+        &self,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
+        macro_type: MacroType,
+    ) -> DucklakeResult<Macro> {
+        let name = name.try_into().map_err(|error| error.into())?;
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
+        let catalog = snapshot.catalog().await?;
+        Ok(self
+            .maybe_macro_from_catalog(catalog, &name, macro_type)?
+            .unwrap())
+    }
+
+    fn maybe_macro_from_catalog(
+        &self,
+        catalog: &Catalog,
+        name: &QualifiedName,
+        macro_type: MacroType,
+    ) -> DucklakeResult<Option<Macro>> {
+        if catalog.schema(&name.schema)?.id().is_none() {
+            return Ok(None);
+        }
+        let Some(macro_id) = catalog.macro_((name, macro_type))?.id() else {
+            return Ok(None);
+        };
+        Ok(Some(Macro::new(self.conn.clone(), macro_id)))
+    }
+
+    /// List all macros in the catalog, optionally restricted to a specific schema.
+    pub async fn list_macros(&self, schema: Option<&str>) -> DucklakeResult<Vec<Macro>> {
+        let snapshot = self.conn.snapshot(SnapshotAccess::Any).await?;
+        let catalog = snapshot.catalog().await?;
+        let macros = if let Some(schema) = schema {
+            self.list_macros_in_schema(catalog.schema(schema)?)
+        } else {
+            catalog
+                .list_schemas()
+                .into_iter()
+                .flat_map(|schema| self.list_macros_in_schema(schema))
+                .collect()
+        };
+        Ok(macros)
+    }
+
+    fn list_macros_in_schema(&self, schema: catalog::SchemaView<'_>) -> Vec<Macro> {
+        schema
+            .list_macros()
+            .into_iter()
+            .map(|macro_| Macro::new(self.conn.clone(), macro_.id().unwrap()))
             .collect()
     }
 
@@ -579,9 +646,11 @@ within_transaction! {
     /// Delete an existing schema from the catalog, optionally deleting all of its tables and views.
     fn delete_schema(name: &str, cascade: bool, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
     /// Delete an existing table from the catalog.
-    fn delete_table(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
+    fn delete_table(name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
     /// Delete an existing view from the catalog.
-    fn delete_view(name: impl TryInto<TableName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
+    fn delete_view(name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
+    /// Delete an existing macro from the catalog.
+    fn delete_macro(name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>, macro_type: MacroType, if_not_exists: IfExistsStrategy) -> DucklakeResult<()>;
 }
 
 impl Ducklake {
@@ -589,12 +658,12 @@ impl Ducklake {
     #[allow(clippy::too_many_arguments)]
     pub async fn create_table(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         columns: Vec<Column>,
         partition_columns: Option<Vec<PartitionColumn>>,
         sort_info: Option<Vec<crate::SortExpression>>,
         path: Option<String>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<Table> {
         let name = name.try_into().map_err(|e| e.into())?;
@@ -625,10 +694,10 @@ impl Ducklake {
     /// The provided SQL must be a single `SELECT` query (not a `CREATE VIEW` statement).
     pub async fn create_view(
         &self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         sql: String,
         column_aliases: Option<Vec<String>>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<View> {
         let name = name.try_into().map_err(|e| e.into())?;
@@ -643,6 +712,29 @@ impl Ducklake {
             Ok(view)
         } else {
             self.view(name).await
+        }
+    }
+
+    /// Create a new macro in the catalog.
+    pub async fn create_macro(
+        &self,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
+        macro_type: MacroType,
+        implementations: Vec<MacroImplementation>,
+        if_exists: IfExistsStrategy,
+    ) -> DucklakeResult<Macro> {
+        let name = name.try_into().map_err(|error| error.into())?;
+        let mut tx = self.transaction().await?;
+        tx.create_macro(name.clone(), macro_type, implementations, if_exists)?;
+        let macro_ = self.maybe_macro_from_catalog(tx.catalog(), &name, macro_type)?;
+        tx.commit().await?;
+
+        // `macro_` is `Some` if the macro already had an ID in the catalog. Otherwise, it is
+        // `None` and we will need to fetch the macro again.
+        if let Some(macro_) = macro_ {
+            Ok(macro_)
+        } else {
+            self.macro_(name, macro_type).await
         }
     }
 }
@@ -753,7 +845,7 @@ impl DucklakeConnection {
 /*                                            QUERIES                                            */
 /* --------------------------------------------------------------------------------------------- */
 
-async fn get_version(pool: &db::Pool) -> DucklakeResult<String> {
+async fn get_version(conn: &mut db::Connection) -> DucklakeResult<String> {
     let query = Query::select()
         .column(ducklake_metadata::Column::Value)
         .from(ducklake_metadata::Table)
@@ -763,7 +855,7 @@ async fn get_version(pool: &db::Pool) -> DucklakeResult<String> {
                 .eq(spec::metadata::VERSION),
         )
         .to_owned();
-    let version: (String,) = pool.fetch_one(&query).await?;
+    let version: (String,) = conn.fetch_one(&query).await?;
     Ok(version.0)
 }
 

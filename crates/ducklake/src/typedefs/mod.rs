@@ -1,4 +1,5 @@
 mod data;
+mod macro_;
 mod name;
 mod partition;
 mod schema;
@@ -7,12 +8,13 @@ mod tag;
 mod value;
 
 pub use data::*;
-pub use name::{ColumnName, IntoColumnName, TableName};
+pub use macro_::{MacroImplementation, MacroParameter, MacroType};
+pub use name::{ColumnName, IntoColumnName, QualifiedName};
 pub(crate) use partition::Partition;
 pub use partition::{PartitionColumn, PartitionTransform};
 pub(crate) use schema::Schema;
 pub use schema::{Column, ColumnDefault, DataType, TimestampPrecision};
 pub(crate) use sort::SortInfo;
 pub use sort::{NullOrder, SortDirection, SortExpression};
-pub use tag::Tag;
+pub use tag::{Tag, Tags};
 pub use value::Value;

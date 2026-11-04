@@ -16,6 +16,8 @@ pub struct ScanResult {
 pub struct ScanDataFile {
     /// The path of the data file.
     pub path: String,
+    /// The encryption key stored in the catalog, or `None` for an unencrypted file.
+    pub encryption_key: Option<String>,
     /// Statistics describing the contents of the data file.
     pub statistics: DataFileStatistics,
     /// Delete files that need to be applied to the data file.
@@ -28,6 +30,8 @@ pub struct ScanDataFile {
 pub struct ScanDeleteFile {
     /// The path of the delete file.
     pub path: String,
+    /// The encryption key stored in the catalog, or `None` for an unencrypted file.
+    pub encryption_key: Option<String>,
     /// The number of rows deleted by the delete file.
     pub num_deletes: usize,
     /// The size of the delete file in bytes.

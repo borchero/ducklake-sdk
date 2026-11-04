@@ -1,7 +1,7 @@
 use arrow_array::RecordBatch;
 
 use crate::ducklake::{DucklakeConnection, SnapshotAccess};
-use crate::{DucklakeResult, IntoColumnName, TableMetadata, TableName, scan, utils};
+use crate::{DucklakeResult, IntoColumnName, QualifiedName, TableMetadata, scan, utils};
 
 /// Handle to a table in the DuckLake catalog.
 #[derive(Clone)]
@@ -21,11 +21,11 @@ impl Eq for Table {}
 
 #[derive(Clone)]
 pub(crate) struct TableInfo {
-    pub name: TableName,
+    pub name: QualifiedName,
     pub schema: crate::Schema,
     pub partitioning: Option<crate::Partition>,
     pub sort_info: Option<crate::SortInfo>,
-    pub tags: Vec<crate::Tag>,
+    pub tags: crate::Tags,
 }
 
 impl Table {
@@ -38,7 +38,7 @@ impl Table {
     }
 
     /// Get the name of the table.
-    pub async fn name(&self) -> DucklakeResult<crate::TableName> {
+    pub async fn name(&self) -> DucklakeResult<crate::QualifiedName> {
         let snapshot = self.conn.current_snapshot();
         let catalog = snapshot.catalog().await?;
         let table = catalog.table(self.id)?;
@@ -79,7 +79,7 @@ impl Table {
     }
 
     /// Get the tags of the table.
-    pub async fn tags(&self) -> DucklakeResult<Vec<crate::Tag>> {
+    pub async fn tags(&self) -> DucklakeResult<crate::Tags> {
         let tags = self
             .conn
             .current_snapshot()
@@ -128,10 +128,11 @@ impl Table {
 
 impl Table {
     /// Write data files to the table by invoking the provided closure with the table metadata
-    /// and a path generator. The data files returned by the closure are committed to the table.
+    /// and a path generator, followed by the catalog encryption flag. The data files returned by
+    /// the closure are committed to the table.
     pub async fn write_data<F>(
         &self,
-        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator) -> F,
+        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator, bool) -> F,
     ) -> DucklakeResult<()>
     where
         F: Future<Output = DucklakeResult<Vec<crate::WriteDataFile>>>,
@@ -142,10 +143,11 @@ impl Table {
         tx.commit().await
     }
 
-    /// Get the table metadata, a path generator, and whether the current schema supports inlining.
+    /// Get the table metadata, a path generator, whether the current schema supports inlining,
+    /// and whether the catalog requires encrypted writes.
     pub async fn get_write_info(
         &self,
-    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool)> {
+    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool, bool)> {
         let snapshot = self.conn.snapshot(SnapshotAccess::Write).await?;
         let catalog = snapshot.catalog().await?;
         let table = catalog.table(self.id)?;
@@ -159,7 +161,7 @@ impl Table {
             .pool()
             .dialect()
             .supports_data_inlining(&table.schema());
-        Ok((metadata, generator, supports_inlining))
+        Ok((metadata, generator, supports_inlining, meta.encrypted()))
     }
 
     /// Commit the provided pre-written data files to the table.

@@ -67,8 +67,8 @@ impl FromStr for AppliedChangeSet {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(in crate::transaction) enum AppliedChange {
     CreatedSchema { name: SchemaName },
-    CreatedTable { name: crate::TableName },
-    CreatedView { name: crate::TableName },
+    CreatedTable { name: crate::QualifiedName },
+    CreatedView { name: crate::QualifiedName },
     CreatedScalarMacro { name: String },
     CreatedTableMacro { name: String },
     InsertedIntoTable { id: i64 },
@@ -131,6 +131,20 @@ impl AppliedChange {
                     return Ok(());
                 }
             }
+            (DroppedSchema { id: schema_id }, CreatedScalarMacro { name })
+            | (CreatedScalarMacro { name }, DroppedSchema { id: schema_id })
+            | (DroppedSchema { id: schema_id }, CreatedTableMacro { name })
+            | (CreatedTableMacro { name }, DroppedSchema { id: schema_id }) => {
+                let schema = catalog.schema(*schema_id)?;
+                let macro_name: crate::QualifiedName = name.parse()?;
+                if schema.name() == macro_name.schema {
+                    format!(
+                        "attempting to drop schema with ID {schema_id} but macro {macro_name} was created in it"
+                    )
+                } else {
+                    return Ok(());
+                }
+            }
             // --- Tables ---
             (CreatedTable { name: lhs_name }, CreatedTable { name: rhs_name })
                 if lhs_name == rhs_name =>
@@ -176,6 +190,25 @@ impl AppliedChange {
             {
                 format!(
                     "attempting to alter view with ID {lhs_id} but it was {}",
+                    other.action()
+                )
+            }
+            // --- Macros ---
+            (CreatedScalarMacro { name: lhs_name }, CreatedScalarMacro { name: rhs_name })
+            | (CreatedTableMacro { name: lhs_name }, CreatedTableMacro { name: rhs_name })
+                if lhs_name.eq_ignore_ascii_case(rhs_name) =>
+            {
+                format!(
+                    "attempting to create macro {lhs_name} but it was already {}",
+                    other.action()
+                )
+            }
+            (
+                DroppedScalarMacro { id: lhs_id } | DroppedTableMacro { id: lhs_id },
+                DroppedScalarMacro { id: rhs_id } | DroppedTableMacro { id: rhs_id },
+            ) if lhs_id == rhs_id => {
+                format!(
+                    "attempting to drop macro with ID {lhs_id} but it was already {}",
                     other.action()
                 )
             }
@@ -455,5 +488,41 @@ mod tests {
             AppliedChange::DroppedSchema { id } => assert_eq!(*id, 42),
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn test_scalar_and_table_macro_creation_do_not_conflict() {
+        // Arrange
+        let catalog = Catalog::new();
+        let scalar = AppliedChange::CreatedScalarMacro {
+            name: r#""main"."shared""#.to_string(),
+        };
+        let table = AppliedChange::CreatedTableMacro {
+            name: r#""main"."shared""#.to_string(),
+        };
+
+        // Act
+        let result = scalar.check_conflict(&table, &catalog);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_same_kind_macro_creation_conflicts_case_insensitively() {
+        // Arrange
+        let catalog = Catalog::new();
+        let first = AppliedChange::CreatedScalarMacro {
+            name: r#""main"."shared""#.to_string(),
+        };
+        let second = AppliedChange::CreatedScalarMacro {
+            name: r#""main"."SHARED""#.to_string(),
+        };
+
+        // Act
+        let result = first.check_conflict(&second, &catalog);
+
+        // Assert
+        assert!(matches!(result, Err(DucklakeError::TransactionConflict(_))));
     }
 }

@@ -46,7 +46,7 @@ pub(crate) async fn write_table_data(
                 .partition_values
                 .as_ref()
                 .map(|_| state.partition_id(*table_ref)),
-            encryption_key: None, // TODO: Implement encryption
+            encryption_key: data_file.encryption_key.clone(),
             mapping_id: None,
             partial_max: None,
         };
@@ -65,7 +65,7 @@ pub(crate) async fn write_table_data(
                 delete_count: Some(delete_file.num_deletes as i64),
                 file_size_bytes: delete_file.file_size_bytes.map(|size| size as i64),
                 footer_size: delete_file.footer_size_bytes.map(|size| size as i64),
-                encryption_key: None,
+                encryption_key: delete_file.encryption_key.clone(),
                 partial_max: None,
             });
         }

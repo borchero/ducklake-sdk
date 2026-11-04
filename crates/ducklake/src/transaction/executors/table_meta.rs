@@ -18,13 +18,13 @@ pub(crate) fn create_table<'a>(
     table_ref: &TableRef,
     column_refs: &[Vec<ColumnRef>],
     partition_column_refs: &Option<Vec<ColumnRef>>,
-    name: &crate::TableName,
+    name: &crate::QualifiedName,
     columns: &[crate::Column],
     retired_columns: &[DucklakeColumn],
     partition_columns: &Option<Vec<crate::PartitionColumn>>,
     sort_info: &Option<Vec<crate::SortExpression>>,
     path: &io::DucklakePath,
-    tags: &Option<Vec<crate::Tag>>,
+    tags: &crate::Tags,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
 
@@ -86,16 +86,14 @@ pub(crate) fn create_table<'a>(
     }
 
     // 5/5) Optionally add tags to the table
-    if let Some(tags) = tags
-        && !tags.is_empty()
-    {
+    if !tags.is_empty() {
         let snapshot_id = state.snapshot_id();
-        let ducklake_tags = tags.iter().map(|t| DucklakeTag {
+        let ducklake_tags = tags.iter().map(|(key, value)| DucklakeTag {
             object_id: table_id,
             begin_snapshot: snapshot_id,
             end_snapshot: None,
-            key: t.key.clone(),
-            value: t.value.clone(),
+            key: key.to_owned(),
+            value: value.to_owned(),
         });
         changes.new_tags.extend(ducklake_tags);
     }
@@ -107,7 +105,7 @@ pub(crate) fn rename_table<'a>(
     changes: &mut TransactionChanges,
     state: &mut CommitState<'a>,
     table_ref: &TableRef,
-    name: &crate::TableName,
+    name: &crate::QualifiedName,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
 
@@ -482,14 +480,14 @@ fn add_column_to_buffers(
         };
         ducklake_columns.push(ducklake_column);
 
-        ducklake_column_tags.extend(flat_column.column.tags.into_iter().map(|t| {
+        ducklake_column_tags.extend(flat_column.column.tags.iter().map(|(key, value)| {
             DucklakeColumnTag {
                 table_id,
                 column_id,
                 begin_snapshot: state.snapshot_id(),
                 end_snapshot: None,
-                key: t.key,
-                value: t.value,
+                key: key.to_owned(),
+                value: value.to_owned(),
             }
         }));
     }

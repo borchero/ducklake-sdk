@@ -6,6 +6,7 @@ use crate::{ArrayColumnStats, FileColumnStats, io};
 #[derive(Debug, Clone)]
 pub(super) struct CommitDataFile {
     pub path: io::DucklakePath,
+    pub encryption_key: Option<String>,
     pub partition_values: Option<Vec<Option<String>>>,
     pub num_rows: usize,
     pub file_size_bytes: Option<usize>,
@@ -18,6 +19,7 @@ pub(super) struct CommitDataFile {
 #[derive(Debug, Clone)]
 pub(super) struct CommitDeleteFile {
     pub path: io::DucklakePath,
+    pub encryption_key: Option<String>,
     pub num_deletes: usize,
     pub file_size_bytes: Option<usize>,
     pub footer_size_bytes: Option<usize>,

@@ -13,13 +13,17 @@ from .ducklake import Ducklake
 if TYPE_CHECKING:
     import sqlalchemy as sa
 
+    from .options import DatabaseOptions
+
 
 def create(
     catalog_url: str | sa.URL,
     *,
     data_path: str,
+    encrypted: bool = False,
     storage_options: dict[str, str] | None = None,
     time_zone: str = "UTC",
+    database_options: DatabaseOptions | None = None,
 ) -> Ducklake:
     """Create a new DuckLake by initializing a new catalog database.
 
@@ -32,11 +36,15 @@ def create(
         data_path: The root path where data files should be stored. This may be a local path
             (including NFS paths) or a cloud storage path for S3, GCS, or Azure Blob Storage.
             See also: https://ducklake.select/docs/stable/duckdb/usage/choosing_storage.
+        encrypted: Whether Parquet files written to this catalog must be encrypted.
+            Encryption keys are generated for writes and stored in the catalog.
         storage_options: Optional dictionary of storage options. These may be provided to connect
             to cloud storage services. If not provided, storage options will be inferred from
             environment variables.
         time_zone: IANA time zone used to represent timezone-aware timestamps when reading data.
             This setting is local to this connection.
+        database_options: Catalog database pool settings. Defaults to four connections for
+            PostgreSQL/MySQL and one for SQLite. See :class:`~ducklake.DatabaseOptions`.
 
     Returns:
         A `Ducklake` instance that can be used to interact with the DuckLake.
@@ -52,6 +60,8 @@ def create(
         data_path,
         list(storage_option_set.to_dict().items()),
         time_zone,
+        database_options if database_options is not None else {},
+        encrypted,
     )
     return Ducklake._from_pyducklake(pyducklake, connection_args, storage_option_set)
 
@@ -64,6 +74,7 @@ def connect(
     upgrade: bool = False,
     storage_options: dict[str, str] | None = None,
     time_zone: str = "UTC",
+    database_options: DatabaseOptions | None = None,
 ) -> Ducklake:
     """Connect to an existing DuckLake by connecting to its catalog database.
 
@@ -87,6 +98,8 @@ def connect(
             environment variables.
         time_zone: IANA time zone used to represent timezone-aware timestamps when reading data.
             This setting is local to this connection.
+        database_options: Catalog database pool settings. Defaults to four connections for
+            PostgreSQL/MySQL and one for SQLite. See :class:`~ducklake.DatabaseOptions`.
 
     Returns:
         A `Ducklake` instance that can be used to interact with the DuckLake.
@@ -105,6 +118,7 @@ def connect(
         readonly=readonly,
         storage_options=list(storage_option_set.to_dict().items()),
         time_zone=time_zone,
+        database_options=database_options if database_options is not None else {},
     )
     return Ducklake._from_pyducklake(pyducklake, connection_args, storage_option_set)
 

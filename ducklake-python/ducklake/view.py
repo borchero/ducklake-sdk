@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .typedefs import TableName
+from .typedefs import QualifiedName
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -49,9 +49,9 @@ class View:
     # ---------------------------------------- PROPERTIES --------------------------------------- #
 
     @property
-    def name(self) -> TableName:
+    def name(self) -> QualifiedName:
         """The fully qualified name of the view."""
-        return TableName(*self._pyview.name)
+        return QualifiedName(*self._pyview.name)
 
     @property
     def sql(self) -> str:
@@ -66,7 +66,11 @@ class View:
     @property
     def tags(self) -> dict[str, str]:
         """The tags associated with the view."""
-        return dict(self._pyview.tags)
+        return self._pyview.tags
+
+    def get_tag(self, key: str) -> str | None:
+        """Get a tag by key, or ``None`` if it is absent, without copying all tags."""
+        return self._pyview.get_tag(key)
 
     @property
     def _duckdb_connection(self) -> duckdb.DuckDBPyConnection:
@@ -93,6 +97,11 @@ class View:
 
         The view's query is evaluated against the referenced DuckLake tables using a Polars
         :class:`~polars.SQLContext`.
+
+        DuckLake scalar and table macro calls are expanded before execution. Typed macro
+        parameters require DuckDB's type binder and are therefore not supported by this Polars
+        execution path. Correlated table-macro arguments are also not supported because Polars SQL
+        does not currently support lateral joins.
 
         Note:
             This requires :mod:`polars` to be installed.

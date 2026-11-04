@@ -1,10 +1,16 @@
 mod sql;
 
 use itertools::{Either, Itertools};
-pub(crate) use sql::{find_referenced_tables_in_schema, parse_select_query};
+pub(crate) use sql::{
+    SqlMacro,
+    expand_macros,
+    find_referenced_tables_in_schema,
+    parse_scalar_macro_expression,
+    parse_select_query,
+};
 
 use crate::ducklake::DucklakeConnection;
-use crate::{DucklakeResult, Table, TableName};
+use crate::{DucklakeResult, QualifiedName, Table};
 
 /// Handle to a view in the DuckLake catalog.
 #[derive(Clone)]
@@ -16,11 +22,11 @@ pub struct View {
 /// Information required to create a view in the catalog.
 #[derive(Clone)]
 pub(crate) struct ViewInfo {
-    pub name: TableName,
+    pub name: QualifiedName,
     pub sql: String,
     pub dialect: String,
     pub column_aliases: Option<Vec<String>>,
-    pub tags: Vec<crate::Tag>,
+    pub tags: crate::Tags,
 }
 
 /// The definition of a view, consisting of its SQL query, dialect, and referenced relations.
@@ -34,9 +40,9 @@ pub struct ViewDefinition {
     pub default_schema: String,
     /// Names and handles of all catalog tables referenced by the query. References to non-catalog
     /// tables are omitted.
-    pub tables: Vec<(TableName, Table)>,
+    pub tables: Vec<(QualifiedName, Table)>,
     /// Names and handles of all catalog views referenced by the query.
-    pub views: Vec<(TableName, View)>,
+    pub views: Vec<(QualifiedName, View)>,
 }
 
 impl View {
@@ -45,7 +51,7 @@ impl View {
     }
 
     /// Get the name of the view.
-    pub async fn name(&self) -> DucklakeResult<TableName> {
+    pub async fn name(&self) -> DucklakeResult<QualifiedName> {
         let snapshot = self.conn.current_snapshot();
         let catalog = snapshot.catalog().await?;
         let view = catalog.view(self.id)?;
@@ -67,7 +73,7 @@ impl View {
     }
 
     /// Get the tags of the view.
-    pub async fn tags(&self) -> DucklakeResult<Vec<crate::Tag>> {
+    pub async fn tags(&self) -> DucklakeResult<crate::Tags> {
         let snapshot = self.conn.current_snapshot();
         let catalog = snapshot.catalog().await?;
         Ok(catalog.view(self.id)?.tags())
@@ -76,33 +82,60 @@ impl View {
     /// Get the definition of the view, consisting of its SQL query and the catalog relations
     /// referenced by the query (excluding common table expressions).
     pub async fn definition(&self) -> DucklakeResult<ViewDefinition> {
+        self.resolve_definition(false).await
+    }
+
+    /// Get a view definition with catalog macros expanded for client-side SQL execution.
+    #[doc(hidden)]
+    pub async fn expanded_definition(&self) -> DucklakeResult<ViewDefinition> {
+        self.resolve_definition(true).await
+    }
+
+    async fn resolve_definition(&self, expand: bool) -> DucklakeResult<ViewDefinition> {
         let snapshot = self.conn.current_snapshot();
         let catalog = snapshot.catalog().await?;
         let view = catalog.view(self.id)?;
-        let sql = view.sql().to_string();
         let dialect = view.dialect().to_string();
         let default_schema = view.name().schema.clone();
+        let sql = if expand {
+            let macros = catalog
+                .list_schemas()
+                .into_iter()
+                .flat_map(|schema| {
+                    schema
+                        .list_macros()
+                        .into_iter()
+                        .map(|macro_| SqlMacro {
+                            name: macro_.name().clone(),
+                            macro_type: macro_.macro_type(),
+                            implementations: macro_.implementations(),
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            expand_macros(view.sql(), &dialect, &default_schema, &macros)?
+        } else {
+            view.sql().to_string()
+        };
 
         let (tables, views) = find_referenced_tables_in_schema(&sql, &dialect, &default_schema)?
             .into_iter()
-            .partition_map(|name| match catalog.table(&name) {
+            .filter_map(|name| match catalog.table(&name) {
                 Ok(table) => {
-                    let schema_id = table
-                        .parent_schema()
-                        .id()
-                        .expect("referenced table schema must have an ID");
-                    let table_id = table.id().expect("referenced table must have an ID");
-                    Either::Left((name, Table::new(self.conn.clone(), schema_id, table_id)))
+                    let schema_id = table.parent_schema().id()?;
+                    let table_id = table.id()?;
+                    Some(Either::Left((
+                        name,
+                        Table::new(self.conn.clone(), schema_id, table_id),
+                    )))
                 }
-                Err(_) => {
-                    let view_id = catalog
-                        .view(&name)
-                        .expect("referenced relation must be a catalog table or view")
-                        .id()
-                        .expect("referenced view must have an ID");
-                    Either::Right((name, View::new(self.conn.clone(), view_id)))
-                }
-            });
+                Err(_) => catalog.view(&name).ok().and_then(|view| {
+                    view.id().map(|view_id| {
+                        Either::Right((name, View::new(self.conn.clone(), view_id)))
+                    })
+                }),
+            })
+            .partition_map(|relation| relation);
         Ok(ViewDefinition {
             sql,
             dialect,

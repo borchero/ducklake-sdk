@@ -122,7 +122,7 @@ impl Ducklake {
 /* --------------------------------------------------------------------------------------------- */
 
 async fn expire_snapshots(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     catalog: &Catalog,
     data_path: &io::DucklakePath,
     snapshot_ids: &LookupTableHandle,
@@ -168,7 +168,7 @@ async fn expire_snapshots(
 /* ----------------------------------------- SNAPSHOTS ----------------------------------------- */
 
 async fn find_expired_snapshots(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     filter: SnapshotFilter,
 ) -> DucklakeResult<Vec<DucklakeSnapshot>> {
     // Build the condition selecting matching snapshots
@@ -199,7 +199,7 @@ async fn find_expired_snapshots(
 }
 
 async fn delete_snapshots(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     snapshot_ids: &LookupTableHandle,
 ) -> DucklakeResult<()> {
     // Build query
@@ -214,7 +214,7 @@ async fn delete_snapshots(
 
 /* ------------------------------------------- TABLES ------------------------------------------ */
 
-async fn find_expired_tables(tx: &mut db::Transaction) -> DucklakeResult<LookupTableHandle> {
+async fn find_expired_tables(tx: &mut db::Transaction<'_>) -> DucklakeResult<LookupTableHandle> {
     // Build the query
     let alias = Alias::new("ducklake_table_2");
     let base_condition = condition_inactive_snapshot(
@@ -263,7 +263,7 @@ async fn find_expired_tables(tx: &mut db::Transaction) -> DucklakeResult<LookupT
 }
 
 async fn delete_tables(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     table_ids: &LookupTableHandle,
 ) -> DucklakeResult<()> {
     macro_rules! delete_from_table(
@@ -310,7 +310,7 @@ async fn delete_tables(
 /* ----------------------------------------- DATA FILES ---------------------------------------- */
 
 async fn mark_data_files_for_deletion(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     catalog: &Catalog,
     data_path: &io::DucklakePath,
 ) -> DucklakeResult<()> {
@@ -426,7 +426,7 @@ async fn mark_data_files_for_deletion(
 }
 
 async fn query_table_data_path(
-    tx: &mut db::Transaction,
+    tx: &mut db::Transaction<'_>,
     table_id: i64,
     base_data_path: &io::DucklakePath,
 ) -> DucklakeResult<io::DucklakePath> {
@@ -493,7 +493,7 @@ fn build_deletion_file_path(
 
 /* -------------------------------------- METADATA TABLES -------------------------------------- */
 
-async fn delete_expired_catalog_objects(tx: &mut db::Transaction) -> DucklakeResult<()> {
+async fn delete_expired_catalog_objects(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
     macro_rules! delete_from_catalog_table(
         ($table:ident) => {{
             let query = Query::delete()
@@ -523,6 +523,20 @@ async fn delete_expired_catalog_objects(tx: &mut db::Transaction) -> DucklakeRes
         }};
     );
 
+    macro_rules! delete_scoped_metadata(
+        ($scope:literal, $ref_table:ident, $column:ident) => {{
+            let query = Query::delete()
+                .from_table(ducklake_metadata::Table)
+                .and_where(ducklake_metadata::Column::Scope.col().eq($scope))
+                .and_where(condition_not_exists_in_reference(
+                    (ducklake_metadata::Table, ducklake_metadata::Column::ScopeId),
+                    ($ref_table::Table, $ref_table::Column::$column),
+                ))
+                .take();
+            tx.execute(&query).await?;
+        }};
+    );
+
     // First, we delete from catalog tables
     delete_from_catalog_table!(ducklake_schema);
     delete_from_catalog_table!(ducklake_tag);
@@ -542,6 +556,10 @@ async fn delete_expired_catalog_objects(tx: &mut db::Transaction) -> DucklakeRes
         DataFileId
     );
 
+    // Options are not versioned: retain them until every version of their object is gone.
+    delete_scoped_metadata!("table", ducklake_table, TableId);
+    delete_scoped_metadata!("schema", ducklake_schema, SchemaId);
+
     Ok(())
 }
 
@@ -559,7 +577,7 @@ enum SnapshotFilter {
 impl SnapshotFilter {
     async fn condition(
         &self,
-        tx: &mut db::Transaction,
+        tx: &mut db::Transaction<'_>,
     ) -> DucklakeResult<(Condition, Option<LookupTableHandle>)> {
         match self {
             Self::OlderThan(timestamp) => {

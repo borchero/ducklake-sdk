@@ -11,8 +11,8 @@ use crate::{
     DucklakeError,
     DucklakeResult,
     IfExistsStrategy,
+    QualifiedName,
     Table,
-    TableName,
     WriteDataFile,
     io,
     scan,
@@ -22,7 +22,7 @@ use crate::{
 /// A table to transfer, optionally with a new name in the target DuckLake.
 pub struct TableTransfer<'a> {
     table: &'a Table,
-    name: Option<TableName>,
+    name: Option<QualifiedName>,
 }
 
 impl<'a> From<&'a Table> for TableTransfer<'a> {
@@ -31,8 +31,8 @@ impl<'a> From<&'a Table> for TableTransfer<'a> {
     }
 }
 
-impl<'a> From<(TableName, &'a Table)> for TableTransfer<'a> {
-    fn from((name, table): (TableName, &'a Table)) -> Self {
+impl<'a> From<(QualifiedName, &'a Table)> for TableTransfer<'a> {
+    fn from((name, table): (QualifiedName, &'a Table)) -> Self {
         Self {
             table,
             name: Some(name),
@@ -102,7 +102,7 @@ impl Ducklake {
     /// committed as a single snapshot (or fails without any partial changes to the catalog).
     /// File copies precede the commit, so a failed copy or commit may leave orphaned target files.
     ///
-    /// Passing tables directly retains their names. Passing `(TableName, &Table)` pairs renames
+    /// Passing tables directly retains their names. Passing `(QualifiedName, &Table)` pairs renames
     /// them in the target. All tables must belong to this DuckLake and no target table may already
     /// exist.
     pub async fn copy_tables<'a, I, T>(
@@ -131,7 +131,7 @@ impl Ducklake {
     /// rejected with [`DucklakeError::TableChangedDuringTransfer`] and the (already committed)
     /// target tables are retained.
     ///
-    /// Passing tables directly retains their names. Passing `(TableName, &Table)` pairs renames
+    /// Passing tables directly retains their names. Passing `(QualifiedName, &Table)` pairs renames
     /// them in the target. All tables must belong to this DuckLake and no target table may already
     /// exist.
     pub async fn move_tables<'a, I, T>(
@@ -169,6 +169,11 @@ impl Ducklake {
         if target.conn.is_same_catalog(source_conn) {
             return Err(DucklakeError::InvalidTableTransfer(
                 "the source and target must be different DuckLake catalogs".to_string(),
+            ));
+        }
+        if self.metadata().encrypted != target.metadata().encrypted {
+            return Err(DucklakeError::InvalidTableTransfer(
+                "the source and target catalogs must use the same encryption setting".to_string(),
             ));
         }
         if !copy_files {
@@ -232,7 +237,7 @@ impl Ducklake {
             tx.create_schema(&name.schema, None, IfExistsStrategy::Skip)?;
             let mut table = tx.create_transfer_table(name.clone(), info, retired_columns)?;
 
-            let (_, generator, _) = table.get_write_info()?;
+            let (_, generator, _, _) = table.get_write_info()?;
             let mut data_files = Vec::with_capacity(scan.result.data_files.len());
             for (data_file, metadata) in scan
                 .result
@@ -263,6 +268,7 @@ impl Ducklake {
                 data_files.push(crate::transaction::TransferDataFile {
                     data_file: WriteDataFile {
                         path,
+                        encryption_key: data_file.encryption_key,
                         statistics: Some(data_file.statistics),
                         partition_values: None,
                     },

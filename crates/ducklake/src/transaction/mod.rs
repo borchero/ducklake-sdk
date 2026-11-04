@@ -1,6 +1,7 @@
 mod changes;
 mod commit_state;
 mod executors;
+mod macro_;
 mod schema;
 mod table;
 mod transaction_changes;
@@ -23,7 +24,7 @@ use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};
 use crate::primitives::Borrowed;
 use crate::spec::*;
-use crate::{DucklakeError, DucklakeResult, TableName, db};
+use crate::{DucklakeError, DucklakeResult, QualifiedName, db};
 
 /// Transaction to make changes to the DuckLake.
 pub struct Transaction<'a> {
@@ -104,7 +105,7 @@ impl<'a> Transaction<'a> {
 
     /// List all tables in the transaction-local catalog, optionally restricted to a specific
     /// schema.
-    pub fn list_tables(&self, schema: Option<&str>) -> DucklakeResult<Vec<TableName>> {
+    pub fn list_tables(&self, schema: Option<&str>) -> DucklakeResult<Vec<QualifiedName>> {
         if let Some(schema) = schema {
             Ok(self
                 .catalog
@@ -129,7 +130,7 @@ impl<'a> Transaction<'a> {
 
     /// List all views in the transaction-local catalog, optionally restricted to a specific
     /// schema.
-    pub fn list_views(&self, schema: Option<&str>) -> DucklakeResult<Vec<TableName>> {
+    pub fn list_views(&self, schema: Option<&str>) -> DucklakeResult<Vec<QualifiedName>> {
         if let Some(schema) = schema {
             Ok(self
                 .catalog
@@ -149,6 +150,33 @@ impl<'a> Transaction<'a> {
                 );
             }
             Ok(views)
+        }
+    }
+
+    /// List all macros in the transaction-local catalog, optionally restricted to a schema.
+    pub fn list_macros(
+        &self,
+        schema: Option<&str>,
+    ) -> DucklakeResult<Vec<(QualifiedName, crate::MacroType)>> {
+        if let Some(schema) = schema {
+            Ok(self
+                .catalog
+                .schema(schema)?
+                .list_macros()
+                .into_iter()
+                .map(|macro_| (macro_.name().clone(), macro_.macro_type()))
+                .collect())
+        } else {
+            let mut macros = Vec::new();
+            for schema in self.catalog.list_schemas() {
+                macros.extend(
+                    schema
+                        .list_macros()
+                        .into_iter()
+                        .map(|macro_| (macro_.name().clone(), macro_.macro_type())),
+                );
+            }
+            Ok(macros)
         }
     }
 
@@ -318,7 +346,7 @@ impl<'a> Transaction<'a> {
     }
 
     async fn finalize_commit(
-        tx: &mut db::Transaction,
+        tx: &mut db::Transaction<'_>,
         state: &CommitState<'_>,
         applied_changes: &AppliedChangeSet,
         table_ids_with_schema_changes: &[i64],

@@ -2,13 +2,13 @@ use sea_query::{Alias, ColumnDef, Expr, ExprTrait, JoinType, Query, Table};
 
 use crate::{DucklakeResult, db};
 
-pub(super) async fn upgrade(tx: &mut db::Transaction) -> DucklakeResult<()> {
+pub(super) async fn upgrade(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
     update_schema(tx).await?;
     upgrade_data(tx).await?;
     Ok(())
 }
 
-async fn update_schema(tx: &mut db::Transaction) -> DucklakeResult<()> {
+async fn update_schema(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
     let dialect = tx.dialect();
     add_table_columns!(
         tx,
@@ -103,7 +103,7 @@ async fn update_schema(tx: &mut db::Transaction) -> DucklakeResult<()> {
     Ok(())
 }
 
-async fn upgrade_data(tx: &mut db::Transaction) -> DucklakeResult<()> {
+async fn upgrade_data(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
     let dialect = tx.dialect();
     let int_cast = match dialect {
         #[cfg(feature = "mysql")]

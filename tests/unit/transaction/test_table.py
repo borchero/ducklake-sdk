@@ -125,10 +125,10 @@ def test_list_tables_reflects_transaction_changes(
 
     # Assert
     all_table_names = {table.name for table in all_tables}
-    assert dl.TableName("main", existing_table_name) not in all_table_names
-    assert dl.TableName(random_schema_name, random_table_name) in all_table_names
+    assert dl.QualifiedName("main", existing_table_name) not in all_table_names
+    assert dl.QualifiedName(random_schema_name, random_table_name) in all_table_names
     assert [table.name for table in schema_tables] == [
-        dl.TableName(random_schema_name, random_table_name)
+        dl.QualifiedName(random_schema_name, random_table_name)
     ]
 
 
@@ -147,3 +147,18 @@ def test_delete_table(
 
     # Assert
     assert not shared_ducklake.has_table(random_table_name)
+
+
+def test_rename_table(shared_ducklake: dl.Ducklake, random_table_name: str) -> None:
+    # Arrange
+    table = shared_ducklake.create_table(random_table_name, {"x": dl.Int64()})
+    new_table_name = random_table_name + "_renamed"
+
+    # Act
+    with shared_ducklake.transaction() as tx:
+        table = tx.table(table.name)
+        table.rename(new_table_name)
+        table.add_column(dl.Column("y", dl.Int64()))
+
+    # Assert
+    assert {c.name for c in shared_ducklake.table(new_table_name).schema.columns} == {"x", "y"}

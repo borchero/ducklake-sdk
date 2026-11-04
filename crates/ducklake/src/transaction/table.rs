@@ -13,10 +13,11 @@ use crate::{
     DucklakeResult,
     IntoColumnName,
     PartitionColumn,
+    QualifiedName,
     Schema,
     TableMetadata,
-    TableName,
     Tag,
+    Tags,
     io,
     primitives,
     utils,
@@ -31,11 +32,11 @@ use crate::{
 /// Handle to a table within an active transaction.
 pub struct TransactionTable<'tx, 'a> {
     tx: &'tx mut Transaction<'a>,
-    name: TableName,
+    name: QualifiedName,
 }
 
 impl<'tx, 'a> TransactionTable<'tx, 'a> {
-    fn new(tx: &'tx mut Transaction<'a>, name: TableName) -> Self {
+    fn new(tx: &'tx mut Transaction<'a>, name: QualifiedName) -> Self {
         Self { tx, name }
     }
 }
@@ -44,7 +45,7 @@ impl<'a> Transaction<'a> {
     /// Get a handle to the table with the provided name within this transaction.
     pub fn table(
         &mut self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
         let name = name.try_into().map_err(|e| e.into())?;
         // NOTE: We could create the TransactionTable directly here without querying the catalog
@@ -59,6 +60,11 @@ impl<'a> Transaction<'a> {
 /* --------------------------------------------------------------------------------------------- */
 
 impl<'tx, 'a> TransactionTable<'tx, 'a> {
+    /// Get the tags of the table, including uncommitted changes, without copying the entries.
+    pub fn tags(&self) -> DucklakeResult<crate::Tags> {
+        Ok(self.tx.catalog().table(&self.name)?.tags())
+    }
+
     /// Get the schema of the table within the current transaction.
     pub fn columns(&self) -> DucklakeResult<impl Iterator<Item = crate::Column>> {
         let columns = self
@@ -104,12 +110,12 @@ impl<'a> Transaction<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn create_table(
         &mut self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         columns: Vec<Column>,
         partition_columns: Option<Vec<PartitionColumn>>,
         sort_info: Option<Vec<crate::SortExpression>>,
         path: Option<String>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
         let name = name.try_into().map_err(|e| e.into())?;
@@ -128,7 +134,7 @@ impl<'a> Transaction<'a> {
     /// Create a table with the source's field IDs, reserving IDs of its dropped columns.
     pub(crate) fn create_transfer_table(
         &mut self,
-        name: TableName,
+        name: QualifiedName,
         info: crate::TableInfo,
         retired_columns: Vec<crate::spec::DucklakeColumn>,
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
@@ -147,12 +153,12 @@ impl<'a> Transaction<'a> {
     #[allow(clippy::too_many_arguments)]
     fn create_table_inner(
         &mut self,
-        name: TableName,
+        name: QualifiedName,
         columns: Vec<Column>,
         partition_columns: Option<Vec<PartitionColumn>>,
         sort_info: Option<Vec<crate::SortExpression>>,
         path: Option<String>,
-        tags: Option<Vec<Tag>>,
+        tags: Option<Tags>,
         if_exists: IfExistsStrategy,
         retired_columns: Option<Vec<crate::spec::DucklakeColumn>>,
     ) -> DucklakeResult<TransactionTable<'_, 'a>> {
@@ -167,12 +173,13 @@ impl<'a> Transaction<'a> {
         let path = path.ensure_directory();
 
         // Insert the table into the catalog along with all its metadata
+        let tags = tags.unwrap_or_default();
         let info = crate::TableInfo {
             name: name.clone(),
             schema: columns.clone().try_into()?,
             partitioning: partition_columns.clone().map(Into::into),
             sort_info: sort_info.clone().map(Into::into),
-            tags: tags.clone().unwrap_or_default(),
+            tags: tags.clone(),
         };
         let next_column_id = retired_columns.as_ref().map(|retired| {
             columns
@@ -213,7 +220,7 @@ impl<'a> Transaction<'a> {
     /// Delete the table with the provided name from the catalog.
     pub fn delete_table(
         &mut self,
-        name: impl TryInto<TableName, Error = impl Into<DucklakeError>>,
+        name: impl TryInto<QualifiedName, Error = impl Into<DucklakeError>>,
         if_not_exists: IfExistsStrategy,
     ) -> DucklakeResult<()> {
         let name = name.try_into().map_err(|e| e.into())?;
@@ -228,12 +235,16 @@ impl<'a> Transaction<'a> {
 
     pub(crate) fn delete_table_transferring_file_ownership(
         &mut self,
-        name: &TableName,
+        name: &QualifiedName,
     ) -> DucklakeResult<()> {
         self.delete_table_inner(name, true)
     }
 
-    fn delete_table_inner(&mut self, name: &TableName, detach_files: bool) -> DucklakeResult<()> {
+    fn delete_table_inner(
+        &mut self,
+        name: &QualifiedName,
+        detach_files: bool,
+    ) -> DucklakeResult<()> {
         let mut table = self.catalog_mut().table_mut(name)?;
         table.delete();
         let change = Change::DeleteTable {
@@ -253,10 +264,11 @@ impl<'a> Transaction<'a> {
 
 impl<'tx, 'a> TransactionTable<'tx, 'a> {
     /// Write data files to the table by invoking the provided closure with the table metadata
-    /// and a path generator. The data files returned by the closure are committed to the table.
+    /// and a path generator, followed by the catalog encryption flag. The data files returned by
+    /// the closure are committed to the table.
     pub async fn write_data<F>(
         &mut self,
-        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator) -> F,
+        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator, bool) -> F,
     ) -> DucklakeResult<()>
     where
         F: Future<Output = DucklakeResult<Vec<crate::WriteDataFile>>>,
@@ -264,10 +276,11 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
         self.tx.write_table_data(&self.name, write_fn).await
     }
 
-    /// Get the table metadata, a path generator, and whether the current schema supports inlining.
+    /// Get the table metadata, a path generator, whether the current schema supports inlining,
+    /// and whether the catalog requires encrypted writes.
     pub fn get_write_info(
         &self,
-    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool)> {
+    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool, bool)> {
         self.tx.get_table_write_info(&self.name)
     }
 
@@ -297,22 +310,22 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
 impl<'a> Transaction<'a> {
     async fn write_table_data<F>(
         &mut self,
-        table_name: &TableName,
-        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator) -> F,
+        table_name: &QualifiedName,
+        write_fn: impl FnOnce(TableMetadata, utils::DataFilePathGenerator, bool) -> F,
     ) -> DucklakeResult<()>
     where
         F: Future<Output = DucklakeResult<Vec<crate::WriteDataFile>>>,
     {
-        let (metadata, generator, _) = self.get_table_write_info(table_name)?;
-        let data_files = write_fn(metadata, generator).await?;
+        let (metadata, generator, _, encrypted) = self.get_table_write_info(table_name)?;
+        let data_files = write_fn(metadata, generator, encrypted).await?;
         self.write_table_data_files(table_name, data_files).await
     }
 
     #[visibility_if(feature = "python", pub)]
     fn get_table_write_info(
         &self,
-        table_name: &TableName,
-    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool)> {
+        table_name: &QualifiedName,
+    ) -> DucklakeResult<(TableMetadata, utils::DataFilePathGenerator, bool, bool)> {
         // Derive data path
         let table = self.catalog().table(table_name)?;
         let data_path = table.data_path(&self.metadata.data_path());
@@ -327,13 +340,18 @@ impl<'a> Transaction<'a> {
         // Construct result
         let generator = utils::DataFilePathGenerator::new(data_path, metadata.hive_file_pattern);
         let supports_inlining = self.pool.dialect().supports_data_inlining(&table.schema());
-        Ok((metadata, generator, supports_inlining))
+        Ok((
+            metadata,
+            generator,
+            supports_inlining,
+            self.metadata.encrypted(),
+        ))
     }
 
     #[visibility_if(feature = "python", pub)]
     async fn write_table_data_files(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         data_files: Vec<crate::WriteDataFile>,
     ) -> DucklakeResult<()> {
         self.write_table_transfer_data_files(
@@ -353,13 +371,28 @@ impl<'a> Transaction<'a> {
 
     async fn write_table_transfer_data_files(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         data_files: Vec<super::TransferDataFile>,
     ) -> DucklakeResult<()> {
         let table = self.catalog().table(table_name)?;
         let base_path = table.data_path(&self.metadata.data_path());
         let table_info = table.info();
         let schema_columns = table_info.schema.columns_by_id();
+
+        let encrypted = self.metadata.encrypted();
+        if data_files
+            .iter()
+            .any(|file| file.data_file.encryption_key.is_some() != encrypted)
+        {
+            return Err(DucklakeError::InvalidChanges(
+                if encrypted {
+                    "cannot register an unencrypted file in an encrypted catalog"
+                } else {
+                    "cannot register an encrypted file in an unencrypted catalog"
+                }
+                .to_string(),
+            ));
+        }
 
         // Ensure that statistics are available for all data files
         let mut data_files = data_files;
@@ -379,6 +412,7 @@ impl<'a> Transaction<'a> {
                             io::parquet::read_file_statistics(
                                 path.resolve()?,
                                 Some(storage_options),
+                                data_file.data_file.encryption_key.as_deref(),
                             )
                             .await
                         }
@@ -395,6 +429,7 @@ impl<'a> Transaction<'a> {
             .map(|((data_file, path), stats)| {
                 let commit_data_file = CommitDataFile {
                     path,
+                    encryption_key: data_file.data_file.encryption_key,
                     num_rows: stats.num_rows,
                     file_size_bytes: stats.file_size_bytes,
                     footer_size_bytes: stats.footer_size_bytes,
@@ -448,6 +483,7 @@ impl<'a> Transaction<'a> {
                         .map(|delete_file| {
                             Ok(super::CommitDeleteFile {
                                 path: delete_file.path.parse()?,
+                                encryption_key: delete_file.encryption_key,
                                 num_deletes: delete_file.num_deletes,
                                 file_size_bytes: delete_file.file_size_bytes,
                                 footer_size_bytes: delete_file.footer_size_bytes,
@@ -470,7 +506,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn write_table_inline_data(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         data: Vec<RecordBatch>,
     ) -> DucklakeResult<()> {
         let table = self.catalog_mut().table(table_name)?;
@@ -488,6 +524,11 @@ impl<'a> Transaction<'a> {
             data: data
                 .into_iter()
                 .map(|batch| {
+                    let batch = io::arrow::schema::match_to_schema(
+                        &batch,
+                        &schema,
+                        io::arrow::schema::Defaults::DefaultValue,
+                    )?;
                     let statistics = io::arrow::compute_record_batch_statistics(&schema, &batch);
                     let data = CommitInlineData {
                         record_batch: batch.clone(),
@@ -529,13 +570,18 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
     ///
     /// Also see [`crate::Table::rename`].
     pub fn rename(&mut self, new_name: &str) -> DucklakeResult<()> {
-        self.tx.rename_table(&self.name, new_name)
+        self.tx.rename_table(&self.name, new_name)?;
+        self.name = QualifiedName {
+            schema: self.name.schema.clone(),
+            name: new_name.to_string(),
+        };
+        Ok(())
     }
 }
 
 impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
-    fn rename_table(&mut self, old_name: &TableName, new_name: &str) -> DucklakeResult<()> {
+    fn rename_table(&mut self, old_name: &QualifiedName, new_name: &str) -> DucklakeResult<()> {
         if old_name.name == new_name {
             return Ok(());
         }
@@ -544,7 +590,7 @@ impl<'a> Transaction<'a> {
         table.rename(new_name)?;
         let change = Change::RenameTable {
             table_ref: table.ref_(),
-            name: TableName {
+            name: QualifiedName {
                 schema: old_name.schema.clone(),
                 name: new_name.to_string(),
             },
@@ -567,7 +613,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     async fn update_table_schema(
         &mut self,
-        name: &TableName,
+        name: &QualifiedName,
         new_columns: Vec<Column>,
     ) -> DucklakeResult<()> {
         let schema = self.catalog().table(name)?.schema();
@@ -634,7 +680,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     async fn add_table_column(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         column: Column,
         parent_path: &ColumnName,
     ) -> DucklakeResult<()> {
@@ -653,7 +699,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn remove_table_column(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         column: &ColumnName,
     ) -> DucklakeResult<()> {
         let mut table = self.catalog_mut().table_mut(table_name)?;
@@ -730,7 +776,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn rename_table_column(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         column: &ColumnName,
         new_name: &str,
     ) -> DucklakeResult<()> {
@@ -766,7 +812,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     async fn update_table_column_dtype(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         column: &ColumnName,
         dtype: crate::DataType,
     ) -> DucklakeResult<()> {
@@ -791,7 +837,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn update_table_column_default(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         column: &ColumnName,
         default_value: crate::ColumnDefault,
     ) -> DucklakeResult<()> {
@@ -810,7 +856,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     async fn update_table_column_nullability(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         column: &ColumnName,
         nullable: bool,
     ) -> DucklakeResult<()> {
@@ -847,7 +893,7 @@ impl<'a> Transaction<'a> {
     #[async_recursion::async_recursion]
     async fn update_table_column_dtype_recursive(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         column_name: &[String],
         existing_dtype: crate::DataType,
         target_dtype: crate::DataType,
@@ -861,15 +907,7 @@ impl<'a> Transaction<'a> {
 
         // Otherwise, we update
         match (&existing_dtype, &target_dtype) {
-            // Type promotions, see also:
-            // https://ducklake.select/docs/stable/duckdb/usage/schema_evolution#type-promotion
-            (Int8, Int16 | Int32 | Int64)
-            | (Int16, Int32 | Int64)
-            | (Int32, Int64)
-            | (UInt8, UInt16 | UInt32 | UInt64)
-            | (UInt16, UInt32 | UInt64)
-            | (UInt32, UInt64)
-            | (Float32, Float64) => {
+            (source, target) if source.can_promote_to(target) => {
                 let mut table = self.catalog_mut().table_mut(table_name)?;
                 let mut column = table.column_mut(column_name)?;
                 column.update_primitive_data_type(target_dtype);
@@ -966,7 +1004,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn update_table_partitioning(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         partition_columns: Option<Vec<PartitionColumn>>,
     ) -> DucklakeResult<()> {
         let mut table = self.catalog_mut().table_mut(table_name)?;
@@ -998,7 +1036,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn update_table_sort_info(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         expressions: Option<Vec<crate::SortExpression>>,
     ) -> DucklakeResult<()> {
         let mut table = self.catalog_mut().table_mut(table_name)?;
@@ -1032,7 +1070,12 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
 
 impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
-    fn add_table_tag(&mut self, name: &TableName, key: &str, value: &str) -> DucklakeResult<()> {
+    fn add_table_tag(
+        &mut self,
+        name: &QualifiedName,
+        key: &str,
+        value: &str,
+    ) -> DucklakeResult<()> {
         let tag = Tag {
             key: key.to_string(),
             value: value.to_string(),
@@ -1048,7 +1091,7 @@ impl<'a> Transaction<'a> {
     }
 
     #[visibility_if(feature = "python", pub)]
-    fn remove_table_tag(&mut self, name: &TableName, key: &str) -> DucklakeResult<()> {
+    fn remove_table_tag(&mut self, name: &QualifiedName, key: &str) -> DucklakeResult<()> {
         let mut table = self.catalog_mut().table_mut(name)?;
         table.remove_tag(key)?;
         let change = Change::RemoveTableTag {
@@ -1096,7 +1139,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn add_table_column_tag(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         column_name: &ColumnName,
         key: &str,
         value: &str,
@@ -1119,7 +1162,7 @@ impl<'a> Transaction<'a> {
     #[visibility_if(feature = "python", pub)]
     fn remove_table_column_tag(
         &mut self,
-        table_name: &TableName,
+        table_name: &QualifiedName,
         column_name: &ColumnName,
         key: &str,
     ) -> DucklakeResult<()> {
