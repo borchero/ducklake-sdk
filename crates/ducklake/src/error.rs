@@ -12,7 +12,7 @@ pub enum DucklakeError {
     #[error("the DuckLake SDK does not currently support version {0}")]
     UnsupportedVersion(String),
     #[error(
-        "the catalog version is outdated (current: {0}, expected: {1}) and automatic migrations disabled"
+        "the catalog version is outdated (current: {0}, expected: {1}) and automatic upgrades disabled"
     )]
     OutdatedVersion(String, String),
     #[error("{entity} with name '{name}' already exists")]

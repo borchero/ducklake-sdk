@@ -119,7 +119,7 @@ impl Ducklake {
     /// Returns an error if the catalog database is not initialized yet. In this case, use
     /// [`Ducklake::create`] instead.
     pub async fn connect(options: ConnectOptions) -> DucklakeResult<Self> {
-        let pool = Self::init_catalog(&options.url, options.migrate).await?;
+        let pool = Self::init_catalog(&options.url, options.upgrade).await?;
         let snapshot = match options.connection_type {
             ConnectionType::Latest => None,
             ConnectionType::SnapshotId(id) => Some(SnapshotInfo::load_for_id(&pool, id).await?),
@@ -151,8 +151,8 @@ impl Ducklake {
 
     /* ----------------------------------------- SETUP ----------------------------------------- */
 
-    async fn init_catalog(url: &str, migrate: bool) -> DucklakeResult<db::Pool> {
-        // Initialize the database pool and query the current catalog version to run migrations
+    async fn init_catalog(url: &str, upgrade: bool) -> DucklakeResult<db::Pool> {
+        // Initialize the database pool and query the current catalog version to run upgrades
         let pool = db::Pool::new(url).await?;
         if !pool
             .table_exists(&spec::ducklake_metadata::Table.to_string())
@@ -168,13 +168,13 @@ impl Ducklake {
         if !spec::SUPPORTED_VERSIONS.contains(&version.as_str()) {
             return Err(DucklakeError::UnsupportedVersion(version));
         }
-        if version != spec::LATEST_VERSION && !migrate {
+        if version != spec::LATEST_VERSION && !upgrade {
             return Err(DucklakeError::OutdatedVersion(
                 version,
                 spec::LATEST_VERSION.to_string(),
             ));
         }
-        spec::migrate_catalog(&pool, &version).await?;
+        spec::upgrade_catalog(&pool, &version).await?;
 
         Ok(pool)
     }

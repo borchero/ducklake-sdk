@@ -39,7 +39,7 @@ def connect(
     url: str,
     snapshot_id: int | None,
     snapshot_timestamp: dt.datetime | None,
-    migrate: bool,
+    upgrade: bool,
     readonly: bool,
     storage_options: list[tuple[str, str]],
     time_zone: str,

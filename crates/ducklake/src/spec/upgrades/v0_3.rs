@@ -2,9 +2,9 @@ use sea_query::{ColumnDef, Expr, ExprTrait, Query, Table};
 
 use crate::{DucklakeResult, db};
 
-pub(super) async fn migrate(tx: &mut db::Transaction) -> DucklakeResult<()> {
+pub(super) async fn upgrade(tx: &mut db::Transaction) -> DucklakeResult<()> {
     update_schema(tx).await?;
-    migrate_data(tx).await?;
+    upgrade_data(tx).await?;
     Ok(())
 }
 
@@ -29,7 +29,7 @@ async fn update_schema(tx: &mut db::Transaction) -> DucklakeResult<()> {
         ColumnDef::new_with_type("begin_snapshot", dialect.column_type_i64()),
         ColumnDef::new_with_type("schema_version", dialect.column_type_i64()),
     );
-    execute_migration!(
+    execute_upgrade!(
         tx,
         Table::rename().table(
             "ducklake_file_column_statistics",
@@ -49,8 +49,8 @@ async fn update_schema(tx: &mut db::Transaction) -> DucklakeResult<()> {
     Ok(())
 }
 
-async fn migrate_data(tx: &mut db::Transaction) -> DucklakeResult<()> {
-    execute_migration!(
+async fn upgrade_data(tx: &mut db::Transaction) -> DucklakeResult<()> {
+    execute_upgrade!(
         tx,
         Query::insert()
             .into_table("ducklake_schema_versions")

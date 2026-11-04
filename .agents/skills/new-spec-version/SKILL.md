@@ -23,11 +23,11 @@ Follow these steps to add support for a new version of the DuckLake specificatio
 3. Update all entity definitions in `entities.rs` in line with the new specification. This especially includes adding
    new fields, updating existing ones, and adding new entity types if necessary. Make sure that the order of fields
    matches the order in the official implementation.
-4. Add a new migration in the `migrations/` folder in a new file matching new name of the new version. The
-   implementation of the new migration must be structurally equivalent to the implementation of the existing
-   migrations. Do not add comments just like it is the case for existing migrations. Newly created tables MUST NOT be
-   created with `Table::create_entity` but with manual `Table::create_entity` calls. Migrations MUST NOT access
-   `crate::spec::entities` as this renders migrations useless once the entities are updated.
+4. Add a new upgrade in the `upgrades/` folder in a new file matching new name of the new version. The implementation
+   of the new upgrade must be structurally equivalent to the implementation of the existing upgrades. Do not add
+   comments just like it is the case for existing upgrades. Newly created tables MUST NOT be created with
+   `Table::create_entity` but with manual `Table::create_entity` calls. Upgrades MUST NOT access
+   `crate::spec::entities` as this renders upgrades useless once the entities are updated.
 5. Update `init.rs` with newly available entities and, if necessary, new defaults. Whether the latter is necessary
    depends on whether the contents of `InitializeDuckLake` in
    https://raw.githubusercontent.com/duckdb/ducklake/main/src/storage/ducklake_metadata_manager.cpp differs from what

@@ -2,9 +2,9 @@ use sea_query::{Alias, ColumnDef, Expr, ExprTrait, JoinType, Query, Table};
 
 use crate::{DucklakeResult, db};
 
-pub(super) async fn migrate(tx: &mut db::Transaction) -> DucklakeResult<()> {
+pub(super) async fn upgrade(tx: &mut db::Transaction) -> DucklakeResult<()> {
     update_schema(tx).await?;
-    migrate_data(tx).await?;
+    upgrade_data(tx).await?;
     Ok(())
 }
 
@@ -103,7 +103,7 @@ async fn update_schema(tx: &mut db::Transaction) -> DucklakeResult<()> {
     Ok(())
 }
 
-async fn migrate_data(tx: &mut db::Transaction) -> DucklakeResult<()> {
+async fn upgrade_data(tx: &mut db::Transaction) -> DucklakeResult<()> {
     let dialect = tx.dialect();
     let int_cast = match dialect {
         #[cfg(feature = "mysql")]
@@ -111,8 +111,8 @@ async fn migrate_data(tx: &mut db::Transaction) -> DucklakeResult<()> {
         _ => "BIGINT",
     };
 
-    // Migrate partial_file_info data to partial_max before dropping the column
-    execute_migration!(
+    // Move partial_file_info data to partial_max before dropping the column
+    execute_upgrade!(
         tx,
         Query::update()
             .table("ducklake_data_file")
@@ -124,13 +124,13 @@ async fn migrate_data(tx: &mut db::Transaction) -> DucklakeResult<()> {
             .and_where(Expr::col("partial_file_info").is_not_null())
             .and_where(Expr::col("partial_file_info").like("%partial_max:%"))
     );
-    execute_migration!(
+    execute_upgrade!(
         tx,
         Table::alter()
             .table("ducklake_data_file")
             .drop_column("partial_file_info")
     );
-    execute_migration!(
+    execute_upgrade!(
         tx,
         Query::insert()
             .into_table("ducklake_schema_versions")
@@ -155,7 +155,7 @@ async fn migrate_data(tx: &mut db::Transaction) -> DucklakeResult<()> {
             )
             .unwrap()
     );
-    execute_migration!(
+    execute_upgrade!(
         tx,
         Query::delete()
             .from_table("ducklake_schema_versions")
