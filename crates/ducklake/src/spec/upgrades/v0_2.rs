@@ -11,9 +11,9 @@ use sea_query::{
 
 use crate::{DucklakeResult, db};
 
-pub(super) async fn migrate(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
+pub(super) async fn upgrade(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
     update_schema(tx).await?;
-    migrate_data(tx).await?;
+    upgrade_data(tx).await?;
     Ok(())
 }
 
@@ -64,7 +64,7 @@ async fn update_schema(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
     Ok(())
 }
 
-async fn migrate_data(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
+async fn upgrade_data(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
     let cte = Query::select()
         .column("table_id")
         .column("column_id")
@@ -84,7 +84,7 @@ async fn migrate_data(tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
         .query(cte)
         .table_name("column_ranks")
         .to_owned();
-    execute_migration!(
+    execute_upgrade!(
         tx,
         Query::update()
             .table("ducklake_partition_column")

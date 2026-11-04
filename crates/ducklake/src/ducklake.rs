@@ -123,7 +123,7 @@ impl Ducklake {
     /// [`Ducklake::create`] instead.
     pub async fn connect(options: ConnectOptions) -> DucklakeResult<Self> {
         let (pool, mut conn) =
-            Self::init_catalog(&options.url, options.migrate, &options.database_options).await?;
+            Self::init_catalog(&options.url, options.upgrade, &options.database_options).await?;
         let snapshot = match options.connection_type {
             ConnectionType::Latest => None,
             ConnectionType::SnapshotId(id) => {
@@ -160,10 +160,10 @@ impl Ducklake {
 
     async fn init_catalog(
         url: &str,
-        migrate: bool,
+        upgrade: bool,
         database_options: &DatabaseOptions,
     ) -> DucklakeResult<(db::Pool, db::Connection)> {
-        // Initialize the database pool and query the current catalog version to run migrations
+        // Initialize the database pool and query the current catalog version to run upgrades
         let pool = db::Pool::new(url, database_options).await?;
         let mut conn = pool.acquire().await?;
 
@@ -179,13 +179,13 @@ impl Ducklake {
         if !spec::SUPPORTED_VERSIONS.contains(&version.as_str()) {
             return Err(DucklakeError::UnsupportedVersion(version));
         }
-        if version != spec::LATEST_VERSION && !migrate {
+        if version != spec::LATEST_VERSION && !upgrade {
             return Err(DucklakeError::OutdatedVersion(
                 version,
                 spec::LATEST_VERSION.to_string(),
             ));
         }
-        spec::migrate_catalog(&mut conn, &version).await?;
+        spec::upgrade_catalog(&mut conn, &version).await?;
 
         Ok((pool, conn))
     }

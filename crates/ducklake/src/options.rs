@@ -78,7 +78,7 @@ pub(crate) enum ConnectionType {
 /// Options for connecting to an existing DuckLake instance.
 pub struct ConnectOptions {
     pub(crate) url: String,
-    pub(crate) migrate: bool,
+    pub(crate) upgrade: bool,
     pub(crate) readonly: bool,
     pub(crate) storage_options: Vec<(String, String)>,
     pub(crate) connection_type: ConnectionType,
@@ -91,7 +91,7 @@ impl ConnectOptions {
     pub fn new(url: &str) -> Self {
         Self {
             url: url.to_string(),
-            migrate: false,
+            upgrade: false,
             readonly: false,
             storage_options: Vec::new(),
             connection_type: ConnectionType::Latest,
@@ -124,9 +124,9 @@ impl ConnectOptions {
         Ok(self)
     }
 
-    /// Set whether to automatically run migrations if the catalog version is outdated.
-    pub fn with_migrate(mut self, migrate: bool) -> Self {
-        self.migrate = migrate;
+    /// Set whether to automatically upgrade the catalog if the catalog version is outdated.
+    pub fn with_upgrade(mut self, upgrade: bool) -> Self {
+        self.upgrade = upgrade;
         self
     }
 

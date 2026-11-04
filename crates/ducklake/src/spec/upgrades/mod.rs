@@ -7,16 +7,16 @@ use strum::IntoEnumIterator;
 use super::{ducklake_metadata, metadata};
 use crate::{DucklakeError, DucklakeResult, db};
 
-macro_rules! execute_migration {
-    ($tx:ident, $migration:expr) => {
-        let query = $migration.to_owned();
+macro_rules! execute_upgrade {
+    ($tx:ident, $upgrade:expr) => {
+        let query = $upgrade.to_owned();
         $tx.execute(&query).await?;
     };
 }
 
 macro_rules! create_table {
     ($tx:ident, $table:expr, $($column:expr),+ $(,)?) => {{
-        execute_migration!(
+        execute_upgrade!(
             $tx,
             sea_query::Table::create()
                 .table($table)
@@ -27,7 +27,7 @@ macro_rules! create_table {
 
 macro_rules! add_table_columns {
     ($tx:ident, $table:expr, $($column:expr),+ $(,)?) => {{
-        $(execute_migration!($tx, sea_query::Table::alter().table($table).add_column($column));)+
+        $(execute_upgrade!($tx, sea_query::Table::alter().table($table).add_column($column));)+
     }};
 }
 
@@ -37,16 +37,16 @@ mod v0_4;
 mod v1_0;
 
 #[derive(strum::EnumIter)]
-enum Migrations {
+enum Upgrades {
     V0_2,
     V0_3,
     V0_4,
     V1_0,
 }
 
-impl Migrations {
+impl Upgrades {
     fn version(&self) -> &'static str {
-        use Migrations::*;
+        use Upgrades::*;
         match self {
             V0_2 => "0.2",
             V0_3 => "0.3",
@@ -55,27 +55,27 @@ impl Migrations {
         }
     }
 
-    async fn migrate(&self, conn: &mut db::Connection) -> DucklakeResult<()> {
+    async fn upgrade(&self, conn: &mut db::Connection) -> DucklakeResult<()> {
         let mut tx = conn.begin().await?;
-        self.migrate_tables(&mut tx).await?;
+        self.upgrade_tables(&mut tx).await?;
         set_version(&mut tx, self.version()).await?;
         tx.commit().await?;
         Ok(())
     }
 
-    async fn migrate_tables(&self, tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
-        use Migrations::*;
+    async fn upgrade_tables(&self, tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
+        use Upgrades::*;
         match self {
-            V0_2 => v0_2::migrate(tx).await,
-            V0_3 => v0_3::migrate(tx).await,
-            V0_4 => v0_4::migrate(tx).await,
-            V1_0 => v1_0::migrate(tx).await,
+            V0_2 => v0_2::upgrade(tx).await,
+            V0_3 => v0_3::upgrade(tx).await,
+            V0_4 => v0_4::upgrade(tx).await,
+            V1_0 => v1_0::upgrade(tx).await,
         }
     }
 }
 
 async fn set_version(tx: &mut db::Transaction<'_>, version: &str) -> DucklakeResult<()> {
-    execute_migration!(
+    execute_upgrade!(
         tx,
         Query::update()
             .table(ducklake_metadata::Table)
@@ -85,18 +85,18 @@ async fn set_version(tx: &mut db::Transaction<'_>, version: &str) -> DucklakeRes
     Ok(())
 }
 
-/* ----------------------------------------- MIGRATION ----------------------------------------- */
+/* ------------------------------------------ UPGRADE ------------------------------------------ */
 
-/// Migrate the catalog database to the most up-to-date DuckLake schema.
-pub(crate) async fn migrate_catalog(
+/// Upgrade the catalog database to the most up-to-date DuckLake schema.
+pub(crate) async fn upgrade_catalog(
     conn: &mut db::Connection,
     current_version: &str,
 ) -> DucklakeResult<()> {
     let current_semver = current_version.parse::<DucklakeVersion>()?;
-    for migration in Migrations::iter() {
-        let migration_semver = migration.version().parse::<DucklakeVersion>()?;
-        if migration_semver > current_semver {
-            migration.migrate(conn).await?;
+    for upgrade in Upgrades::iter() {
+        let upgrade_semver = upgrade.version().parse::<DucklakeVersion>()?;
+        if upgrade_semver > current_semver {
+            upgrade.upgrade(conn).await?;
         }
     }
     Ok(())

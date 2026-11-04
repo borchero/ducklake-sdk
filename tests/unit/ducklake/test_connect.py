@@ -194,7 +194,7 @@ def test_connection_args_accepts_sqlalchemy_url() -> None:
 
 
 # ----------------------------------------------------------------------------------------------- #
-#                                            MIGRATIONS                                           #
+#                                            UPGRADES                                             #
 # ----------------------------------------------------------------------------------------------- #
 
 SNAPSHOTS_PATH = Path(__file__).parent.parent.parent / "_snapshots"
@@ -211,12 +211,12 @@ def catalog_latest(catalog: str, storage: str) -> Iterator[str]:
         yield catalog_url
 
 
-def test_migrate_v01(catalog: str, catalog_url: str, catalog_latest: str) -> None:
+def test_upgrade_v01(catalog: str, catalog_url: str, catalog_latest: str) -> None:
     # Arrange
     _load_snapshot(catalog, catalog_url, version="v0.1")
 
     # Act
-    with dl.connect(catalog_url, migrate=True):
+    with dl.connect(catalog_url, upgrade=True):
         # Assert
         assert_ducklake_catalogs_equal(
             catalog_latest,
@@ -228,22 +228,22 @@ def test_migrate_v01(catalog: str, catalog_url: str, catalog_latest: str) -> Non
         )
 
 
-def test_migrate_v02(catalog: str, catalog_url: str, catalog_latest: str) -> None:
+def test_upgrade_v02(catalog: str, catalog_url: str, catalog_latest: str) -> None:
     # Arrange
     _load_snapshot(catalog, catalog_url, version="v0.2")
 
     # Act
-    with dl.connect(catalog_url, migrate=True):
+    with dl.connect(catalog_url, upgrade=True):
         # Assert
         assert_ducklake_catalogs_equal(catalog_latest, catalog_url)
 
 
-def test_migrate_v03(catalog: str, catalog_url: str, catalog_latest: str) -> None:
+def test_upgrade_v03(catalog: str, catalog_url: str, catalog_latest: str) -> None:
     # Arrange
     _load_snapshot(catalog, catalog_url, version="v0.3")
 
     # Act
-    with dl.connect(catalog_url, migrate=True):
+    with dl.connect(catalog_url, upgrade=True):
         # Assert
         assert_ducklake_catalogs_equal(catalog_latest, catalog_url)
 
@@ -252,12 +252,12 @@ def test_migrate_v03(catalog: str, catalog_url: str, catalog_latest: str) -> Non
     catalog="mysql",
     reason="The DuckDB MySQL connector incorrectly uses `DATETIME` instead of `TIMESTAMP`.",
 )
-def test_migrate_v04(catalog: str, catalog_url: str, catalog_latest: str) -> None:
+def test_upgrade_v04(catalog: str, catalog_url: str, catalog_latest: str) -> None:
     # Arrange
     _load_snapshot(catalog, catalog_url, version="v0.4")
 
     # Act
-    with dl.connect(catalog_url, migrate=True):
+    with dl.connect(catalog_url, upgrade=True):
         # Assert
         assert_ducklake_catalogs_equal(catalog_latest, catalog_url)
 

@@ -132,10 +132,10 @@ The Python SDK additionally provides:
 | Version | Status                  |
 | ------- | ----------------------- |
 | 1.0     | ✅ (actively supported) |
-| 0.4     | ⬆️ (requires migration) |
-| 0.3     | ⬆️ (requires migration) |
-| 0.2     | ⬆️ (requires migration) |
-| 0.1     | ⬆️ (requires migration) |
+| 0.4     | ⬆️ (requires upgrade)   |
+| 0.3     | ⬆️ (requires upgrade)   |
+| 0.2     | ⬆️ (requires upgrade)   |
+| 0.1     | ⬆️ (requires upgrade)   |
 
 See the DuckLake [release calendar](https://ducklake.select/release_calendar) for upcoming versions.
 

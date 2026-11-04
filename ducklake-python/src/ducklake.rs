@@ -46,14 +46,14 @@ pub(crate) fn connect(
     url: &str,
     snapshot_id: Option<i64>,
     snapshot_timestamp: Option<chrono::DateTime<chrono::Utc>>,
-    migrate: bool,
+    upgrade: bool,
     readonly: bool,
     storage_options: Vec<(String, String)>,
     time_zone: &str,
     database_options: Wrap<DatabaseOptions>,
 ) -> PyResult<PyDucklake> {
     let mut options = ConnectOptions::new(url)
-        .with_migrate(migrate)
+        .with_upgrade(upgrade)
         .with_readonly(readonly)
         .with_storage_options(storage_options)
         .with_database_options(database_options.0)
