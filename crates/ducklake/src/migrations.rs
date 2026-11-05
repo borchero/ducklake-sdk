@@ -25,32 +25,17 @@ mod ledger {
     }
 }
 
-#[derive(sqlx::FromRow)]
-struct LedgerRow {
-    migration: String,
-    batch: i64,
-    applied_at: UtcDateTime,
-}
-
 /// A migration which has been recorded as applied.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct AppliedMigration {
     /// The unique name of the migration.
+    #[sqlx(rename = "migration")]
     pub name: String,
     /// The batch in which the migration was applied.
     pub batch: i64,
     /// The time at which the migration was applied.
+    #[sqlx(try_from = "UtcDateTime")]
     pub applied_at: DateTime<Utc>,
-}
-
-impl From<LedgerRow> for AppliedMigration {
-    fn from(row: LedgerRow) -> Self {
-        Self {
-            name: row.migration,
-            batch: row.batch,
-            applied_at: row.applied_at.0,
-        }
-    }
 }
 
 fn create_ledger_table(dialect: Dialect) -> TableCreateStatement {
@@ -128,8 +113,8 @@ impl Ducklake {
             .order_by(Batch, Order::Asc)
             .order_by(Migration, Order::Asc)
             .to_owned();
-        match pool.fetch_all::<LedgerRow>(&query).await {
-            Ok(rows) => Ok(rows.into_iter().map(AppliedMigration::from).collect()),
+        match pool.fetch_all::<AppliedMigration>(&query).await {
+            Ok(migrations) => Ok(migrations),
             Err(error) if pool.dialect().is_table_not_found_error(&error) => Ok(Vec::new()),
             Err(error) => Err(error),
         }
