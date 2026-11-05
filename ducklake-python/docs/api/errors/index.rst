@@ -13,6 +13,7 @@ Errors
     InvalidCastError
     InvalidNullabilityChangeError
     InvalidNullValueError
+    MigrationConflictError
     NotFoundError
     NotInitializedError
     OutdatedVersionError

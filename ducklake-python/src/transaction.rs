@@ -52,6 +52,12 @@ impl TransactionInner {
 
 #[pymethods]
 impl PyTransaction {
+    fn record_migration(&mut self, name: String, batch: i64) -> PyResult<()> {
+        self.tx()
+            .record_migration(&name, batch)
+            .map_err(error::into_pyerr)
+    }
+
     fn create_schema(
         &mut self,
         name: String,

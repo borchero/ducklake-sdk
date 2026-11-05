@@ -22,6 +22,7 @@ use typedefs::*;
 
 use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};
+use crate::migrations::MigrationRecord;
 use crate::primitives::Borrowed;
 use crate::spec::*;
 use crate::{DucklakeError, DucklakeResult, QualifiedName, db};
@@ -48,6 +49,8 @@ pub struct Transaction<'a> {
     changes: Vec<Change>,
     /// Information about the author of the transaction.
     author_info: AuthorInfo,
+    /// The migration to record as applied in the same database transaction as the commit.
+    migration: Option<MigrationRecord>,
 }
 
 /* ------------------------------------------ TYPEDEFS ----------------------------------------- */
@@ -89,6 +92,7 @@ impl<'a> Transaction<'a> {
             metadata,
             changes: Vec::new(),
             author_info,
+            migration: None,
             snapshot,
             catalog,
         };
@@ -200,9 +204,38 @@ impl<'a> Transaction<'a> {
             metadata: self.metadata,
             changes: self.changes,
             author_info: self.author_info,
+            migration: self.migration,
             snapshot: self.snapshot,
             catalog: self.catalog,
         }
+    }
+}
+
+/* --------------------------------------------------------------------------------------------- */
+/*                                           MIGRATION                                           */
+/* --------------------------------------------------------------------------------------------- */
+
+impl Transaction<'_> {
+    /// Record a migration as applied. The record is written in the same database transaction as
+    /// the commit, i.e. the migration is recorded if and only if the commit succeeds.
+    ///
+    /// The table which records applied migrations must exist when committing (see
+    /// [`Ducklake::ensure_migrations_table`](crate::Ducklake::ensure_migrations_table)). If
+    /// another transaction recorded a migration with the same name in the meantime, committing
+    /// fails with [`DucklakeError::MigrationConflict`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a migration was already recorded in this transaction or if the name is
+    /// not a valid migration name.
+    pub fn record_migration(&mut self, name: &str, batch: i64) -> DucklakeResult<()> {
+        if self.migration.is_some() {
+            return Err(DucklakeError::InvalidChanges(
+                "a migration has already been recorded in this transaction".into(),
+            ));
+        }
+        self.migration = Some(MigrationRecord::new(name, batch)?);
+        Ok(())
     }
 }
 
@@ -217,8 +250,8 @@ impl<'a> Transaction<'a> {
         // provides high-level utilities.
         let change_set = ChangeSet::new(self.changes);
 
-        // If the change set is empty, there's nothing to commit
-        if change_set.is_empty() {
+        // If the change set is empty and no migration is to be recorded, there's nothing to commit
+        if change_set.is_empty() && self.migration.is_none() {
             return Ok(());
         }
 
@@ -242,8 +275,14 @@ impl<'a> Transaction<'a> {
             );
 
             // Apply the changes from the transaction
-            let apply_result =
-                Self::apply_changes(&self.pool, &mut state, &change_set, &self.author_info).await;
+            let apply_result = Self::apply_changes(
+                &self.pool,
+                &mut state,
+                &change_set,
+                &self.author_info,
+                self.migration.as_ref(),
+            )
+            .await;
 
             // Handle any errors
             match apply_result {
@@ -265,6 +304,15 @@ impl<'a> Transaction<'a> {
                         || self.pool.dialect().is_table_already_exists_error(err)
                             && i < max_retry_count =>
                 {
+                    // If the migration to record has been applied in the meantime, retrying is
+                    // pointless: it would fail on the migration table's primary key. Besides,
+                    // this is a more helpful error than a conflict between the changes.
+                    if let Some(migration) = &self.migration
+                        && migration.is_recorded(&self.pool).await?
+                    {
+                        return Err(DucklakeError::MigrationConflict(migration.name.clone()));
+                    }
+
                     // We already assign the latest snapshot for the next iteration as, otherwise,
                     // we'd possibly query a newer snapshot in the new iteration and miss changes.
                     latest_snapshot = self.snapshot_cache.get_latest().await?;
@@ -303,6 +351,7 @@ impl<'a> Transaction<'a> {
         state: &mut CommitState<'_>,
         change_set: &ChangeSet,
         author_info: &AuthorInfo,
+        migration: Option<&MigrationRecord>,
     ) -> DucklakeResult<SnapshotInfo> {
         let mut changes = TransactionChanges::default();
 
@@ -340,6 +389,10 @@ impl<'a> Transaction<'a> {
             author_info,
         )
         .await?;
+        if let Some(migration) = migration {
+            tx.execute(&migration.insert_statement(snapshot_info.snapshot_time))
+                .await?;
+        }
         tx.commit().await?;
 
         Ok(snapshot_info)

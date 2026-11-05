@@ -1,8 +1,19 @@
 use chrono::{DateTime, Utc};
-use sea_query::{ColumnDef, ColumnType, Iden, Order, Query, StringLen, TableCreateStatement};
+use sea_query::{
+    ColumnDef,
+    ColumnType,
+    Expr,
+    ExprTrait,
+    Iden,
+    InsertStatement,
+    Order,
+    Query,
+    StringLen,
+    TableCreateStatement,
+};
 
-use crate::db::{Dialect, UtcDateTime};
-use crate::{Ducklake, DucklakeResult};
+use crate::db::{self, Dialect, UtcDateTime};
+use crate::{Ducklake, DucklakeError, DucklakeResult};
 
 /// The maximum length of a migration name, which is the length of the `migration` column.
 const MAX_NAME_LENGTH: u32 = 255;
@@ -36,6 +47,53 @@ pub struct AppliedMigration {
     /// The time at which the migration was applied.
     #[sqlx(try_from = "UtcDateTime")]
     pub applied_at: DateTime<Utc>,
+}
+
+/// A migration which is recorded as applied in the same database transaction as a commit.
+pub(crate) struct MigrationRecord {
+    pub(crate) name: String,
+    batch: i64,
+}
+
+impl MigrationRecord {
+    pub(crate) fn new(name: &str, batch: i64) -> DucklakeResult<Self> {
+        let length = name.chars().count();
+        if length == 0 || length > MAX_NAME_LENGTH as usize {
+            return Err(DucklakeError::InvalidChanges(format!(
+                "migration names must have between 1 and {MAX_NAME_LENGTH} characters but '{name}' has {length}"
+            )));
+        }
+        Ok(Self {
+            name: name.to_owned(),
+            batch,
+        })
+    }
+
+    pub(crate) fn insert_statement(&self, applied_at: DateTime<Utc>) -> InsertStatement {
+        use ledger::Column::*;
+
+        Query::insert()
+            .into_table(ledger::Table)
+            .columns([Migration, Batch, AppliedAt])
+            .values_panic([
+                self.name.clone().into(),
+                self.batch.into(),
+                applied_at.into(),
+            ])
+            .to_owned()
+    }
+
+    /// Whether a migration with this name has already been recorded as applied.
+    pub(crate) async fn is_recorded(&self, pool: &db::Pool) -> DucklakeResult<bool> {
+        use ledger::Column::*;
+
+        let query = Query::select()
+            .column(Migration)
+            .from(ledger::Table)
+            .and_where(Expr::col(Migration).eq(self.name.as_str()))
+            .to_owned();
+        Ok(pool.fetch_optional::<(String,)>(&query).await?.is_some())
+    }
 }
 
 fn create_ledger_table(dialect: Dialect) -> TableCreateStatement {
