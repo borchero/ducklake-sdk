@@ -402,3 +402,16 @@ def _storage_options(
         if isinstance(options, options_type):
             return options
     raise ValueError(f"No {options_type.__name__} configured on the DuckLake.")
+
+
+# ----------------------------------------------------------------------------------------------- #
+#                                            MIGRATIONS                                           #
+# ----------------------------------------------------------------------------------------------- #
+
+MIGRATIONS_TABLE = sa.Table(
+    "_ducklake_sdk_migrations",
+    sa.MetaData(),
+    sa.Column("name", sa.String(255), primary_key=True),
+    sa.Column("batch", sa.BigInteger, nullable=False),
+    sa.Column("applied_at", sa.DateTime(timezone=True), nullable=False),
+)

@@ -381,6 +381,24 @@ impl PyDucklake {
         }
     }
 
+    pub fn ensure_migrations_table(&self, py: Python) -> PyResult<()> {
+        block_on(py, self.0.ensure_migrations_table()).map_err(error::into_pyerr)
+    }
+
+    pub fn applied_migrations(
+        &self,
+        py: Python,
+    ) -> PyResult<Vec<(String, i64, chrono::DateTime<chrono::Utc>)>> {
+        block_on(py, self.0.applied_migrations())
+            .map(|migrations| {
+                migrations
+                    .into_iter()
+                    .map(|m| (m.name, m.batch, m.applied_at))
+                    .collect()
+            })
+            .map_err(error::into_pyerr)
+    }
+
     pub fn disconnect(&mut self, py: Python) {
         block_on(py, self.0.disconnect());
     }

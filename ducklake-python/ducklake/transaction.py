@@ -203,6 +203,9 @@ class Transaction:
         """
         self._pytx.delete_view(name, if_not_exists)
 
+    def _record_migration(self, name: str, batch: int) -> None:
+        self._pytx.record_migration(name, batch)
+
     def commit(self) -> None:
         self._pytx.commit()
 
