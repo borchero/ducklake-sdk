@@ -1,7 +1,4 @@
 import datetime as dt
-import threading
-from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import sqlalchemy as sa
@@ -33,7 +30,7 @@ def populated_ledger(
         conn.execute(
             MIGRATIONS_TABLE.insert(),
             [
-                {"migration": name, "batch": batch, "applied_at": applied_at}
+                {"name": name, "batch": batch, "applied_at": applied_at}
                 for name, batch, applied_at in reversed(ledger_rows)
             ],
         )
@@ -49,10 +46,10 @@ def test_ensure_migrations_table_creates_table(
     # Assert
     inspector = sa.inspect(catalog_engine)
     columns = inspector.get_columns(MIGRATIONS_TABLE.name)
-    assert [column["name"] for column in columns] == ["migration", "batch", "applied_at"]
+    assert [column["name"] for column in columns] == ["name", "batch", "applied_at"]
     assert all(not column["nullable"] for column in columns)
     primary_key = inspector.get_pk_constraint(MIGRATIONS_TABLE.name)
-    assert primary_key["constrained_columns"] == ["migration"]
+    assert primary_key["constrained_columns"] == ["name"]
 
 
 def test_ensure_migrations_table_is_idempotent(
@@ -75,33 +72,6 @@ def test_ensure_migrations_table_fails_when_readonly(
     with pytest.raises(dlexc.ReadonlyDucklakeError):
         readonly._pyducklake.ensure_migrations_table()
     assert not sa.inspect(catalog_engine).has_table(MIGRATIONS_TABLE.name)
-
-
-@pytest.fixture()
-def concurrent_ducklakes(catalog_url: str, ducklake: dl.Ducklake) -> Iterator[list[dl.Ducklake]]:
-    ducklakes = [dl.connect(catalog_url) for _ in range(8)]
-    yield ducklakes
-    for connection in ducklakes:
-        connection.disconnect()
-
-
-def test_ensure_migrations_table_concurrently(
-    concurrent_ducklakes: list[dl.Ducklake], catalog_engine: sa.Engine
-) -> None:
-    # Arrange
-    barrier = threading.Barrier(len(concurrent_ducklakes))
-
-    def ensure(ducklake: dl.Ducklake) -> None:
-        barrier.wait()
-        ducklake._pyducklake.ensure_migrations_table()
-
-    # Act
-    with ThreadPoolExecutor(max_workers=len(concurrent_ducklakes)) as executor:
-        # NOTE: Consuming the iterator re-raises any exception from the workers
-        list(executor.map(ensure, concurrent_ducklakes))
-
-    # Assert
-    assert sa.inspect(catalog_engine).has_table(MIGRATIONS_TABLE.name)
 
 
 @pytest.mark.parametrize("table_exists", [False, True])

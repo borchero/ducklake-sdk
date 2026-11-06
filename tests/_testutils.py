@@ -409,9 +409,9 @@ def _storage_options(
 # ----------------------------------------------------------------------------------------------- #
 
 MIGRATIONS_TABLE = sa.Table(
-    "ducklake_sdk_migrations",
+    "_ducklake_sdk_migrations",
     sa.MetaData(),
-    sa.Column("migration", sa.String(255), primary_key=True),
+    sa.Column("name", sa.String(255), primary_key=True),
     sa.Column("batch", sa.BigInteger, nullable=False),
     sa.Column("applied_at", sa.DateTime(timezone=True), nullable=False),
 )

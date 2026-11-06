@@ -390,7 +390,7 @@ impl<'a> Transaction<'a> {
         )
         .await?;
         if let Some(migration) = migration {
-            tx.execute(&migration.insert_statement(snapshot_info.snapshot_time))
+            tx.insert_entity(migration.to_entity(snapshot_info.snapshot_time))
                 .await?;
         }
         tx.commit().await?;

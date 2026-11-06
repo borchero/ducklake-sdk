@@ -260,7 +260,7 @@ def test_upgrade_leaves_migrations_table_untouched(
     # Arrange
     _load_snapshot(catalog, catalog_url, version="v0.3")
     row = {
-        "migration": "2026_11_03_110000_first",
+        "name": "2026_11_03_110000_first",
         "batch": 1,
         "applied_at": dt.datetime(2026, 11, 3, 11, 0, 5, tzinfo=dt.timezone.utc),
     }
@@ -275,7 +275,7 @@ def test_upgrade_leaves_migrations_table_untouched(
     # Assert
     with catalog_engine.connect() as conn:
         rows = conn.execute(
-            sa.select(MIGRATIONS_TABLE.c.migration, MIGRATIONS_TABLE.c.batch)
+            sa.select(MIGRATIONS_TABLE.c.name, MIGRATIONS_TABLE.c.batch)
         ).all()
     assert [tuple(r) for r in rows] == [("2026_11_03_110000_first", 1)]
 

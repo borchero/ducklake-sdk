@@ -1,51 +1,30 @@
 use chrono::{DateTime, Utc};
-use sea_query::{
-    ColumnDef,
-    ColumnType,
-    Expr,
-    ExprTrait,
-    Iden,
-    InsertStatement,
-    Order,
-    Query,
-    StringLen,
-    TableCreateStatement,
-};
+use ducklake_macros::ducklake_table;
+use sea_query::{Expr, ExprTrait, Order, Query};
 
-use crate::db::{self, Dialect, UtcDateTime};
-use crate::{Ducklake, DucklakeError, DucklakeResult};
+use crate::db::sea_query_ext::{self, CreateTable};
+use crate::{Ducklake, DucklakeError, DucklakeResult, db};
 
-/// The maximum length of a migration name, which is the length of the `migration` column.
+/// The maximum length of a migration name.
 const MAX_NAME_LENGTH: u32 = 255;
 
-/// The table in the catalog database which records the applied migrations.
-///
-/// This table belongs to the SDK and is not part of the DuckLake specification. It is therefore
-/// created on demand (see [`Ducklake::ensure_migrations_table`]) instead of by
-/// [`Ducklake::create`], and catalog upgrades do not touch it.
-mod ledger {
-    #[derive(sea_query::Iden)]
-    #[iden = "ducklake_sdk_migrations"]
-    pub(super) struct Table;
-
-    #[derive(sea_query::Iden, Clone, Copy)]
-    pub(super) enum Column {
-        Migration,
-        Batch,
-        AppliedAt,
-    }
-}
-
 /// A migration which has been recorded as applied.
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+///
+/// The backing table belongs to the SDK and is not part of the DuckLake specification. It is
+/// therefore created on demand (see [`Ducklake::ensure_migrations_table`]) instead of by
+/// [`Ducklake::create`], and catalog upgrades do not touch it.
+#[ducklake_table(table_name = "_ducklake_sdk_migrations")]
 pub struct AppliedMigration {
     /// The unique name of the migration.
-    #[sqlx(rename = "migration")]
+    #[not_null]
+    #[primary_key]
+    #[max_length = 255]
     pub name: String,
     /// The batch in which the migration was applied.
+    #[not_null]
     pub batch: i64,
     /// The time at which the migration was applied.
-    #[sqlx(try_from = "UtcDateTime")]
+    #[not_null]
     pub applied_at: DateTime<Utc>,
 }
 
@@ -69,54 +48,26 @@ impl MigrationRecord {
         })
     }
 
-    pub(crate) fn insert_statement(&self, applied_at: DateTime<Utc>) -> InsertStatement {
-        use ledger::Column::*;
-
-        Query::insert()
-            .into_table(ledger::Table)
-            .columns([Migration, Batch, AppliedAt])
-            .values_panic([
-                self.name.clone().into(),
-                self.batch.into(),
-                applied_at.into(),
-            ])
-            .to_owned()
+    /// The entity to insert to record this migration as applied at the provided time.
+    pub(crate) fn to_entity(&self, applied_at: DateTime<Utc>) -> AppliedMigration {
+        AppliedMigration {
+            name: self.name.clone(),
+            batch: self.batch,
+            applied_at,
+        }
     }
 
     /// Whether a migration with this name has already been recorded as applied.
     pub(crate) async fn is_recorded(&self, pool: &db::Pool) -> DucklakeResult<bool> {
-        use ledger::Column::*;
+        use applied_migration::Column::*;
 
         let query = Query::select()
-            .column(Migration)
-            .from(ledger::Table)
-            .and_where(Expr::col(Migration).eq(self.name.as_str()))
+            .column(Name)
+            .from(applied_migration::Table)
+            .and_where(Expr::col(Name).eq(self.name.as_str()))
             .to_owned();
         Ok(pool.fetch_optional::<(String,)>(&query).await?.is_some())
     }
-}
-
-fn create_ledger_table(dialect: Dialect) -> TableCreateStatement {
-    use ledger::Column::*;
-
-    sea_query::Table::create()
-        .table(ledger::Table)
-        .if_not_exists()
-        .col(
-            ColumnDef::new_with_type(
-                Migration,
-                // NOTE: The column is a primary key, hence it requires a fixed length in MySQL
-                ColumnType::String(StringLen::N(MAX_NAME_LENGTH)),
-            )
-            .not_null()
-            .primary_key(),
-        )
-        .col(ColumnDef::new_with_type(Batch, dialect.column_type_i64()).not_null())
-        .col(
-            ColumnDef::new_with_type(AppliedAt, dialect.column_type_date_time_with_time_zone())
-                .not_null(),
-        )
-        .to_owned()
 }
 
 impl Ducklake {
@@ -132,29 +83,12 @@ impl Ducklake {
         self.conn.check_writable()?;
 
         let pool = self.conn.pool();
-        let table_name = ledger::Table.to_string();
-        if pool.table_exists(&table_name).await? {
-            return Ok(());
-        }
-
-        let statement = create_ledger_table(pool.dialect());
-        let result = async {
-            let mut tx = pool.begin().await?;
-            tx.execute(&statement).await?;
-            tx.commit().await
-        }
-        .await;
-        if let Err(error) = result {
-            // NOTE: `CREATE TABLE IF NOT EXISTS` is not atomic in all databases. When run
-            //  concurrently, PostgreSQL may fail with errors such as a unique violation on a system
-            //  table or a type that already exists. As the table exists afterwards, the call
-            //  nevertheless fulfilled its purpose.
-            return match pool.table_exists(&table_name).await {
-                Ok(true) => Ok(()),
-                _ => Err(error),
-            };
-        }
-        Ok(())
+        let mut tx = pool.begin().await?;
+        tx.execute(
+            sea_query::Table::create_entity::<AppliedMigration>(pool.dialect()).if_not_exists(),
+        )
+        .await?;
+        tx.commit().await
     }
 
     /// List all applied migrations ordered by batch and name.
@@ -162,14 +96,14 @@ impl Ducklake {
     /// If the table which records applied migrations does not exist, no migration has been applied
     /// and the result is empty. This never creates the table.
     pub async fn applied_migrations(&self) -> DucklakeResult<Vec<AppliedMigration>> {
-        use ledger::Column::*;
+        use applied_migration::Column::*;
 
         let pool = self.conn.pool();
         let query = Query::select()
-            .columns([Migration, Batch, AppliedAt])
-            .from(ledger::Table)
+            .columns([Name, Batch, AppliedAt])
+            .from(applied_migration::Table)
             .order_by(Batch, Order::Asc)
-            .order_by(Migration, Order::Asc)
+            .order_by(Name, Order::Asc)
             .to_owned();
         match pool.fetch_all::<AppliedMigration>(&query).await {
             Ok(migrations) => Ok(migrations),
