@@ -64,7 +64,7 @@ pub enum DucklakeError {
     UnknownVersion,
     #[error("transaction conflict: {0}")]
     TransactionConflict(String),
-    #[error("migration '{0}' was already applied, likely by a concurrent run")]
+    #[error("migration '{0}' was already applied")]
     MigrationConflict(String),
     #[error("connection url '{0}' specifies unsupported database scheme")]
     UnsupportedDatabase(String),
