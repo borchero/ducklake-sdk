@@ -5,6 +5,7 @@ use sea_query::{Asterisk, ExprTrait, Iden, Query};
 use super::caches::{Metadata, MetadataCache, Snapshot, SnapshotCache};
 use crate::caches::SnapshotInfo;
 use crate::catalog::Catalog;
+use crate::migrations::MigrationRecord;
 use crate::spec::*;
 use crate::*;
 
@@ -535,7 +536,7 @@ impl DucklakeConnection {
 impl Ducklake {
     /// Start a new transaction to make changes to the catalog.
     pub async fn transaction(&self) -> DucklakeResult<Transaction<'_>> {
-        self.conn.transaction(None).await
+        self.conn.transaction(None, None).await
     }
 
     /// Start a new transaction with the provided author information. The author information is
@@ -544,7 +545,31 @@ impl Ducklake {
         &self,
         author_info: AuthorInfo,
     ) -> DucklakeResult<Transaction<'_>> {
-        self.conn.transaction(Some(author_info)).await
+        self.conn.transaction(Some(author_info), None).await
+    }
+
+    /// Start a new transaction which records the migration with the provided name as applied in
+    /// the batch with the provided number. The migration is recorded in the same database
+    /// transaction as the commit, i.e. it is recorded if and only if the commit succeeds.
+    ///
+    /// The table which records applied migrations must exist when committing (see
+    /// [`Ducklake::ensure_migrations_table`]). If another transaction recorded a migration with
+    /// the same name in the meantime, committing fails with
+    /// [`DucklakeError::MigrationConflict`](crate::DucklakeError::MigrationConflict).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the name is not a valid migration name.
+    pub async fn transaction_for_migration(
+        &self,
+        author_info: AuthorInfo,
+        migration: &str,
+        batch: i64,
+    ) -> DucklakeResult<Transaction<'_>> {
+        let migration = MigrationRecord::new(migration, batch)?;
+        self.conn
+            .transaction(Some(author_info), Some(migration))
+            .await
     }
 }
 
@@ -554,6 +579,7 @@ impl DucklakeConnection {
     pub(crate) async fn transaction(
         &self,
         author_info: Option<AuthorInfo>,
+        migration: Option<MigrationRecord>,
     ) -> DucklakeResult<Transaction<'_>> {
         let snapshot = self.snapshot(SnapshotAccess::Write).await?;
         let metadata = self.0.metadata_cache.get_metadata();
@@ -563,6 +589,7 @@ impl DucklakeConnection {
             &self.0.storage_options,
             metadata,
             author_info.unwrap_or_default(),
+            migration,
             snapshot,
         )
         .await?;

@@ -137,7 +137,7 @@ impl Table {
     where
         F: Future<Output = DucklakeResult<Vec<crate::WriteDataFile>>>,
     {
-        let mut tx = self.conn.transaction(None).await?;
+        let mut tx = self.conn.transaction(None, None).await?;
         let mut table = self.transaction_table(&mut tx)?;
         table.write_data(write_fn).await?;
         tx.commit().await
@@ -169,7 +169,7 @@ impl Table {
         &self,
         data_files: Vec<crate::WriteDataFile>,
     ) -> DucklakeResult<()> {
-        let mut tx = self.conn.transaction(None).await?;
+        let mut tx = self.conn.transaction(None, None).await?;
         let mut table = self.transaction_table(&mut tx)?;
         table.write_data_files(data_files).await?;
         tx.commit().await
@@ -177,7 +177,7 @@ impl Table {
 
     /// Write the provided record batches as inline data into the catalog.
     pub async fn write_inline_data(&self, data: Vec<RecordBatch>) -> DucklakeResult<()> {
-        let mut tx = self.conn.transaction(None).await?;
+        let mut tx = self.conn.transaction(None, None).await?;
         let mut table = self.transaction_table(&mut tx)?;
         table.write_inline_data(data)?;
         tx.commit().await
@@ -195,7 +195,7 @@ macro_rules! within_transaction {
             $(
             $(#[$meta])*
             pub async fn $name(&self, $($arg: $ty),*) -> DucklakeResult<()> {
-                let mut tx = self.conn.transaction(None).await?;
+                let mut tx = self.conn.transaction(None, None).await?;
                 let mut table = self.transaction_table(&mut tx)?;
                 let result = table.$name($($arg),*)?;
                 tx.commit().await?;
@@ -215,7 +215,7 @@ macro_rules! within_transaction_async {
             $(
             $(#[$meta])*
             pub async fn $name(&self, $($arg: $ty),*) -> DucklakeResult<()> {
-                let mut tx = self.conn.transaction(None).await?;
+                let mut tx = self.conn.transaction(None, None).await?;
                 let mut table = self.transaction_table(&mut tx)?;
                 let result = table.$name($($arg),*).await?;
                 tx.commit().await?;

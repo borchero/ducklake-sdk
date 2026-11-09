@@ -82,6 +82,7 @@ impl<'a> Transaction<'a> {
         storage_options: &'a Vec<(String, String)>,
         metadata: Arc<Metadata>,
         author_info: AuthorInfo,
+        migration: Option<MigrationRecord>,
         snapshot: Arc<Snapshot>,
     ) -> DucklakeResult<Self> {
         let catalog = snapshot.catalog().await?.clone();
@@ -92,7 +93,7 @@ impl<'a> Transaction<'a> {
             metadata,
             changes: Vec::new(),
             author_info,
-            migration: None,
+            migration,
             snapshot,
             catalog,
         };
@@ -208,34 +209,6 @@ impl<'a> Transaction<'a> {
             snapshot: self.snapshot,
             catalog: self.catalog,
         }
-    }
-}
-
-/* --------------------------------------------------------------------------------------------- */
-/*                                           MIGRATION                                           */
-/* --------------------------------------------------------------------------------------------- */
-
-impl Transaction<'_> {
-    /// Record a migration as applied. The record is written in the same database transaction as
-    /// the commit, i.e. the migration is recorded if and only if the commit succeeds.
-    ///
-    /// The table which records applied migrations must exist when committing (see
-    /// [`Ducklake::ensure_migrations_table`](crate::Ducklake::ensure_migrations_table)). If
-    /// another transaction recorded a migration with the same name in the meantime, committing
-    /// fails with [`DucklakeError::MigrationConflict`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a migration was already recorded in this transaction or if the name is
-    /// not a valid migration name.
-    pub fn record_migration(&mut self, name: &str, batch: i64) -> DucklakeResult<()> {
-        if self.migration.is_some() {
-            return Err(DucklakeError::InvalidChanges(
-                "a migration has already been recorded in this transaction".into(),
-            ));
-        }
-        self.migration = Some(MigrationRecord::new(name, batch)?);
-        Ok(())
     }
 }
 

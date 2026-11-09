@@ -27,9 +27,10 @@ def test_record_migration_commits_ledger_row_and_snapshot(
     snapshot_id = lake.get_latest_snapshot().id
 
     # Act
-    with lake.transaction(author="ducklake-sdk", message=MIGRATION, extra_info="{}") as tx:
+    with lake._transaction_for_migration(
+        MIGRATION, 3, author="ducklake-sdk", message=MIGRATION, extra_info="{}"
+    ) as tx:
         tx.create_table(random_table_name, {"x": dl.Int64()})
-        tx._record_migration(MIGRATION, 3)
 
     # Assert
     [(name, batch, applied_at)] = lake._pyducklake.applied_migrations()
@@ -52,8 +53,8 @@ def test_record_migration_commits_ledger_row_and_snapshot(
 
 def test_record_migration_without_other_changes(lake: dl.Ducklake) -> None:
     # Act
-    with lake.transaction() as tx:
-        tx._record_migration(MIGRATION, 1)
+    with lake._transaction_for_migration(MIGRATION, 1):
+        pass
 
     # Assert
     assert _applied_names(lake) == [MIGRATION]
@@ -64,9 +65,8 @@ def test_record_migration_not_recorded_if_commit_fails(
 ) -> None:
     # Arrange
     lake.create_table(random_table_name, {"x": dl.Int64()})
-    tx = lake.transaction()
+    tx = lake._transaction_for_migration(MIGRATION, 1)
     tx.table(random_table_name).add_column(dl.Column("y", dl.Int64()))
-    tx._record_migration(MIGRATION, 1)
     with lake.transaction() as concurrent_tx:
         concurrent_tx.table(random_table_name).add_column(dl.Column("z", dl.Int64()))
 
@@ -84,16 +84,14 @@ def test_record_migration_fails_if_already_recorded(
 ) -> None:
     # Arrange
     other_table_name = random_table_name + "_other"
-    tx1 = lake.transaction()
+    tx1 = lake._transaction_for_migration(MIGRATION, 1)
     tx1.create_table(random_table_name, {"x": dl.Int64()})
-    tx1._record_migration(MIGRATION, 1)
     if open_before_commit:
-        tx2 = lake.transaction()
+        tx2 = lake._transaction_for_migration(MIGRATION, 2)
     tx1.commit()
     if not open_before_commit:
-        tx2 = lake.transaction()
+        tx2 = lake._transaction_for_migration(MIGRATION, 2)
     tx2.create_table(other_table_name, {"x": dl.Int64()})
-    tx2._record_migration(MIGRATION, 2)
 
     # Act
     with pytest.raises(dlexc.MigrationConflictError):
@@ -111,12 +109,10 @@ def test_record_different_migrations_concurrently(
     lake: dl.Ducklake, random_table_name: str
 ) -> None:
     # Arrange
-    tx1 = lake.transaction()
+    tx1 = lake._transaction_for_migration(MIGRATION, 1)
     tx1.create_table(random_table_name, {"x": dl.Int64()})
-    tx1._record_migration(MIGRATION, 1)
-    tx2 = lake.transaction()
+    tx2 = lake._transaction_for_migration(OTHER_MIGRATION, 1)
     tx2.create_table(random_table_name + "_other", {"x": dl.Int64()})
-    tx2._record_migration(OTHER_MIGRATION, 1)
 
     # Act
     tx1.commit()
@@ -126,16 +122,6 @@ def test_record_different_migrations_concurrently(
     assert _applied_names(lake) == sorted([MIGRATION, OTHER_MIGRATION])
     assert lake.has_table(random_table_name)
     assert lake.has_table(random_table_name + "_other")
-
-
-def test_record_migration_twice_fails(lake: dl.Ducklake) -> None:
-    # Arrange
-    tx = lake.transaction()
-    tx._record_migration(MIGRATION, 1)
-
-    # Act & Assert
-    with pytest.raises(ValueError, match="already been recorded"):
-        tx._record_migration(OTHER_MIGRATION, 1)
 
 
 @pytest.mark.parametrize(
@@ -148,16 +134,13 @@ def test_record_migration_twice_fails(lake: dl.Ducklake) -> None:
     ],
 )
 def test_record_migration_validates_name(lake: dl.Ducklake, name: str, fails: bool) -> None:
-    # Arrange
-    tx = lake.transaction()
-
     # Act & Assert
     if fails:
         with pytest.raises(ValueError, match="between 1 and 255 characters"):
-            tx._record_migration(name, 1)
+            lake._transaction_for_migration(name, 1)
     else:
-        tx._record_migration(name, 1)
-        tx.commit()
+        with lake._transaction_for_migration(name, 1):
+            pass
         assert _applied_names(lake) == [name]
 
 
@@ -166,11 +149,10 @@ def test_duckdb_reads_lake_with_recorded_migrations(
     lake: dl.Ducklake, random_table_name: str
 ) -> None:
     # Arrange
-    with lake.transaction() as tx:
-        tx._record_migration(MIGRATION, 1)
-    with lake.transaction() as tx:
+    with lake._transaction_for_migration(MIGRATION, 1):
+        pass
+    with lake._transaction_for_migration(OTHER_MIGRATION, 1) as tx:
         tx.create_table(random_table_name, {"x": dl.Int64()})
-        tx._record_migration(OTHER_MIGRATION, 1)
 
     # Act
     lake.execute_sql(f"INSERT INTO {random_table_name} VALUES (1)")

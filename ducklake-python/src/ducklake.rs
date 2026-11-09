@@ -207,6 +207,30 @@ impl PyDucklake {
         Ok(PyTransaction::new(tx))
     }
 
+    pub fn transaction_for_migration(
+        &self,
+        py: Python,
+        author: Option<String>,
+        message: Option<String>,
+        extra_info: Option<String>,
+        migration: &str,
+        batch: i64,
+    ) -> PyResult<PyTransaction> {
+        let author_info = AuthorInfo {
+            author,
+            message,
+            extra_info,
+        };
+        let tx = block_on(
+            py,
+            self.0
+                .transaction_for_migration(author_info, migration, batch),
+        )
+        .map_err(error::into_pyerr)?
+        .into_owned();
+        Ok(PyTransaction::new(tx))
+    }
+
     pub fn table(&self, py: Python, name: Wrap<ducklake::QualifiedName>) -> PyResult<PyTable> {
         block_on(py, self.0.table(name.0))
             .map(PyTable::new)
