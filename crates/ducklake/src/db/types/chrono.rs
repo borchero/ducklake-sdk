@@ -17,12 +17,6 @@ impl UtcDateTime {
     }
 }
 
-impl From<UtcDateTime> for DateTime<Utc> {
-    fn from(value: UtcDateTime) -> Self {
-        value.0
-    }
-}
-
 impl sea_query::Nullable for UtcDateTime {
     fn null() -> sea_query::Value {
         <DateTime<Utc> as sea_query::Nullable>::null()
