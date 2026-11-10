@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
 use ducklake_macros::ducklake_table;
-use sea_query::{Expr, ExprTrait, Order, Query};
+use sea_query::{Iden, Order, Query};
+use sqlx::error::{DatabaseError, ErrorKind};
 
 use crate::db::sea_query_ext::{self, CreateTable};
-use crate::{Ducklake, DucklakeError, DucklakeResult, db};
+use crate::{Ducklake, DucklakeError, DucklakeResult};
 
 /// The maximum length of a migration name.
 const MAX_NAME_LENGTH: u32 = 255;
@@ -56,18 +57,17 @@ impl MigrationRecord {
             applied_at,
         }
     }
+}
 
-    /// Whether a migration with this name has already been recorded as applied.
-    pub(crate) async fn is_recorded(&self, pool: &db::Pool) -> DucklakeResult<bool> {
-        use applied_migration::Column::*;
-
-        let query = Query::select()
-            .column(Name)
-            .from(applied_migration::Table)
-            .and_where(Expr::col(Name).eq(self.name.as_str()))
-            .to_owned();
-        Ok(pool.fetch_optional::<(String,)>(&query).await?.is_some())
-    }
+/// Whether the error stems from violating the primary key of the table of applied migrations,
+/// i.e. from recording a migration which has already been recorded.
+pub(crate) fn is_migration_conflict(error: &dyn DatabaseError) -> bool {
+    // NOTE: The message of all supported databases contains the name of the table (or of the
+    //  constraint, which includes the table name).
+    error.kind() == ErrorKind::UniqueViolation
+        && error
+            .message()
+            .contains(&applied_migration::Table.to_string())
 }
 
 impl Ducklake {

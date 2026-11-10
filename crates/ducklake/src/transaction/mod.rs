@@ -22,7 +22,7 @@ use typedefs::*;
 
 use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};
-use crate::migrations::MigrationRecord;
+use crate::migrations::{self, MigrationRecord};
 use crate::primitives::Borrowed;
 use crate::spec::*;
 use crate::{DucklakeError, DucklakeResult, QualifiedName, db};
@@ -277,11 +277,10 @@ impl<'a> Transaction<'a> {
                         || self.pool.dialect().is_table_already_exists_error(err)
                             && i < max_retry_count =>
                 {
-                    // If the migration to record has been applied in the meantime, retrying is
-                    // pointless: it would fail on the migration table's primary key. Besides,
-                    // this is a more helpful error than a conflict between the changes.
+                    // If the violation concerns the migration to record, it has been applied in
+                    // the meantime and retrying is pointless as it would violate the same key.
                     if let Some(migration) = &self.migration
-                        && migration.is_recorded(&self.pool).await?
+                        && migrations::is_migration_conflict(db_err.as_ref())
                     {
                         return Err(DucklakeError::MigrationConflict(migration.name.clone()));
                     }
