@@ -223,9 +223,13 @@ impl<'a> Transaction<'a> {
         // provides high-level utilities.
         let change_set = ChangeSet::new(self.changes);
 
-        // If the change set is empty and no migration is to be recorded, there's nothing to commit
-        if change_set.is_empty() && self.migration.is_none() {
-            return Ok(());
+        // If the change set is empty, there is no need for a new snapshot. The only thing left to
+        // do is to record the migration, if any.
+        if change_set.is_empty() {
+            return match &self.migration {
+                Some(migration) => migration.record(&self.pool).await,
+                None => Ok(()),
+            };
         }
 
         // To remedy conflicts caused by high-concurrency writes, we retry committing the

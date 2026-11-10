@@ -550,7 +550,9 @@ impl Ducklake {
 
     /// Start a new transaction which records the migration with the provided name as applied in
     /// the batch with the provided number. The migration is recorded in the same database
-    /// transaction as the commit, i.e. it is recorded if and only if the commit succeeds.
+    /// transaction as the commit, i.e. it is recorded if and only if the commit succeeds. If the
+    /// transaction does not contain any changes, no snapshot is created and the migration is
+    /// merely recorded.
     ///
     /// The table which records applied migrations must exist when committing (see
     /// [`Ducklake::ensure_migrations_table`]). If another transaction recorded a migration with

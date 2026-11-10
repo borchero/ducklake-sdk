@@ -51,13 +51,51 @@ def test_record_migration_commits_ledger_row_and_snapshot(
     assert tuple(author_info) == ("ducklake-sdk", MIGRATION, "{}")
 
 
-def test_record_migration_without_other_changes(lake: dl.Ducklake) -> None:
+def test_record_migration_without_other_changes_creates_no_snapshot(lake: dl.Ducklake) -> None:
+    # Arrange
+    snapshot_id = lake.get_latest_snapshot().id
+
     # Act
     with lake._transaction_for_migration(MIGRATION, 1):
         pass
 
     # Assert
     assert _applied_names(lake) == [MIGRATION]
+    assert lake.get_latest_snapshot().id == snapshot_id
+
+
+def test_commit_after_migration_without_other_changes(
+    lake: dl.Ducklake, random_table_name: str
+) -> None:
+    # Arrange
+    snapshot_id = lake.get_latest_snapshot().id
+    stale_tx = lake.transaction()
+    stale_tx.create_table(random_table_name, {"x": dl.Int64()})
+    with lake._transaction_for_migration(MIGRATION, 1):
+        pass
+
+    # Act
+    stale_tx.commit()
+
+    # Assert
+    assert lake.has_table(random_table_name)
+    assert lake.get_latest_snapshot().id == snapshot_id + 1
+
+
+def test_record_migration_without_other_changes_fails_if_already_recorded(
+    lake: dl.Ducklake,
+) -> None:
+    # Arrange
+    tx1 = lake._transaction_for_migration(MIGRATION, 1)
+    tx2 = lake._transaction_for_migration(MIGRATION, 2)
+    tx1.commit()
+
+    # Act & Assert
+    with pytest.raises(dlexc.MigrationConflictError):
+        tx2.commit()
+    assert [(name, batch) for name, batch, _ in lake._pyducklake.applied_migrations()] == [
+        (MIGRATION, 1)
+    ]
 
 
 def test_record_migration_not_recorded_if_commit_fails(

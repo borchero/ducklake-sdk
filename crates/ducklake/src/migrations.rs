@@ -4,7 +4,7 @@ use sea_query::{Iden, Order, Query};
 use sqlx::error::{DatabaseError, ErrorKind};
 
 use crate::db::sea_query_ext::{self, CreateTable};
-use crate::{Ducklake, DucklakeError, DucklakeResult};
+use crate::{Ducklake, DucklakeError, DucklakeResult, db};
 
 /// The maximum length of a migration name.
 const MAX_NAME_LENGTH: u32 = 255;
@@ -56,6 +56,25 @@ impl MigrationRecord {
             batch: self.batch,
             applied_at,
         }
+    }
+
+    /// Record this migration as applied without creating a snapshot. This is what committing a
+    /// migration which does not change the catalog boils down to.
+    pub(crate) async fn record(&self, pool: &db::Pool) -> DucklakeResult<()> {
+        let result = async {
+            let mut tx = pool.begin().await?;
+            tx.insert_entity(self.to_entity(Utc::now())).await?;
+            tx.commit().await
+        }
+        .await;
+        result.map_err(|error| match &error {
+            DucklakeError::Database(sqlx::Error::Database(db_error))
+                if is_migration_conflict(db_error.as_ref()) =>
+            {
+                DucklakeError::MigrationConflict(self.name.clone())
+            }
+            _ => error,
+        })
     }
 }
 
