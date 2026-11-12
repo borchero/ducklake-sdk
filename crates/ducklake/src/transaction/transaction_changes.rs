@@ -38,6 +38,7 @@ pub(super) struct TransactionChanges {
     pub column_tags: HashMap<(i64, i64), Vec<TagChange>>,
     pub files: FileChanges,
     pub inline_tables: HashMap<i64, crate::Schema>,
+    pub inline_write_schemas: HashMap<i64, crate::Schema>,
     pub inline_data: HashMap<i64, Vec<RecordBatch>>,
     pub written_columns: HashMap<i64, HashSet<i64>>,
 }
@@ -210,6 +211,7 @@ impl TransactionChanges {
         persist_inline_data(
             tx,
             self.inline_tables,
+            self.inline_write_schemas,
             self.inline_data,
             state.schema_version(),
         )
@@ -328,7 +330,8 @@ async fn persist_files(tx: &mut db::Transaction<'_>, files: FileChanges) -> Duck
 
 async fn persist_inline_data(
     tx: &mut db::Transaction<'_>,
-    tables: HashMap<i64, crate::Schema>,
+    mut tables: HashMap<i64, crate::Schema>,
+    write_schemas: HashMap<i64, crate::Schema>,
     data: HashMap<i64, Vec<arrow_array::RecordBatch>>,
     schema_version: i64,
 ) -> DucklakeResult<()> {
@@ -341,6 +344,37 @@ async fn persist_inline_data(
     }
 
     let mut names = HashMap::new();
+    // Resolve existing registrations before creating tables needed by inline writes.
+    let existing: Vec<_> = data.keys().map(|id| [(*id).into()]).collect();
+    let existing_tables: Vec<DucklakeInlinedDataTables> = tx
+        .fetch_rows(
+            ducklake_inlined_data_tables::Table,
+            [ducklake_inlined_data_tables::Column::TableId],
+            &existing,
+        )
+        .await?;
+    // Fetching by key does not guarantee ordering; select the latest registration per table.
+    let mut latest: HashMap<i64, DucklakeInlinedDataTables> = HashMap::new();
+    for table in existing_tables {
+        if latest
+            .get(&table.table_id)
+            .is_none_or(|previous| table.schema_version > previous.schema_version)
+        {
+            latest.insert(table.table_id, table);
+        }
+    }
+    names.extend(
+        latest
+            .into_iter()
+            .filter(|(_, table)| table.schema_version >= schema_version)
+            .map(|(id, table)| (id, table.table_name)),
+    );
+    // Tables created while inlining was disabled get their storage on the first inline write.
+    for (table_id, schema) in write_schemas {
+        if !names.contains_key(&table_id) {
+            tables.entry(table_id).or_insert(schema);
+        }
+    }
     let mut registrations = Vec::new();
     for (table_id, schema) in tables {
         let name = DucklakeInlinedData::table_name(table_id, schema_version);
@@ -366,30 +400,6 @@ async fn persist_inline_data(
     }
     tx.insert_entities(registrations).await?;
 
-    // Resolve existing inline tables together; new ones are already known in memory.
-    let existing: Vec<_> = data
-        .keys()
-        .filter(|id| !names.contains_key(id))
-        .map(|id| [(*id).into()])
-        .collect();
-    let tables: Vec<DucklakeInlinedDataTables> = tx
-        .fetch_rows(
-            ducklake_inlined_data_tables::Table,
-            [ducklake_inlined_data_tables::Column::TableId],
-            &existing,
-        )
-        .await?;
-    // Fetching by key does not guarantee ordering; select the latest registration per table.
-    let mut latest: HashMap<i64, DucklakeInlinedDataTables> = HashMap::new();
-    for table in tables {
-        if latest
-            .get(&table.table_id)
-            .is_none_or(|previous| table.schema_version > previous.schema_version)
-        {
-            latest.insert(table.table_id, table);
-        }
-    }
-    names.extend(latest.into_iter().map(|(id, table)| (id, table.table_name)));
     for (table_id, batches) in data {
         let name = names.get(&table_id).ok_or(sqlx::Error::RowNotFound)?;
         for batch in batches {
