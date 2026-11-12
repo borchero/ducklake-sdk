@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use itertools::Itertools;
 
 use super::{AppliedChange, AppliedChangeSet};
+use crate::caches::Metadata;
 use crate::catalog::{ColumnRef, MacroRef, SchemaRef, TableRef, ViewRef};
 use crate::transaction::{
     CommitDataFile,
@@ -172,6 +173,7 @@ impl ChangeSet {
         changes: &mut TransactionChanges,
         state: &mut CommitState<'_>,
         dialect: db::Dialect,
+        metadata: &Metadata,
     ) -> DucklakeResult<()> {
         // The schema may have changed after inline data was queued. Validate its final schema
         // against the catalog backend before applying any changes.
@@ -190,7 +192,13 @@ impl ChangeSet {
         }
 
         for table_ref in self.table_refs_with_schema_changes() {
-            executors::create_inlined_data_table(changes, state, &table_ref, dialect);
+            if state
+                .table_metadata(table_ref, metadata)
+                .data_inlining_row_limit
+                > 0
+            {
+                executors::create_inlined_data_table(changes, state, &table_ref, dialect);
+            }
         }
 
         // Finally, we need to check whether we wrote inline data without writing any data files.

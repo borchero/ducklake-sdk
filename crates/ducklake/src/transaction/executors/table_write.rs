@@ -148,6 +148,9 @@ pub(crate) async fn write_table_inline_data(
     // Assign row IDs while collecting; persistence can then group writes by table.
     let snapshot_id = state.snapshot_id();
     let mut all_column_ids = HashSet::new();
+    changes
+        .inline_write_schemas
+        .insert(table_id, state.table_schema(*table_ref));
     for data in inline_data {
         let table_stats = state.table_stats(table_id).await?;
         let num_rows = data.record_batch.num_rows();
