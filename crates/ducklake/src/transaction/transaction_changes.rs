@@ -38,6 +38,7 @@ pub(super) struct TransactionChanges {
     pub column_tags: HashMap<(i64, i64), Vec<TagChange>>,
     pub files: FileChanges,
     pub inline_tables: HashMap<i64, crate::Schema>,
+    pub inline_write_schemas: HashMap<i64, crate::Schema>,
     pub inline_data: HashMap<i64, Vec<RecordBatch>>,
     pub written_columns: HashMap<i64, HashSet<i64>>,
 }
@@ -210,6 +211,7 @@ impl TransactionChanges {
         persist_inline_data(
             tx,
             self.inline_tables,
+            self.inline_write_schemas,
             self.inline_data,
             state.schema_version(),
         )
@@ -328,7 +330,8 @@ async fn persist_files(tx: &mut db::Transaction<'_>, files: FileChanges) -> Duck
 
 async fn persist_inline_data(
     tx: &mut db::Transaction<'_>,
-    tables: HashMap<i64, crate::Schema>,
+    mut tables: HashMap<i64, crate::Schema>,
+    write_schemas: HashMap<i64, crate::Schema>,
     data: HashMap<i64, Vec<arrow_array::RecordBatch>>,
     schema_version: i64,
 ) -> DucklakeResult<()> {
@@ -341,6 +344,37 @@ async fn persist_inline_data(
     }
 
     let mut names = HashMap::new();
+    // Resolve existing registrations before creating tables needed by inline writes.
+    let existing: Vec<_> = data.keys().map(|id| [(*id).into()]).collect();
+    let existing_tables: Vec<DucklakeInlinedDataTables> = tx
+        .fetch_rows(
+            ducklake_inlined_data_tables::Table,
+            [ducklake_inlined_data_tables::Column::TableId],
+            &existing,
+        )
+        .await?;
+    // Fetching by key does not guarantee ordering; select the latest registration per table.
+    let mut latest: HashMap<i64, DucklakeInlinedDataTables> = HashMap::new();
+    for table in existing_tables {
+        if latest
+            .get(&table.table_id)
+            .is_none_or(|previous| table.schema_version > previous.schema_version)
+        {
+            latest.insert(table.table_id, table);
+        }
+    }
+    names.extend(
+        latest
+            .into_iter()
+            .filter(|(_, table)| table.schema_version >= schema_version)
+            .map(|(id, table)| (id, table.table_name)),
+    );
+    // Tables created while inlining was disabled get their storage on the first inline write.
+    for (table_id, schema) in write_schemas {
+        if !names.contains_key(&table_id) {
+            tables.entry(table_id).or_insert(schema);
+        }
+    }
     let mut registrations = Vec::new();
     for (table_id, schema) in tables {
         let name = DucklakeInlinedData::table_name(table_id, schema_version);
@@ -366,30 +400,6 @@ async fn persist_inline_data(
     }
     tx.insert_entities(registrations).await?;
 
-    // Resolve existing inline tables together; new ones are already known in memory.
-    let existing: Vec<_> = data
-        .keys()
-        .filter(|id| !names.contains_key(id))
-        .map(|id| [(*id).into()])
-        .collect();
-    let tables: Vec<DucklakeInlinedDataTables> = tx
-        .fetch_rows(
-            ducklake_inlined_data_tables::Table,
-            [ducklake_inlined_data_tables::Column::TableId],
-            &existing,
-        )
-        .await?;
-    // Fetching by key does not guarantee ordering; select the latest registration per table.
-    let mut latest: HashMap<i64, DucklakeInlinedDataTables> = HashMap::new();
-    for table in tables {
-        if latest
-            .get(&table.table_id)
-            .is_none_or(|previous| table.schema_version > previous.schema_version)
-        {
-            latest.insert(table.table_id, table);
-        }
-    }
-    names.extend(latest.into_iter().map(|(id, table)| (id, table.table_name)));
     for (table_id, batches) in data {
         let name = names.get(&table_id).ok_or(sqlx::Error::RowNotFound)?;
         for batch in batches {
@@ -489,4 +499,234 @@ async fn persist_statistics(
     )
     .await?;
     Ok(())
+}
+
+#[cfg(all(test, feature = "sqlite"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow_array::{ArrayRef, Int64Array, RecordBatch};
+    use rstest::{fixture, rstest};
+    use sea_query::{Asterisk, Query};
+
+    use crate::spec::{DucklakeInlinedDataTables, ducklake_inlined_data_tables};
+    use crate::{Column, CreateOptions, DataType, Ducklake, IfExistsStrategy};
+
+    #[fixture]
+    async fn lake() -> Ducklake {
+        Ducklake::create(CreateOptions::new(
+            "sqlite://:memory:",
+            "file:///tmp/inline-storage-tests/",
+        ))
+        .await
+        .unwrap()
+    }
+
+    async fn create_table(lake: &Ducklake) -> crate::Table {
+        lake.create_table(
+            "example",
+            vec![Column::new("x".into(), DataType::Int64)],
+            None,
+            None,
+            None,
+            None,
+            IfExistsStrategy::Fail,
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn registrations(lake: &Ducklake) -> Vec<DucklakeInlinedDataTables> {
+        lake.conn
+            .pool()
+            .fetch_all(
+                &Query::select()
+                    .column(Asterisk)
+                    .from(ducklake_inlined_data_tables::Table)
+                    .to_owned(),
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn assert_storage_count(lake: &Ducklake, expected: usize) {
+        let registrations = registrations(lake).await;
+        assert_eq!(registrations.len(), expected);
+        let physical = lake.conn.pool().list_tables().await.unwrap();
+        assert_eq!(
+            physical
+                .iter()
+                .filter(|name| name.starts_with("ducklake_inlined_data_")
+                    && *name != "ducklake_inlined_data_tables")
+                .count(),
+            expected,
+        );
+        for registration in registrations {
+            assert!(physical.contains(&registration.table_name));
+        }
+    }
+
+    fn batch(columns: &[(&str, Vec<i64>)]) -> RecordBatch {
+        RecordBatch::try_from_iter(columns.iter().map(|(name, values)| {
+            (
+                *name,
+                Arc::new(Int64Array::from(values.clone())) as ArrayRef,
+            )
+        }))
+        .unwrap()
+    }
+
+    #[rstest]
+    #[case("global", "0")]
+    #[case("global", "10")]
+    #[case("schema", "0")]
+    #[case("schema", "10")]
+    #[case("table", "0")]
+    #[case("table", "10")]
+    #[tokio::test]
+    async fn test_eager_storage_respects_effective_limit(
+        #[future(awt)] lake: Ducklake,
+        #[case] scope: &str,
+        #[case] limit: &str,
+    ) {
+        // Arrange
+        let inherited = if limit == "0" { "10" } else { "0" };
+        lake.set_metadata("data_inlining_row_limit", inherited, None)
+            .await
+            .unwrap();
+        if scope != "table" {
+            lake.set_metadata(
+                "data_inlining_row_limit",
+                limit,
+                (scope == "schema").then_some("main"),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Act
+        let table = create_table(&lake).await;
+        let initial = usize::from(if scope == "table" { inherited } else { limit } != "0");
+        assert_storage_count(&lake, initial).await;
+        if scope == "table" {
+            table
+                .set_metadata("data_inlining_row_limit", limit)
+                .await
+                .unwrap();
+        }
+        table
+            .add_column(Column::new("y".into(), DataType::Int64))
+            .await
+            .unwrap();
+
+        // Assert
+        assert_storage_count(&lake, initial + usize::from(limit != "0")).await;
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_first_inline_write_creates_storage_and_later_writes_reuse_it(
+        #[future(awt)] lake: Ducklake,
+        #[case] reenable: bool,
+    ) {
+        // Arrange
+        lake.set_metadata("data_inlining_row_limit", "0", None)
+            .await
+            .unwrap();
+        let table = create_table(&lake).await;
+        assert_storage_count(&lake, 0).await;
+        if reenable {
+            lake.set_metadata("data_inlining_row_limit", "10", None)
+                .await
+                .unwrap();
+        }
+        let data = batch(&[("x", vec![1, 2])]);
+
+        // Act
+        table.write_inline_data(vec![data.clone()]).await.unwrap();
+        let first_name = registrations(&lake).await.remove(0).table_name;
+        table.write_inline_data(vec![data]).await.unwrap();
+        lake.set_metadata("data_inlining_row_limit", "0", None)
+            .await
+            .unwrap();
+
+        // Assert
+        assert_storage_count(&lake, 1).await;
+        assert_eq!(registrations(&lake).await[0].table_name, first_name);
+        let scan = table.scan().await.unwrap();
+        let values: Vec<_> = scan
+            .inline_data
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .values()
+                    .to_vec()
+            })
+            .collect();
+        assert_eq!(values, vec![1, 2, 1, 2]);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_inline_write_after_disabled_schema_change_preserves_history(
+        #[future(awt)] lake: Ducklake,
+    ) {
+        // Arrange
+        let table = create_table(&lake).await;
+        table
+            .write_inline_data(vec![batch(&[("x", vec![1])])])
+            .await
+            .unwrap();
+        let original_name = registrations(&lake).await.remove(0).table_name;
+        lake.set_metadata("data_inlining_row_limit", "0", None)
+            .await
+            .unwrap();
+        table
+            .add_column(Column::new("y".into(), DataType::Int64))
+            .await
+            .unwrap();
+        assert_storage_count(&lake, 1).await;
+        lake.set_metadata("data_inlining_row_limit", "10", None)
+            .await
+            .unwrap();
+
+        // Act
+        table
+            .write_inline_data(vec![batch(&[("x", vec![2]), ("y", vec![3])])])
+            .await
+            .unwrap();
+
+        // Assert
+        assert_storage_count(&lake, 2).await;
+        assert!(
+            registrations(&lake)
+                .await
+                .iter()
+                .any(|entry| entry.table_name == original_name)
+        );
+        let scan = table.scan().await.unwrap();
+        let mut rows = Vec::new();
+        for batch in scan.inline_data {
+            let x = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let y = batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            rows.extend(x.iter().zip(y.iter()));
+        }
+        rows.sort();
+        assert_eq!(rows, vec![(Some(1), None), (Some(2), Some(3))]);
+    }
 }

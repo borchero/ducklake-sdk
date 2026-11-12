@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::caches::{SnapshotInfo, TableStats};
+use crate::caches::{Metadata, SnapshotInfo, TableMetadata, TableStats};
 use crate::catalog::{Catalog, ColumnRef, MacroRef, SchemaRef, TableRef, ViewRef};
 use crate::spec::DucklakeSnapshot;
 use crate::{DucklakeResult, db};
@@ -154,6 +154,15 @@ impl<'a> CommitState<'a> {
         let file_id = self.next_file_id;
         self.next_file_id += 1;
         file_id
+    }
+
+    pub(crate) fn table_metadata(
+        &self,
+        table_ref: TableRef,
+        metadata: &Metadata,
+    ) -> TableMetadata {
+        let table = self.catalog.table(table_ref).into_ok();
+        metadata.table_metadata(table.parent_schema().id(), table.id())
     }
 
     pub(crate) fn table_schema(&self, table_ref: TableRef) -> crate::Schema {

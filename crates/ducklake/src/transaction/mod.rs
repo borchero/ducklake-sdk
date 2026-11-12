@@ -242,8 +242,14 @@ impl<'a> Transaction<'a> {
             );
 
             // Apply the changes from the transaction
-            let apply_result =
-                Self::apply_changes(&self.pool, &mut state, &change_set, &self.author_info).await;
+            let apply_result = Self::apply_changes(
+                &self.pool,
+                &mut state,
+                &change_set,
+                &self.author_info,
+                &self.metadata,
+            )
+            .await;
 
             // Handle any errors
             match apply_result {
@@ -303,12 +309,13 @@ impl<'a> Transaction<'a> {
         state: &mut CommitState<'_>,
         change_set: &ChangeSet,
         author_info: &AuthorInfo,
+        metadata: &Metadata,
     ) -> DucklakeResult<SnapshotInfo> {
         let mut changes = TransactionChanges::default();
 
         // First, we apply all the changes from the changeset
         change_set
-            .apply(&mut changes, state, pool.dialect())
+            .apply(&mut changes, state, pool.dialect(), metadata)
             .await?;
         let applied_changes = change_set.applied_change_set(state);
 
