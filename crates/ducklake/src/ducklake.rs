@@ -536,7 +536,7 @@ impl DucklakeConnection {
 impl Ducklake {
     /// Start a new transaction to make changes to the catalog.
     pub async fn transaction(&self) -> DucklakeResult<Transaction<'_>> {
-        self.conn.transaction(None, None).await
+        self.conn.transaction().await
     }
 
     /// Start a new transaction with the provided author information. The author information is
@@ -545,23 +545,19 @@ impl Ducklake {
         &self,
         author_info: AuthorInfo,
     ) -> DucklakeResult<Transaction<'_>> {
-        self.conn.transaction(Some(author_info), None).await
+        self.conn
+            .transaction_with_options(Some(author_info), None)
+            .await
     }
 
     /// Start a new transaction which records the migration with the provided name as applied in
     /// the batch with the provided number. The migration is recorded in the same database
-    /// transaction as the commit, i.e. it is recorded if and only if the commit succeeds. If the
-    /// transaction does not contain any changes, no snapshot is created and the migration is
-    /// merely recorded.
-    ///
-    /// The table which records applied migrations must exist when committing (see
-    /// [`Ducklake::ensure_migrations_table`]). If another transaction recorded a migration with
-    /// the same name in the meantime, committing fails with
-    /// [`DucklakeError::MigrationConflict`](crate::DucklakeError::MigrationConflict).
+    /// transaction as the commit, i.e. it is recorded if and only if the commit succeeds.
     ///
     /// # Errors
     ///
     /// Returns an error if the name is not a valid migration name.
+    #[cfg(feature = "python")]
     pub async fn transaction_for_migration(
         &self,
         author_info: AuthorInfo,
@@ -570,15 +566,21 @@ impl Ducklake {
     ) -> DucklakeResult<Transaction<'_>> {
         let migration = MigrationRecord::new(migration, batch)?;
         self.conn
-            .transaction(Some(author_info), Some(migration))
+            .transaction_with_options(Some(author_info), Some(migration))
             .await
     }
 }
 
 impl DucklakeConnection {
+    /// Start a new transaction to make changes to the catalog.
+    pub(crate) async fn transaction(&self) -> DucklakeResult<Transaction<'_>> {
+        self.transaction_with_options(None, None).await
+    }
+
     /// Start a new transaction to make changes to the catalog. If `author_info` is provided, it
-    /// is attached to the snapshot created when the transaction is committed.
-    pub(crate) async fn transaction(
+    /// is attached to the snapshot created when the transaction is committed. If `migration` is
+    /// provided, it is recorded as applied when the transaction is committed.
+    pub(crate) async fn transaction_with_options(
         &self,
         author_info: Option<AuthorInfo>,
         migration: Option<MigrationRecord>,

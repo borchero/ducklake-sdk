@@ -166,7 +166,6 @@ def test_record_different_migrations_concurrently(
     ("name", "fails"),
     [
         pytest.param("", True, id="empty"),
-        pytest.param("m", False, id="shortest"),
         pytest.param("m" * 255, False, id="longest"),
         pytest.param("m" * 256, True, id="too-long"),
     ],

@@ -22,7 +22,7 @@ use typedefs::*;
 
 use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};
-use crate::migrations::{self, MigrationRecord};
+use crate::migrations::MigrationRecord;
 use crate::primitives::Borrowed;
 use crate::spec::*;
 use crate::{DucklakeError, DucklakeResult, QualifiedName, db};
@@ -226,10 +226,12 @@ impl<'a> Transaction<'a> {
         // If the change set is empty, there is no need for a new snapshot. The only thing left to
         // do is to record the migration, if any.
         if change_set.is_empty() {
-            return match &self.migration {
-                Some(migration) => migration.record(&self.pool).await,
-                None => Ok(()),
-            };
+            if let Some(migration) = &self.migration {
+                let mut tx = self.pool.begin().await?;
+                migration.insert(&mut tx, chrono::Utc::now()).await?;
+                tx.commit().await?;
+            }
+            return Ok(());
         }
 
         // To remedy conflicts caused by high-concurrency writes, we retry committing the
@@ -281,14 +283,6 @@ impl<'a> Transaction<'a> {
                         || self.pool.dialect().is_table_already_exists_error(err)
                             && i < max_retry_count =>
                 {
-                    // If the violation concerns the migration to record, it has been applied in
-                    // the meantime and retrying is pointless as it would violate the same key.
-                    if let Some(migration) = &self.migration
-                        && migrations::is_migration_conflict(db_err.as_ref())
-                    {
-                        return Err(DucklakeError::MigrationConflict(migration.name.clone()));
-                    }
-
                     // We already assign the latest snapshot for the next iteration as, otherwise,
                     // we'd possibly query a newer snapshot in the new iteration and miss changes.
                     latest_snapshot = self.snapshot_cache.get_latest().await?;
@@ -366,7 +360,8 @@ impl<'a> Transaction<'a> {
         )
         .await?;
         if let Some(migration) = migration {
-            tx.insert_entity(migration.to_entity(snapshot_info.snapshot_time))
+            migration
+                .insert(&mut tx, snapshot_info.snapshot_time)
                 .await?;
         }
         tx.commit().await?;

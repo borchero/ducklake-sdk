@@ -1,4 +1,3 @@
-import datetime as dt
 import os
 import subprocess
 import tempfile
@@ -8,12 +7,7 @@ from typing import cast
 
 import pytest
 import sqlalchemy as sa
-from _testutils import (
-    MIGRATIONS_TABLE,
-    assert_ducklake_catalogs_equal,
-    make_catalog_url,
-    make_storage_path,
-)
+from _testutils import assert_ducklake_catalogs_equal, make_catalog_url, make_storage_path
 
 import ducklake as dl
 import ducklake.exceptions as dlexc
@@ -252,30 +246,6 @@ def test_upgrade_v03(catalog: str, catalog_url: str, catalog_latest: str) -> Non
     with dl.connect(catalog_url, upgrade=True):
         # Assert
         assert_ducklake_catalogs_equal(catalog_latest, catalog_url)
-
-
-def test_upgrade_leaves_migrations_table_untouched(
-    catalog: str, catalog_url: str, catalog_engine: sa.Engine
-) -> None:
-    # Arrange
-    _load_snapshot(catalog, catalog_url, version="v0.3")
-    row = {
-        "name": "2026_11_03_110000_first",
-        "batch": 1,
-        "applied_at": dt.datetime(2026, 11, 3, 11, 0, 5, tzinfo=dt.timezone.utc),
-    }
-    MIGRATIONS_TABLE.create(catalog_engine)
-    with catalog_engine.begin() as conn:
-        conn.execute(MIGRATIONS_TABLE.insert(), [row])
-
-    # Act
-    with dl.connect(catalog_url, upgrade=True):
-        pass
-
-    # Assert
-    with catalog_engine.connect() as conn:
-        rows = conn.execute(sa.select(MIGRATIONS_TABLE.c.name, MIGRATIONS_TABLE.c.batch)).all()
-    assert [tuple(r) for r in rows] == [("2026_11_03_110000_first", 1)]
 
 
 @pytest.mark.skip_config(

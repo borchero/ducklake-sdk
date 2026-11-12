@@ -225,7 +225,7 @@ impl Ducklake {
 
         // Create every table and write its data within a single target transaction. File copies
         // (for `copy`) happen mid-transaction.
-        let mut tx = target.conn.transaction(None, None).await?;
+        let mut tx = target.conn.transaction().await?;
         for ((transfer, info), name) in tables.iter().zip(transfer_info).zip(&target_names) {
             let source = transfer.table;
             let TableTransferInfo {
@@ -296,7 +296,7 @@ impl Ducklake {
             if source_conn.snapshot(SnapshotAccess::Write).await?.info().id != snapshot_id {
                 return Err(DucklakeError::TableChangedDuringTransfer);
             }
-            let mut tx = source_conn.transaction(None, None).await?;
+            let mut tx = source_conn.transaction().await?;
             for name in &source_names {
                 tx.delete_table_transferring_file_ownership(name)?;
             }

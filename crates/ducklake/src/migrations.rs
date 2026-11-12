@@ -1,12 +1,19 @@
 use chrono::{DateTime, Utc};
 use ducklake_macros::ducklake_table;
-use sea_query::{Iden, Order, Query};
-use sqlx::error::{DatabaseError, ErrorKind};
+use sea_query::Iden;
+#[cfg(feature = "python")]
+use sea_query::{Order, Query};
+use sqlx::error::ErrorKind;
 
-use crate::db::sea_query_ext::{self, CreateTable};
-use crate::{Ducklake, DucklakeError, DucklakeResult, db};
+#[cfg(feature = "python")]
+use crate::Ducklake;
+use crate::db::sea_query_ext;
+#[cfg(feature = "python")]
+use crate::db::sea_query_ext::CreateTable;
+use crate::{DucklakeError, DucklakeResult, db};
 
 /// The maximum length of a migration name.
+#[cfg(feature = "python")]
 const MAX_NAME_LENGTH: u32 = 255;
 
 /// A migration which has been recorded as applied.
@@ -36,6 +43,7 @@ pub(crate) struct MigrationRecord {
 }
 
 impl MigrationRecord {
+    #[cfg(feature = "python")]
     pub(crate) fn new(name: &str, batch: i64) -> DucklakeResult<Self> {
         let length = name.chars().count();
         if length == 0 || length > MAX_NAME_LENGTH as usize {
@@ -49,58 +57,46 @@ impl MigrationRecord {
         })
     }
 
-    /// The entity to insert to record this migration as applied at the provided time.
-    pub(crate) fn to_entity(&self, applied_at: DateTime<Utc>) -> AppliedMigration {
-        AppliedMigration {
+    /// Insert this migration as applied at the provided time into the table of applied migrations
+    /// as part of the provided database transaction.
+    ///
+    /// Fails with [`DucklakeError::MigrationConflict`] if the migration has already been recorded,
+    /// e.g. by a concurrent run.
+    pub(crate) async fn insert(
+        &self,
+        tx: &mut db::Transaction<'_>,
+        applied_at: DateTime<Utc>,
+    ) -> DucklakeResult<()> {
+        let entity = AppliedMigration {
             name: self.name.clone(),
             batch: self.batch,
             applied_at,
-        }
-    }
-
-    /// Record this migration as applied without creating a snapshot. This is what committing a
-    /// migration which does not change the catalog boils down to.
-    pub(crate) async fn record(&self, pool: &db::Pool) -> DucklakeResult<()> {
-        let result = async {
-            let mut tx = pool.begin().await?;
-            tx.insert_entity(self.to_entity(Utc::now())).await?;
-            tx.commit().await
-        }
-        .await;
-        result.map_err(|error| match &error {
-            DucklakeError::Database(sqlx::Error::Database(db_error))
-                if is_migration_conflict(db_error.as_ref()) =>
-            {
-                DucklakeError::MigrationConflict(self.name.clone())
-            }
-            _ => error,
-        })
+        };
+        tx.insert_entity(entity)
+            .await
+            .map_err(|error| match &error {
+                // NOTE: The message of all supported databases contains the name of the table (or of
+                //  the constraint, which includes the table name).
+                DucklakeError::Database(sqlx::Error::Database(db_error))
+                    if db_error.kind() == ErrorKind::UniqueViolation
+                        && db_error
+                            .message()
+                            .contains(&applied_migration::Table.to_string()) =>
+                {
+                    DucklakeError::MigrationConflict(self.name.clone())
+                }
+                _ => error,
+            })
     }
 }
 
-/// Whether the error stems from violating the primary key of the table of applied migrations,
-/// i.e. from recording a migration which has already been recorded.
-pub(crate) fn is_migration_conflict(error: &dyn DatabaseError) -> bool {
-    // NOTE: The message of all supported databases contains the name of the table (or of the
-    //  constraint, which includes the table name).
-    error.kind() == ErrorKind::UniqueViolation
-        && error
-            .message()
-            .contains(&applied_migration::Table.to_string())
-}
-
+#[cfg(feature = "python")]
 impl Ducklake {
     /// Create the table which records applied migrations in the catalog database, unless it
     /// already exists.
     ///
     /// This is idempotent and safe to call concurrently.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the connection is read-only.
     pub async fn ensure_migrations_table(&self) -> DucklakeResult<()> {
-        self.conn.check_writable()?;
-
         let pool = self.conn.pool();
         let mut tx = pool.begin().await?;
         tx.execute(
