@@ -503,7 +503,7 @@ async fn persist_statistics(
 
 #[cfg(all(test, feature = "sqlite"))]
 #[cfg_attr(coverage_nightly, coverage(off))]
-mod inline_storage_tests {
+mod tests {
     use std::sync::Arc;
 
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
@@ -585,7 +585,7 @@ mod inline_storage_tests {
     #[case("table", "0")]
     #[case("table", "10")]
     #[tokio::test]
-    async fn eager_storage_respects_effective_limit(
+    async fn test_eager_storage_respects_effective_limit(
         #[future(awt)] lake: Ducklake,
         #[case] scope: &str,
         #[case] limit: &str,
@@ -628,7 +628,7 @@ mod inline_storage_tests {
     #[case(false)]
     #[case(true)]
     #[tokio::test]
-    async fn first_inline_write_creates_storage_and_later_writes_reuse_it(
+    async fn test_first_inline_write_creates_storage_and_later_writes_reuse_it(
         #[future(awt)] lake: Ducklake,
         #[case] reenable: bool,
     ) {
@@ -675,7 +675,7 @@ mod inline_storage_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn inline_write_after_disabled_schema_change_preserves_history(
+    async fn test_inline_write_after_disabled_schema_change_preserves_history(
         #[future(awt)] lake: Ducklake,
     ) {
         // Arrange
