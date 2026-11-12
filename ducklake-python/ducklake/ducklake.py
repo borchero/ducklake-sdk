@@ -187,6 +187,21 @@ class Ducklake:
         pytransaction = self._pyducklake.transaction(author, message, extra_info)
         return Transaction._from_pytransaction(pytransaction, self._storage_options)
 
+    def _transaction_for_migration(
+        self,
+        migration: str,
+        batch: int,
+        *,
+        author: str | None = None,
+        message: str | None = None,
+        extra_info: str | None = None,
+    ) -> Transaction:
+        """Start a new transaction that records the provided migration as applied on commit."""
+        pytransaction = self._pyducklake.transaction_for_migration(
+            author, message, extra_info, migration, batch
+        )
+        return Transaction._from_pytransaction(pytransaction, self._storage_options)
+
     # ----------------------------------------- SCHEMAS ----------------------------------------- #
 
     def create_schema(
