@@ -230,7 +230,15 @@ impl<'a> Transaction<'a> {
         let mut latest_snapshot = self.snapshot.clone();
         for i in 0..(max_retry_count + 1) {
             let table_stats = if change_set.requires_table_stats() {
-                Some(latest_snapshot.table_stats().await?.clone())
+                Some(
+                    crate::caches::TableStats::load_for_tables(
+                        &self.pool,
+                        latest_snapshot.catalog().await?,
+                        latest_snapshot.info().id,
+                        &change_set.table_ids_with_data_writes(&self.catalog),
+                    )
+                    .await?,
+                )
             } else {
                 None
             };
@@ -444,6 +452,200 @@ impl<'a> Transaction<'a> {
             changes_snapshot: self.changes.clone(),
             is_committed: false,
             tx: self,
+        }
+    }
+}
+
+#[cfg(all(test, feature = "sqlite"))]
+mod scoped_stats_tests {
+    use std::sync::Arc;
+
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use sea_query::{Expr, ExprTrait, Query};
+
+    use crate::spec::ducklake_table_column_stats;
+    use crate::{Column, CreateOptions, Ducklake, IfExistsStrategy};
+
+    #[rstest::rstest]
+    #[case(false, 1, true)]
+    #[case(true, 1, true)]
+    #[case(true, 2, true)]
+    #[case(false, 1, false)]
+    #[case(true, 1, false)]
+    #[case(true, 2, false)]
+    #[tokio::test]
+    async fn test_write_does_not_load_unrelated_column_statistics(
+        #[case] existing: bool,
+        #[case] table_count: usize,
+        #[case] inline: bool,
+    ) {
+        assert_scoped_write("sqlite://:memory:", existing, table_count, inline).await;
+    }
+
+    #[cfg(feature = "postgres")]
+    #[tokio::test]
+    #[ignore = "requires an empty database at DUCKLAKE_TEST_POSTGRES_URI"]
+    async fn test_postgres_write_does_not_load_unrelated_column_statistics() {
+        let url = std::env::var("DUCKLAKE_TEST_POSTGRES_URI").unwrap();
+        assert_scoped_write(&url, true, 2, false).await;
+    }
+
+    async fn write_data(
+        mut table: super::TransactionTable<'_, '_>,
+        batch: &RecordBatch,
+        inline: bool,
+    ) {
+        if inline {
+            table.write_inline_data(vec![batch.clone()]).unwrap();
+        } else {
+            table
+                .write_data_files(vec![crate::WriteDataFile {
+                    path: format!("{}.parquet", uuid::Uuid::new_v4()),
+                    statistics: Some(crate::DataFileStatistics {
+                        num_rows: 2,
+                        file_size_bytes: Some(100),
+                        footer_size_bytes: Some(20),
+                        column_stats: [(
+                            1,
+                            crate::FileColumnStats {
+                                size_bytes: Some(80),
+                                min_value: Some(crate::Value::Int32(1)),
+                                max_value: Some(crate::Value::Int32(2)),
+                                null_count: Some(0),
+                                contains_nan: Some(false),
+                            },
+                        )]
+                        .into(),
+                    }),
+                    partition_values: None,
+                    encryption_key: None,
+                }])
+                .await
+                .unwrap();
+        }
+    }
+
+    async fn assert_scoped_write(url: &str, existing: bool, table_count: usize, inline: bool) {
+        // Arrange
+        let lake = Ducklake::create(CreateOptions::new(url, "file:///tmp/scoped-stats/"))
+            .await
+            .unwrap();
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "value",
+                DataType::Int32,
+                false,
+            )])),
+            vec![Arc::new(Int32Array::from(vec![1, 2]))],
+        )
+        .unwrap();
+        let mut tx = lake.transaction().await.unwrap();
+        tx.create_table(
+            "unrelated",
+            vec![Column::try_from(batch.schema().field(0)).unwrap()],
+            None,
+            None,
+            None,
+            None,
+            IfExistsStrategy::Fail,
+        )
+        .unwrap()
+        .write_inline_data(vec![batch.clone()])
+        .unwrap();
+        tx.commit().await.unwrap();
+        // An invalid integer makes decoding unrelated statistics observable.
+        let mut db_tx = lake.conn.pool().begin().await.unwrap();
+        db_tx
+            .execute(
+                &Query::update()
+                    .table(ducklake_table_column_stats::Table)
+                    .value(
+                        ducklake_table_column_stats::Column::MinValue,
+                        Expr::value("unrelated-statistic"),
+                    )
+                    .to_owned(),
+            )
+            .await
+            .unwrap();
+
+        db_tx.commit().await.unwrap();
+
+        let targets: Vec<String> = (0..table_count).map(|i| format!("target_{i}")).collect();
+        if existing {
+            let mut tx = lake.transaction().await.unwrap();
+            for name in &targets {
+                let table = tx
+                    .create_table(
+                        name.as_str(),
+                        vec![Column::try_from(batch.schema().field(0)).unwrap()],
+                        None,
+                        None,
+                        None,
+                        None,
+                        IfExistsStrategy::Fail,
+                    )
+                    .unwrap();
+                write_data(table, &batch, inline).await;
+            }
+            tx.commit().await.unwrap();
+        }
+        // Start before another commit to exercise snapshot conflict retries as well.
+        let mut tx = lake.transaction().await.unwrap();
+        let mut concurrent = lake.transaction().await.unwrap();
+        concurrent
+            .create_schema("other", None, IfExistsStrategy::Fail)
+            .unwrap();
+        concurrent.commit().await.unwrap();
+
+        // Act
+        for name in &targets {
+            if existing {
+                write_data(tx.table(name.as_str()).unwrap(), &batch, inline).await;
+            } else {
+                let table = tx
+                    .create_table(
+                        name.as_str(),
+                        vec![Column::try_from(batch.schema().field(0)).unwrap()],
+                        None,
+                        None,
+                        None,
+                        None,
+                        IfExistsStrategy::Fail,
+                    )
+                    .unwrap();
+                write_data(table, &batch, inline).await;
+            }
+        }
+        let result = tx.commit().await;
+
+        // Assert
+        assert!(
+            result.is_ok(),
+            "write loaded unrelated statistics: {result:?}"
+        );
+        let query = Query::select()
+            .column(crate::spec::ducklake_table::Column::TableId)
+            .from(crate::spec::ducklake_table::Table)
+            .and_where(Expr::col(crate::spec::ducklake_table::Column::TableName).is_in(targets))
+            .to_owned();
+        let ids: Vec<(i64,)> = lake.conn.pool().fetch_all(&query).await.unwrap();
+        let snapshot = lake.conn.current_snapshot();
+        let stats = crate::caches::TableStats::load_for_tables(
+            lake.conn.pool(),
+            snapshot.catalog().await.unwrap(),
+            snapshot.info().id,
+            &ids.iter().map(|(id,)| *id).collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(stats.len(), table_count);
+        for stats in stats.values() {
+            assert_eq!(stats.record_count(), Some(if existing { 4 } else { 2 }));
+            assert_eq!(stats.next_row_id(), if existing { 4 } else { 2 });
+            let column = stats.column_stats(1).unwrap();
+            assert_eq!(column.min_value(), Some(&crate::Value::Int32(1)));
+            assert_eq!(column.max_value(), Some(&crate::Value::Int32(2)));
         }
     }
 }
