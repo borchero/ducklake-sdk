@@ -544,6 +544,7 @@ impl Change {
                 column,
             } => {
                 executors::add_table_column(changes, state, parent_column_ref, column_refs, column)
+                    .await
             }
             UpdateTableColumn {
                 parent_column_ref,
@@ -655,7 +656,9 @@ impl Change {
     fn requires_table_stats(&self) -> bool {
         use Change::*;
         match self {
-            WriteTableDataFiles { .. } | WriteTableInlineData { .. } => true,
+            WriteTableDataFiles { .. } | WriteTableInlineData { .. } | AddTableColumn { .. } => {
+                true
+            }
             CreateSchema { .. }
             | DeleteSchema { .. }
             | CreateTable { .. }
@@ -669,7 +672,6 @@ impl Change {
             | DeleteView { .. }
             | CreateMacro { .. }
             | DeleteMacro { .. }
-            | AddTableColumn { .. }
             | UpdateTableColumn { .. }
             | RemoveTableColumn { .. }
             | AddTableColumnTag { .. }
