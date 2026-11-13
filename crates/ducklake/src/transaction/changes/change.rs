@@ -270,6 +270,20 @@ impl ChangeSet {
             .collect()
     }
 
+    /// Existing table IDs whose statistics are needed by data writes. New tables start empty.
+    pub(crate) fn table_ids_with_data_writes(
+        &self,
+        catalog: &crate::catalog::Catalog,
+    ) -> Vec<i64> {
+        self.changes
+            .iter()
+            .filter(|change| change.requires_table_stats())
+            .filter_map(|change| change.affected_table_ref())
+            .unique()
+            .filter_map(|table_ref| catalog.table(table_ref).into_ok().id())
+            .collect()
+    }
+
     /// Whether any of the changes in this change set requires to read or write table stats.
     pub(crate) fn requires_table_stats(&self) -> bool {
         self.changes.iter().any(|c| c.requires_table_stats())
