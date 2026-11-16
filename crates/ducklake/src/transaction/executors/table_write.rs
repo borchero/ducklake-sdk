@@ -151,9 +151,6 @@ pub(crate) async fn write_table_inline_data(
     // Assign row IDs while collecting; persistence can then group writes by table.
     let snapshot_id = state.snapshot_id();
     let mut all_column_ids = HashSet::new();
-    changes
-        .inline_write_schemas
-        .insert(table_id, state.table_schema(*table_ref));
     for data in inline_data {
         // Queued batches may predate schema changes made later in this transaction.
         let (batch, column_stats) = if data.record_batch.schema().as_ref() == &arrow_schema {
@@ -215,6 +212,8 @@ pub(crate) async fn write_table_inline_data(
         // Make sure we collect column IDs with stats for update later
         all_column_ids.extend(column_stats.keys().copied());
     }
+
+    changes.inline_tables.insert(table_id, schema);
 
     // Record which table and column statistics need to be persisted.
     changes
