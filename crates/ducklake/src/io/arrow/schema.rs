@@ -146,11 +146,16 @@ fn match_column(
         (ArrowType::List(inner) | ArrowType::LargeList(inner), DataType::List(column)) => {
             let array = arrow_cast::cast(array, &ArrowType::LargeList(inner.clone()))?;
             let source = array.as_list::<i64>();
-            let values = match_child(inner, source.values(), column, defaults)?;
+            let offsets = source.value_offsets();
+            let start = offsets[0];
+            let values = source
+                .values()
+                .slice(start as usize, (offsets[source.len()] - start) as usize);
+            let values = match_child(inner, &values, column, defaults)?;
             check_nullability(column, &values, None)?;
             Ok(Arc::new(LargeListArray::try_new(
                 Arc::new(column.to_arrow_field()),
-                source.offsets().clone(),
+                source.offsets().clone().subtract(start),
                 values,
                 source.nulls().cloned(),
             )?))
@@ -278,6 +283,34 @@ mod tests {
         // Assert
         assert_eq!(result.schema().field(0).name(), "new");
         assert_eq!(result.column(0).as_primitive::<Int64Type>().value(0), 7);
+    }
+
+    #[test]
+    fn match_validates_only_touches_visible_list_values() {
+        // Arrange
+        let values = LargeListArray::from_iter_primitive::<Int64Type, _, _>([
+            Some(vec![None]),
+            Some(vec![Some(1)]),
+            Some(vec![None]),
+        ]);
+        let batch = RecordBatch::try_from_iter([("x", Arc::new(values) as ArrayRef)])
+            .unwrap()
+            .slice(1, 1);
+        let schema = Schema::try_from(vec![Column::new(
+            "x".into(),
+            DataType::List(Box::new(
+                Column::new("item".into(), DataType::Int64).nullable(false),
+            )),
+        )])
+        .unwrap();
+
+        // Act
+        let result = match_to_schema(&batch, &schema, Defaults::DefaultValue).unwrap();
+
+        // Assert
+        let list = result.column(0).as_list::<i64>();
+        assert_eq!(list.value_offsets(), &[0, 1]);
+        assert_eq!(list.values().as_primitive::<Int64Type>().values(), &[1]);
     }
 
     #[test]

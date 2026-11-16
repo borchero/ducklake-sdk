@@ -479,6 +479,7 @@ impl CatalogColumns {
             CatalogDataType::Struct(fields) => {
                 let field_columns = fields
                     .values()
+                    .filter(|idx| self.by_id.contains_key(&self.arena[idx.0].id))
                     .map(|idx| self.schema_column_from_arena_index(*idx))
                     .collect();
                 crate::DataType::Struct(field_columns)

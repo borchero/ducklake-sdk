@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use arrow_array::RecordBatch;
@@ -7,7 +8,7 @@ use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Schema as Arr
 use crate::catalog::TableRef;
 use crate::spec::*;
 use crate::transaction::{CommitDataFile, CommitInlineData, CommitState, TransactionChanges};
-use crate::{DucklakeResult, db};
+use crate::{ArrayColumnStats, DucklakeResult, db, io};
 
 /* ------------------------------------------- FILES ------------------------------------------- */
 
@@ -145,21 +146,40 @@ pub(crate) async fn write_table_inline_data(
     inline_data: &Vec<CommitInlineData>,
 ) -> DucklakeResult<()> {
     let table_id = state.table_id(*table_ref);
+    let schema = state.table_schema(*table_ref);
+    let arrow_schema = schema.to_arrow();
     // Assign row IDs while collecting; persistence can then group writes by table.
     let snapshot_id = state.snapshot_id();
     let mut all_column_ids = HashSet::new();
     for data in inline_data {
+        // Queued batches may predate schema changes made later in this transaction.
+        let (batch, column_stats) = if data.record_batch.schema().as_ref() == &arrow_schema {
+            let column_stats = data
+                .column_stats
+                .iter()
+                .map(|(column_ref, stats)| (state.column_id(*column_ref), stats.clone()))
+                .collect();
+            (Cow::Borrowed(&data.record_batch), column_stats)
+        } else {
+            let record_batch = io::arrow::schema::match_to_schema(
+                &data.record_batch,
+                &schema,
+                io::arrow::schema::Defaults::InitialDefault,
+            )?;
+            let statistics = io::arrow::compute_record_batch_statistics(&schema, &record_batch);
+            (Cow::Owned(record_batch), statistics.column_stats)
+        };
         let table_stats = state.table_stats(table_id).await?;
-        let num_rows = data.record_batch.num_rows();
+        let num_rows = batch.num_rows();
         let row_ids = {
             let row_ids = table_stats.next_row_id()..(table_stats.next_row_id() + num_rows as i64);
-            update_table_stats_from_inline_data(state, table_id, data).await?;
+            update_table_stats_from_inline_data(state, table_id, num_rows, &column_stats).await?;
             row_ids
         };
         let begin_snapshot = std::iter::repeat_n(snapshot_id, num_rows);
         let end_snapshot = std::iter::repeat_n(Option::<i64>::None, num_rows);
 
-        let mut fields = data.record_batch.schema().fields().to_vec();
+        let mut fields = batch.schema().fields().to_vec();
         fields.push(Arc::new(ArrowField::new(
             "row_id",
             ArrowDataType::Int64,
@@ -177,7 +197,7 @@ pub(crate) async fn write_table_inline_data(
         )));
         let new_schema = Arc::new(ArrowSchema::new(fields));
 
-        let mut columns = data.record_batch.columns().to_vec();
+        let mut columns = batch.columns().to_vec();
         columns.push(Arc::new(arrow_array::Int64Array::from_iter(row_ids)));
         columns.push(Arc::new(arrow_array::Int64Array::from_iter(begin_snapshot)));
         columns.push(Arc::new(arrow_array::Int64Array::from_iter(end_snapshot)));
@@ -190,11 +210,7 @@ pub(crate) async fn write_table_inline_data(
             .push(record_batch);
 
         // Make sure we collect column IDs with stats for update later
-        all_column_ids.extend(
-            data.column_stats
-                .keys()
-                .map(|column_ref| state.column_id(*column_ref)),
-        );
+        all_column_ids.extend(column_stats.keys().copied());
     }
 
     // Record which table and column statistics need to be persisted.
@@ -241,18 +257,15 @@ async fn update_table_stats_from_file(
 async fn update_table_stats_from_inline_data(
     state: &mut CommitState<'_>,
     table_id: i64,
-    inline_data: &CommitInlineData,
+    num_rows: usize,
+    column_stats: &HashMap<i64, ArrayColumnStats>,
 ) -> DucklakeResult<()> {
     let stats = state.table_stats(table_id).await?;
-    stats.advance_row_id(inline_data.record_batch.num_rows() as i64);
-    stats.add_record_count(inline_data.record_batch.num_rows() as i64);
+    stats.advance_row_id(num_rows as i64);
+    stats.add_record_count(num_rows as i64);
 
-    for (column_ref, column_stats) in inline_data.column_stats.iter() {
-        let column_id = state.column_id(*column_ref);
-        let stats = state
-            .table_stats(table_id)
-            .await?
-            .column_stats_mut(column_id);
+    for (column_id, column_stats) in column_stats {
+        let stats = stats.column_stats_mut(*column_id);
 
         stats.update_contains_null(column_stats.null_count.map(|c| c > 0));
         stats.update_contains_nan(column_stats.contains_nan);

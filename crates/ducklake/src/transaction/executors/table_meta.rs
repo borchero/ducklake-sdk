@@ -300,7 +300,7 @@ fn create_sort_info(
 /*                                             COLUMN                                            */
 /* --------------------------------------------------------------------------------------------- */
 
-pub(crate) fn add_table_column(
+pub(crate) async fn add_table_column(
     changes: &mut TransactionChanges,
     state: &mut CommitState<'_>,
     parent_column_ref: &Option<ColumnRef>,
@@ -309,6 +309,37 @@ pub(crate) fn add_table_column(
 ) -> DucklakeResult<()> {
     let table_ref = column_refs[0].table_ref;
     let table_id = state.table_id(table_ref);
+
+    // If we add a new column to a table that already has some columns, we need to make sure to
+    // correctly set `min/max` values on the table stats.
+    if state.table_stats(table_id).await?.record_count() != Some(0) {
+        let schema = state.table_schema(table_ref);
+        let columns = schema.columns_by_id();
+        for column_ref in column_refs {
+            let id = state.column_id(*column_ref);
+            let Some(column) = columns.get(&id) else {
+                continue;
+            };
+            if column.dtype.is_nested() {
+                continue;
+            }
+            let value = column.initial_default.as_ref();
+            let stats = state.table_stats(table_id).await?.column_stats_mut(id);
+            stats.update_contains_null(Some(value.is_none()));
+            stats.update_contains_nan(value.map(|value| match value {
+                Value::Float32(value) => value.is_nan(),
+                Value::Float64(value) => value.is_nan(),
+                _ => false,
+            }));
+            stats.update_min_value(value);
+            stats.update_max_value(value);
+            changes
+                .written_columns
+                .entry(table_id)
+                .or_default()
+                .insert(id);
+        }
+    }
 
     // Create columns and tags
     let mut ducklake_columns = Vec::new();
