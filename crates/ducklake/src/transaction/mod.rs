@@ -21,6 +21,7 @@ use typedefs::*;
 
 use super::catalog::Catalog;
 use crate::caches::{Metadata, Snapshot, SnapshotCache, SnapshotInfo};
+use crate::migrations::MigrationRecord;
 use crate::primitives::Borrowed;
 use crate::spec::*;
 use crate::{DucklakeError, DucklakeResult, QualifiedName, db};
@@ -47,6 +48,8 @@ pub struct Transaction<'a> {
     changes: Vec<Change>,
     /// Information about the author of the transaction.
     author_info: AuthorInfo,
+    /// The migration to record as applied in the same database transaction as the commit.
+    migration: Option<MigrationRecord>,
 }
 
 /* ------------------------------------------ TYPEDEFS ----------------------------------------- */
@@ -78,6 +81,7 @@ impl<'a> Transaction<'a> {
         storage_options: &'a Vec<(String, String)>,
         metadata: Arc<Metadata>,
         author_info: AuthorInfo,
+        migration: Option<MigrationRecord>,
         snapshot: Arc<Snapshot>,
     ) -> DucklakeResult<Self> {
         let catalog = snapshot.catalog().await?.clone();
@@ -88,6 +92,7 @@ impl<'a> Transaction<'a> {
             metadata,
             changes: Vec::new(),
             author_info,
+            migration,
             snapshot,
             catalog,
         };
@@ -199,6 +204,7 @@ impl<'a> Transaction<'a> {
             metadata: self.metadata,
             changes: self.changes,
             author_info: self.author_info,
+            migration: self.migration,
             snapshot: self.snapshot,
             catalog: self.catalog,
         }
@@ -216,8 +222,14 @@ impl<'a> Transaction<'a> {
         // provides high-level utilities.
         let change_set = ChangeSet::new(self.changes);
 
-        // If the change set is empty, there's nothing to commit
+        // If the change set is empty, there is no need for a new snapshot. The only thing left to
+        // do is to record the migration, if any.
         if change_set.is_empty() {
+            if let Some(migration) = &self.migration {
+                let mut tx = self.pool.begin().await?;
+                migration.insert(&mut tx, chrono::Utc::now()).await?;
+                tx.commit().await?;
+            }
             return Ok(());
         }
 
@@ -241,8 +253,14 @@ impl<'a> Transaction<'a> {
             );
 
             // Apply the changes from the transaction
-            let apply_result =
-                Self::apply_changes(&self.pool, &mut state, &change_set, &self.author_info).await;
+            let apply_result = Self::apply_changes(
+                &self.pool,
+                &mut state,
+                &change_set,
+                &self.author_info,
+                self.migration.as_ref(),
+            )
+            .await;
 
             // Handle any errors
             match apply_result {
@@ -302,6 +320,7 @@ impl<'a> Transaction<'a> {
         state: &mut CommitState<'_>,
         change_set: &ChangeSet,
         author_info: &AuthorInfo,
+        migration: Option<&MigrationRecord>,
     ) -> DucklakeResult<SnapshotInfo> {
         let mut changes = TransactionChanges::default();
 
@@ -325,6 +344,11 @@ impl<'a> Transaction<'a> {
             author_info,
         )
         .await?;
+        if let Some(migration) = migration {
+            migration
+                .insert(&mut tx, snapshot_info.snapshot_time)
+                .await?;
+        }
         tx.commit().await?;
 
         Ok(snapshot_info)

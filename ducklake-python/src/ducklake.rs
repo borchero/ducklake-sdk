@@ -207,6 +207,30 @@ impl PyDucklake {
         Ok(PyTransaction::new(tx))
     }
 
+    pub fn transaction_for_migration(
+        &self,
+        py: Python,
+        author: Option<String>,
+        message: Option<String>,
+        extra_info: Option<String>,
+        migration: &str,
+        batch: i64,
+    ) -> PyResult<PyTransaction> {
+        let author_info = AuthorInfo {
+            author,
+            message,
+            extra_info,
+        };
+        let tx = block_on(
+            py,
+            self.0
+                .transaction_for_migration(author_info, migration, batch),
+        )
+        .map_err(error::into_pyerr)?
+        .into_owned();
+        Ok(PyTransaction::new(tx))
+    }
+
     pub fn table(&self, py: Python, name: Wrap<ducklake::QualifiedName>) -> PyResult<PyTable> {
         block_on(py, self.0.table(name.0))
             .map(PyTable::new)
@@ -379,6 +403,24 @@ impl PyDucklake {
         } else {
             block_on(py, self.0.unset_metadata(&key, schema.as_deref())).map_err(error::into_pyerr)
         }
+    }
+
+    pub fn ensure_migrations_table(&self, py: Python) -> PyResult<()> {
+        block_on(py, self.0.ensure_migrations_table()).map_err(error::into_pyerr)
+    }
+
+    pub fn applied_migrations(
+        &self,
+        py: Python,
+    ) -> PyResult<Vec<(String, i64, chrono::DateTime<chrono::Utc>)>> {
+        block_on(py, self.0.applied_migrations())
+            .map(|migrations| {
+                migrations
+                    .into_iter()
+                    .map(|m| (m.name, m.batch, m.applied_at))
+                    .collect()
+            })
+            .map_err(error::into_pyerr)
     }
 
     pub fn disconnect(&mut self, py: Python) {

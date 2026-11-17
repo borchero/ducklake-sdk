@@ -1,10 +1,15 @@
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
+use syn::parse::Parser;
 
-pub(crate) fn ducklake_table_impl(input: TokenStream) -> TokenStream {
-    let mut ast = syn::parse(input).unwrap();
-    let ducklake_table = ducklake_table_blocks(&mut ast);
+pub(crate) fn ducklake_table_impl(args: TokenStream, input: TokenStream) -> TokenStream {
+    let table_name = match parse_table_name(args.into()) {
+        Ok(table_name) => table_name,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    let mut ast = syn::parse_macro_input!(input as syn::DeriveInput);
+    let ducklake_table = ducklake_table_blocks(&mut ast, table_name);
     let result = quote! {
         #[derive(sqlx::FromRow, Debug, Clone)]
         #ast
@@ -13,11 +18,31 @@ pub(crate) fn ducklake_table_impl(input: TokenStream) -> TokenStream {
     result.into()
 }
 
-fn ducklake_table_blocks(ast: &mut syn::DeriveInput) -> proc_macro2::TokenStream {
+fn parse_table_name(args: proc_macro2::TokenStream) -> syn::Result<Option<String>> {
+    let mut table_name = None;
+    syn::meta::parser(|meta| {
+        if !meta.path.is_ident("table_name") {
+            return Err(meta.error("expected `table_name = \"...\"`"));
+        }
+        if table_name.is_some() {
+            return Err(meta.error("duplicate `table_name`"));
+        }
+        table_name = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+        Ok(())
+    })
+    .parse2(args)?;
+    Ok(table_name)
+}
+
+fn ducklake_table_blocks(
+    ast: &mut syn::DeriveInput,
+    table_name: Option<String>,
+) -> proc_macro2::TokenStream {
     let visibility = &ast.vis;
     let camel_name = &ast.ident;
     let snake_name_str = camel_name.to_string().to_snake_case();
     let snake_name = format_ident!("{}", snake_name_str);
+    let table_name = table_name.unwrap_or(snake_name_str);
 
     let fields: Vec<_> = match &mut ast.data {
         syn::Data::Struct(s) => match &mut s.fields {
@@ -40,7 +65,7 @@ fn ducklake_table_blocks(ast: &mut syn::DeriveInput) -> proc_macro2::TokenStream
     quote! {
         #visibility mod #snake_name {
             #[derive(sea_query::Iden)]
-            #[iden = #snake_name_str]
+            #[iden = #table_name]
             #visibility struct Table;
 
             #[derive(sea_query::Iden, strum::EnumIter, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +90,7 @@ fn ducklake_table_blocks(ast: &mut syn::DeriveInput) -> proc_macro2::TokenStream
         }
 
         impl sea_query_ext::InsertableEntity for #camel_name {
-            const TABLE: &'static str = #snake_name_str;
+            const TABLE: &'static str = #table_name;
             const COLUMNS: &'static [&'static str] = &[#(#column_names,)*];
 
             fn into_values(self) -> Vec<sea_query::Value> {
@@ -103,8 +128,36 @@ impl<'a> Field<'a> {
         } else {
             &ty_str
         };
+        // NOTE: Strings are unbounded by default which some databases (e.g. MySQL) do not permit
+        //  for columns that are part of a key. Such columns must set `#[max_length = ...]`.
+        let max_length = field.attrs.iter().find_map(|attr| {
+            if !attr.path().is_ident("max_length") {
+                return None;
+            }
+            match &attr.meta {
+                syn::Meta::NameValue(syn::MetaNameValue {
+                    value:
+                        syn::Expr::Lit(syn::ExprLit {
+                            lit: syn::Lit::Int(literal),
+                            ..
+                        }),
+                    ..
+                }) => Some(
+                    literal
+                        .base10_parse::<u32>()
+                        .expect("#[max_length] must be a positive integer."),
+                ),
+                _ => panic!("#[max_length] must be of the form `#[max_length = ...]`."),
+            }
+        });
+
         let column_type = match ty_str {
-            "String" => quote! { dialect.column_type_string() },
+            "String" => match max_length {
+                Some(length) => quote! {
+                    sea_query::ColumnType::String(sea_query::StringLen::N(#length))
+                },
+                None => quote! { dialect.column_type_string() },
+            },
             "i64" => quote! { dialect.column_type_i64() },
             "bool" => quote! { dialect.column_type_bool() },
             "DateTime<Utc>" | "UtcDateTime" => {

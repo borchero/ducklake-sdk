@@ -16,6 +16,7 @@ create_exception!(
     PyException
 );
 create_exception!(ducklake.exceptions, TransactionConflictError, PyException);
+create_exception!(ducklake.exceptions, MigrationConflictError, PyException);
 create_exception!(ducklake.exceptions, ReadonlyDucklakeError, PyException);
 
 pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
@@ -36,6 +37,7 @@ pub(crate) fn into_pyerr(error: DucklakeError) -> PyErr {
             InvalidNullabilityChangeError::new_err(error.to_string())
         }
         TransactionConflict(_) => TransactionConflictError::new_err(error.to_string()),
+        MigrationConflict(_) => MigrationConflictError::new_err(error.to_string()),
         ReadonlyDucklake => ReadonlyDucklakeError::new_err(error.to_string()),
         InvalidQualifiedName { .. }
         | InvalidView { .. }

@@ -31,6 +31,7 @@ mod ducklake_module {
         InvalidCastError,
         InvalidNullValueError,
         InvalidNullabilityChangeError,
+        MigrationConflictError,
         NotFoundError,
         NotInitializedError,
         OutdatedVersionError,
