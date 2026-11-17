@@ -112,9 +112,36 @@ impl Default for ColumnStats {
 
 impl SnapshotTableStats {
     async fn load(pool: &db::Pool, catalog: &Catalog, snapshot_id: i64) -> DucklakeResult<Self> {
-        // Build queries for all active tables and active columns
-        let table_stats_query = Self::build_table_stats_query(snapshot_id);
-        let column_stats_query = Self::build_column_stats_query(snapshot_id);
+        Self::load_filtered(pool, catalog, snapshot_id, None).await
+    }
+
+    async fn load_filtered(
+        pool: &db::Pool,
+        catalog: &Catalog,
+        snapshot_id: i64,
+        table_ids: Option<&[i64]>,
+    ) -> DucklakeResult<Self> {
+        if table_ids.is_some_and(|ids| ids.is_empty()) {
+            return Ok(Self(Arc::new(HashMap::new())));
+        }
+        let mut table_stats_query = Self::build_table_stats_query(snapshot_id);
+        let mut column_stats_query = Self::build_column_stats_query(snapshot_id);
+        if let Some(ids) = table_ids {
+            table_stats_query.and_where(
+                Expr::col((
+                    ducklake_table_stats::Table,
+                    ducklake_table_stats::Column::TableId,
+                ))
+                .is_in(ids.iter().copied()),
+            );
+            column_stats_query.and_where(
+                Expr::col((
+                    ducklake_table_column_stats::Table,
+                    ducklake_table_column_stats::Column::TableId,
+                ))
+                .is_in(ids.iter().copied()),
+            );
+        }
 
         // Execute queries in parallel
         let (table_stats, column_stats): (Vec<DucklakeTableStats>, Vec<DucklakeTableColumnStats>) =
@@ -229,6 +256,18 @@ impl SnapshotTableStats {
 /* ----------------------------------------- ACCESSORS ----------------------------------------- */
 
 impl TableStats {
+    /// Load statistics only for tables participating in a write, retaining snapshot filtering.
+    pub(crate) async fn load_for_tables(
+        pool: &db::Pool,
+        catalog: &Catalog,
+        snapshot_id: i64,
+        table_ids: &[i64],
+    ) -> DucklakeResult<Arc<TableStatsMap>> {
+        SnapshotTableStats::load_filtered(pool, catalog, snapshot_id, Some(table_ids))
+            .await
+            .map(|stats| stats.0)
+    }
+
     pub(crate) fn next_row_id(&self) -> i64 {
         self.next_row_id
     }
