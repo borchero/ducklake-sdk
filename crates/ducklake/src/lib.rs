@@ -26,7 +26,7 @@ mod utils;
 mod view;
 
 pub use caches::{GlobalMetadata, TableMetadata};
-pub use ducklake::{Ducklake, SnapshotMetadata};
+pub use ducklake::{Ducklake, SnapshotChanges, SnapshotMetadata};
 pub use error::{DucklakeError, DucklakeResult};
 pub use macro_::*;
 pub use maintenance::*;
