@@ -24,6 +24,7 @@ use crate::{DucklakeError, DucklakeResult};
 pub(crate) enum DucklakePath {
     Absolute(Url),
     Relative(String),
+    Invalid(String),
 }
 
 impl DucklakePath {
@@ -35,24 +36,33 @@ impl DucklakePath {
             // This must happen before `Url::parse`, as on Windows the drive letter of a path such
             // as `C:\data` would otherwise be interpreted as a URL scheme (`c`).
             if std::path::Path::new(path).is_absolute() {
-                return DucklakePath::Absolute(Url::from_file_path(path).unwrap());
+                return match Url::from_file_path(path) {
+                    Ok(url) => DucklakePath::Absolute(url),
+                    Err(()) => DucklakePath::Invalid(path.to_string()),
+                };
             }
-            let url = match Url::parse(path) {
-                Ok(url) => url,
-                Err(e) => panic!("Invalid URL: {}", e),
-            };
-            DucklakePath::Absolute(url)
+            match Url::parse(path) {
+                Ok(url) => DucklakePath::Absolute(url),
+                Err(_) => DucklakePath::Invalid(path.to_string()),
+            }
         }
     }
 
     pub(crate) fn join(&self, other: &DucklakePath) -> Self {
         use DucklakePath::*;
         match (self, other) {
+            (Invalid(raw), _) | (_, Invalid(raw)) => Invalid(raw.clone()),
             (_, Absolute(other)) => Absolute(other.clone()),
-            (Absolute(base), Relative(other)) => Absolute(base.join(other).unwrap()),
+            (Absolute(base), Relative(other)) => match base.join(other) {
+                Ok(joined) => Absolute(joined),
+                Err(_) => Invalid(format!("{base}{other}")),
+            },
             (Relative(base), Relative(other)) => {
-                assert!(base.ends_with("/"));
-                Relative(format!("{}{}", base, other))
+                if base.is_empty() || base.ends_with('/') {
+                    Relative(format!("{base}{other}"))
+                } else {
+                    Relative(format!("{base}/{other}"))
+                }
             }
         }
     }
@@ -85,6 +95,7 @@ impl DucklakePath {
                     self.clone()
                 }
             }
+            DucklakePath::Invalid(raw) => DucklakePath::Invalid(raw.clone()),
         }
     }
 
@@ -92,20 +103,30 @@ impl DucklakePath {
         match self {
             DucklakePath::Absolute(url) => url.as_str(),
             DucklakePath::Relative(path) => path.as_str(),
+            DucklakePath::Invalid(raw) => raw.as_str(),
         }
     }
 
     pub(crate) fn resolve(&self) -> DucklakeResult<Path> {
         let url = match self {
             DucklakePath::Absolute(url) => url.clone(),
-            DucklakePath::Relative(path) => Url::from_file_path(format!(
-                "{}/{}",
-                std::env::current_dir()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-                path
-            ))
-            .unwrap(),
+            DucklakePath::Relative(path) => {
+                let cwd = std::env::current_dir().map_err(|_| DucklakeError::InvalidPath {
+                    path: path.clone(),
+                    reason: "cannot resolve current working directory",
+                })?;
+                let joined = cwd.join(path);
+                Url::from_file_path(&joined).map_err(|()| DucklakeError::InvalidPath {
+                    path: joined.display().to_string(),
+                    reason: "invalid file URL",
+                })?
+            }
+            DucklakePath::Invalid(raw) => {
+                return Err(DucklakeError::InvalidPath {
+                    path: raw.clone(),
+                    reason: "invalid URL",
+                });
+            }
         };
         Path::new(url)
     }
@@ -125,7 +146,9 @@ impl FromStr for DucklakePath {
         // must happen before `Url::parse`, as on Windows the drive letter of a path such as
         // `C:\data` would otherwise be interpreted as a URL scheme (`c`).
         if std::path::Path::new(s).is_absolute() {
-            return Ok(DucklakePath::Absolute(Url::from_file_path(s).unwrap()));
+            let url =
+                Url::from_file_path(s).map_err(|()| url::ParseError::RelativeUrlWithoutBase)?;
+            return Ok(DucklakePath::Absolute(url));
         }
         match Url::parse(s) {
             Ok(url) => Ok(DucklakePath::Absolute(url)),
@@ -142,6 +165,7 @@ impl Display for DucklakePath {
         match self {
             DucklakePath::Absolute(url) => write!(f, "{}", url),
             DucklakePath::Relative(path) => write!(f, "{}", path),
+            DucklakePath::Invalid(raw) => write!(f, "{}", raw),
         }
     }
 }
@@ -175,21 +199,46 @@ impl Path {
     fn new(url: Url) -> DucklakeResult<Self> {
         match url.scheme() {
             "file" => Ok(Path::Local {
-                path: url.to_file_path().unwrap().to_string_lossy().to_string(),
+                path: url
+                    .to_file_path()
+                    .map_err(|()| DucklakeError::InvalidPath {
+                        path: url.to_string(),
+                        reason: "invalid file URL",
+                    })?
+                    .to_string_lossy()
+                    .to_string(),
             }),
             #[cfg(feature = "aws")]
             "s3" => Ok(Path::S3 {
-                bucket: url.host_str().unwrap().to_string(),
+                bucket: url
+                    .host_str()
+                    .ok_or_else(|| DucklakeError::InvalidPath {
+                        path: url.to_string(),
+                        reason: "s3 URL missing bucket host",
+                    })?
+                    .to_string(),
                 path: url.path().to_string(),
             }),
             #[cfg(feature = "gcp")]
             "gs" => Ok(Path::GCS {
-                bucket: url.host_str().unwrap().to_string(),
+                bucket: url
+                    .host_str()
+                    .ok_or_else(|| DucklakeError::InvalidPath {
+                        path: url.to_string(),
+                        reason: "gs URL missing bucket host",
+                    })?
+                    .to_string(),
                 path: url.path().to_string(),
             }),
             #[cfg(feature = "azure")]
             "az" | "abfs" => Ok(Path::Azure {
-                container: url.host_str().unwrap().to_string(),
+                container: url
+                    .host_str()
+                    .ok_or_else(|| DucklakeError::InvalidPath {
+                        path: url.to_string(),
+                        reason: "azure URL missing container host",
+                    })?
+                    .to_string(),
                 path: url.path().to_string(),
             }),
             _ => Err(DucklakeError::UnsupportedUrlScheme(
@@ -231,12 +280,15 @@ impl Path {
     pub(crate) fn object_store(
         &self,
         #[allow(unused_variables)] options: Option<Vec<(String, String)>>,
-    ) -> Arc<dyn ObjectStore> {
+    ) -> DucklakeResult<Arc<dyn ObjectStore>> {
+        #[cfg(any(feature = "aws", feature = "azure"))]
+        let allow_http = allows_http(options.as_deref());
         let cache_key = match self {
             Path::Local { path: _ } => ObjectStoreCacheKey::Local,
             #[cfg(feature = "aws")]
             Path::S3 { bucket, path: _ } => ObjectStoreCacheKey::S3 {
                 bucket: bucket.clone(),
+                allow_http,
                 options: parse_config_options(options),
             },
             #[cfg(feature = "gcp")]
@@ -247,11 +299,28 @@ impl Path {
             #[cfg(feature = "azure")]
             Path::Azure { container, path: _ } => ObjectStoreCacheKey::Azure {
                 container: container.clone(),
+                allow_http,
                 options: parse_config_options(options),
             },
         };
         get_cached_object_store(cache_key)
     }
+}
+
+#[cfg(any(feature = "aws", feature = "azure"))]
+fn allows_http(options: Option<&[(String, String)]>) -> bool {
+    options.into_iter().flatten().any(|(key, value)| {
+        let key_lower = key.trim().to_ascii_lowercase();
+        let val_lower = value.trim().to_ascii_lowercase();
+        ((key_lower == "allow_http" || key_lower.ends_with("_allow_http"))
+            && matches!(val_lower.as_str(), "true" | "1" | "yes"))
+            || ((key_lower == "endpoint"
+                || key_lower.ends_with("_endpoint")
+                || key_lower.ends_with("_endpoint_url"))
+                && val_lower.starts_with("http://"))
+            || ((key_lower == "use_emulator" || key_lower.ends_with("_use_emulator"))
+                && matches!(val_lower.as_str(), "true" | "1" | "yes"))
+    })
 }
 
 /// Parses the provided key-value options into the object store's config keys, discarding any
@@ -281,6 +350,7 @@ enum ObjectStoreCacheKey {
     #[cfg(feature = "aws")]
     S3 {
         bucket: String,
+        allow_http: bool,
         options: Vec<(AmazonS3ConfigKey, String)>,
     },
     #[cfg(feature = "gcp")]
@@ -291,66 +361,70 @@ enum ObjectStoreCacheKey {
     #[cfg(feature = "azure")]
     Azure {
         container: String,
+        allow_http: bool,
         options: Vec<(AzureConfigKey, String)>,
     },
 }
 
-fn get_cached_object_store(key: ObjectStoreCacheKey) -> Arc<dyn ObjectStore> {
-    let mut cache = OBJECT_STORE_CACHE.lock().unwrap();
+fn get_cached_object_store(key: ObjectStoreCacheKey) -> DucklakeResult<Arc<dyn ObjectStore>> {
+    let mut cache = OBJECT_STORE_CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some(store) = cache.get(&key) {
-        store.clone()
-    } else {
-        #[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
-        let client_options =
-            object_store::ClientOptions::new().with_timeout(std::time::Duration::from_secs(300));
-        let store: Arc<dyn ObjectStore> = match key {
-            ObjectStoreCacheKey::Local => Arc::new(LocalFileSystem::new()),
-            #[cfg(feature = "aws")]
-            ObjectStoreCacheKey::S3 {
-                ref bucket,
-                ref options,
-            } => {
-                let mut builder = AmazonS3Builder::new()
-                    .with_client_options(client_options.clone())
-                    .with_bucket_name(bucket)
-                    .with_allow_http(true);
-                for (config_key, value) in options {
-                    builder = builder.with_config(*config_key, value);
-                }
-                Arc::new(builder.build().unwrap())
-            }
-            #[cfg(feature = "gcp")]
-            ObjectStoreCacheKey::GCS {
-                ref bucket,
-                ref options,
-            } => {
-                let mut builder = GoogleCloudStorageBuilder::new()
-                    // Preserve GCS's default HTTP support for custom endpoints and emulators.
-                    .with_client_options(client_options.clone().with_allow_http(true))
-                    .with_bucket_name(bucket);
-                for (config_key, value) in options {
-                    builder = builder.with_config(*config_key, value);
-                }
-                Arc::new(builder.build().unwrap())
-            }
-            #[cfg(feature = "azure")]
-            ObjectStoreCacheKey::Azure {
-                ref container,
-                ref options,
-            } => {
-                let mut builder = MicrosoftAzureBuilder::new()
-                    .with_client_options(client_options.clone())
-                    .with_container_name(container)
-                    .with_allow_http(true);
-                for (config_key, value) in options {
-                    builder = builder.with_config(*config_key, value);
-                }
-                Arc::new(builder.build().unwrap())
-            }
-        };
-        cache.insert(key, store.clone());
-        store
+        return Ok(store.clone());
     }
+    #[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
+    let client_options =
+        object_store::ClientOptions::new().with_timeout(std::time::Duration::from_secs(300));
+    let store: Arc<dyn ObjectStore> = match key {
+        ObjectStoreCacheKey::Local => Arc::new(LocalFileSystem::new()),
+        #[cfg(feature = "aws")]
+        ObjectStoreCacheKey::S3 {
+            ref bucket,
+            allow_http,
+            ref options,
+        } => {
+            let mut builder = AmazonS3Builder::new()
+                .with_client_options(client_options.clone())
+                .with_bucket_name(bucket)
+                .with_allow_http(allow_http);
+            for (config_key, value) in options {
+                builder = builder.with_config(*config_key, value);
+            }
+            Arc::new(builder.build()?)
+        }
+        #[cfg(feature = "gcp")]
+        ObjectStoreCacheKey::GCS {
+            ref bucket,
+            ref options,
+        } => {
+            let mut builder = GoogleCloudStorageBuilder::new()
+                // Preserve GCS's default HTTP support for custom endpoints and emulators.
+                .with_client_options(client_options.clone().with_allow_http(true))
+                .with_bucket_name(bucket);
+            for (config_key, value) in options {
+                builder = builder.with_config(*config_key, value);
+            }
+            Arc::new(builder.build()?)
+        }
+        #[cfg(feature = "azure")]
+        ObjectStoreCacheKey::Azure {
+            ref container,
+            allow_http,
+            ref options,
+        } => {
+            let mut builder = MicrosoftAzureBuilder::new()
+                .with_client_options(client_options.clone())
+                .with_container_name(container)
+                .with_allow_http(allow_http);
+            for (config_key, value) in options {
+                builder = builder.with_config(*config_key, value);
+            }
+            Arc::new(builder.build()?)
+        }
+    };
+    cache.insert(key, store.clone());
+    Ok(store)
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -436,6 +510,8 @@ mod tests {
 
     #[rstest]
     #[case(relative("foo/"), relative("bar"), relative("foo/bar"))]
+    #[case(relative("foo"), relative("bar"), relative("foo/bar"))]
+    #[case(relative(""), relative("bar"), relative("bar"))]
     #[case(relative("foo/"), relative("bar/baz"), relative("foo/bar/baz"))]
     #[case(
         absolute("s3://bucket/prefix/"),
@@ -459,10 +535,55 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_join_relative_base_without_trailing_slash_panics() {
-        let base = relative("foo");
-        let _ = base.join(&relative("bar"));
+    fn test_invalid_path_returns_error_on_resolve() {
+        // Arrange
+        let invalid = DucklakePath::new("not a url", false);
+        let joined = invalid.join_str("file.parquet");
+
+        // Act
+        let resolved = joined.resolve();
+
+        // Assert
+        assert!(matches!(invalid, DucklakePath::Invalid(_)));
+        assert_eq!(joined, invalid);
+        assert!(matches!(resolved, Err(DucklakeError::InvalidPath { .. })));
+    }
+
+    #[cfg(feature = "aws")]
+    #[test]
+    fn test_resolve_s3_missing_bucket_errors() {
+        // Arrange
+        let path = absolute("s3:///prefix/file.parquet");
+
+        // Act
+        let resolved = path.resolve();
+
+        // Assert
+        assert!(matches!(resolved, Err(DucklakeError::InvalidPath { .. })));
+    }
+
+    #[cfg(any(feature = "aws", feature = "azure"))]
+    #[rstest]
+    #[case(None, false)]
+    #[case(Some(vec![("aws_endpoint_url", "https://s3.amazonaws.com")]), false)]
+    #[case(Some(vec![("aws_endpoint_url", "http://localhost:9000")]), true)]
+    #[case(Some(vec![("azure_storage_endpoint", "http://localhost:10000/devstoreaccount1")]), true)]
+    #[case(Some(vec![("azure_storage_use_emulator", "1")]), true)]
+    #[case(Some(vec![("aws_allow_http", "true")]), true)]
+    fn test_allows_http(#[case] raw_options: Option<Vec<(&str, &str)>>, #[case] expected: bool) {
+        // Arrange
+        let options = raw_options.map(|items| {
+            items
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<Vec<_>>()
+        });
+
+        // Act
+        let actual = allows_http(options.as_deref());
+
+        // Assert
+        assert_eq!(actual, expected);
     }
 
     #[rstest]

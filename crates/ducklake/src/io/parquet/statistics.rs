@@ -32,7 +32,7 @@ pub(crate) async fn read_file_statistics(
     }
 
     // Get the store to read the file
-    let store = path.object_store(io_options);
+    let store = path.object_store(io_options)?;
     let object_path = path.path();
     let file_meta = store.head(&object_path).await?;
 

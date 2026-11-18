@@ -38,8 +38,8 @@ pub(crate) async fn copy_file(
     let source = source.resolve()?;
     let destination = destination.resolve()?;
 
-    let source_store = source.object_store(Some(source_options.to_vec()));
-    let destination_store = destination.object_store(Some(destination_options.to_vec()));
+    let source_store = source.object_store(Some(source_options.to_vec()))?;
+    let destination_store = destination.object_store(Some(destination_options.to_vec()))?;
 
     let source_path = source.path();
     let destination_path = destination.path();

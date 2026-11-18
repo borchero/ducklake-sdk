@@ -20,7 +20,7 @@ impl Ducklake {
 
         // First, we delete all data files
         let data_path = self.conn.metadata().data_path().resolve()?;
-        let store = data_path.object_store(Some(self.conn.storage_options().to_vec()));
+        let store = data_path.object_store(Some(self.conn.storage_options().to_vec()))?;
         let locations = store
             .list(Some(&data_path.path()))
             .map_ok(|object| object.location);

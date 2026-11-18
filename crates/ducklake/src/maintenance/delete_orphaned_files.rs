@@ -64,7 +64,7 @@ impl Ducklake {
 
         // 2) List all files below the data path and find the orphaned ones.
         let resolved_data_path = data_path.resolve()?;
-        let store = resolved_data_path.object_store(Some(self.conn.storage_options().to_vec()));
+        let store = resolved_data_path.object_store(Some(self.conn.storage_options().to_vec()))?;
         let prefix = resolved_data_path.path();
 
         let mut orphans = Vec::new();
