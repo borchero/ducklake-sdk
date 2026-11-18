@@ -239,7 +239,7 @@ impl<'a> Transaction<'a> {
         // otherwise, the validation that happened against the catalog would be worthless.
         let max_retry_count = 10;
         let mut latest_snapshot = self.snapshot.clone();
-        for i in 0..(max_retry_count + 1) {
+        for _ in 0..(max_retry_count + 1) {
             let table_stats = if change_set.requires_table_stats() {
                 Some(latest_snapshot.table_stats().await?.clone())
             } else {
@@ -272,16 +272,10 @@ impl<'a> Transaction<'a> {
                     self.snapshot_cache.insert_snapshot(snapshot);
                     return Ok(());
                 }
-                // If the commit failed, we retry if the error indicates a primary key violation.
-                // In this case, another snapshot has been committed in the meantime. We need to
-                // perform conflict resolution and, if there's no conflict, try committing again.
-                // The same can happen if we tried to create a new inline table that already
-                // existed ("table already exists error").
-                Err(ref err @ DucklakeError::Database(sqlx::Error::Database(ref db_err)))
-                    if db_err.kind() == sqlx::error::ErrorKind::UniqueViolation
-                        || self.pool.dialect().is_table_already_exists_error(err)
-                            && i < max_retry_count =>
-                {
+                // If the commit failed due to a snapshot conflict, table-already-exists collision,
+                // or PostgreSQL serialization/deadlock failure (`40001` / `40P01` under
+                // REPEATABLE READ), check for logical conflicts and retry if safe.
+                Err(ref err) if is_retryable_commit_error(self.pool.dialect(), err) => {
                     // We already assign the latest snapshot for the next iteration as, otherwise,
                     // we'd possibly query a newer snapshot in the new iteration and miss changes.
                     latest_snapshot = self.snapshot_cache.get_latest().await?;
@@ -454,5 +448,128 @@ impl<'a> Transaction<'a> {
             is_committed: false,
             tx: self,
         }
+    }
+}
+
+fn is_retryable_commit_error(dialect: db::Dialect, err: &DucklakeError) -> bool {
+    let DucklakeError::Database(sqlx::Error::Database(db_err)) = err else {
+        return false;
+    };
+    db_err.kind() == sqlx::error::ErrorKind::UniqueViolation
+        || dialect.is_table_already_exists_error(err)
+        || matches!(db_err.code().as_deref(), Some("40001" | "40P01"))
+}
+
+/* --------------------------------------------------------------------------------------------- */
+/*                                             TESTS                                             */
+/* --------------------------------------------------------------------------------------------- */
+
+#[cfg(all(test, any(feature = "postgres", feature = "mysql", feature = "sqlite")))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use std::borrow::Cow;
+    use std::fmt;
+
+    use rstest::rstest;
+    use sqlx::error::{DatabaseError, ErrorKind};
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct MockDbError {
+        is_unique: bool,
+        code: Option<&'static str>,
+        message: &'static str,
+    }
+
+    impl fmt::Display for MockDbError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(self.message)
+        }
+    }
+
+    impl std::error::Error for MockDbError {}
+
+    impl DatabaseError for MockDbError {
+        fn message(&self) -> &str {
+            self.message
+        }
+
+        fn code(&self) -> Option<Cow<'_, str>> {
+            self.code.map(Cow::Borrowed)
+        }
+
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+
+        fn kind(&self) -> ErrorKind {
+            if self.is_unique {
+                ErrorKind::UniqueViolation
+            } else {
+                ErrorKind::Other
+            }
+        }
+    }
+
+    #[rstest]
+    #[case(true, Some("23505"), "duplicate key", true)]
+    #[case(false, Some("40001"), "could not serialize access", true)]
+    #[case(false, Some("40P01"), "deadlock detected", true)]
+    #[cfg_attr(
+        feature = "postgres",
+        case(false, Some("42P07"), "relation already exists", true)
+    )]
+    #[case(false, Some("23502"), "null value violates not-null", false)]
+    fn test_is_retryable_commit_error(
+        #[case] is_unique: bool,
+        #[case] code: Option<&'static str>,
+        #[case] message: &'static str,
+        #[case] expected: bool,
+    ) {
+        // Arrange
+        #[cfg(feature = "postgres")]
+        let dialect = db::Dialect::Postgres;
+        #[cfg(all(not(feature = "postgres"), feature = "sqlite"))]
+        let dialect = db::Dialect::Sqlite;
+        #[cfg(all(not(feature = "postgres"), not(feature = "sqlite"), feature = "mysql"))]
+        let dialect = db::Dialect::MySql;
+        let err = DucklakeError::Database(sqlx::Error::Database(Box::new(MockDbError {
+            is_unique,
+            code,
+            message,
+        })));
+
+        // Act
+        let retryable = is_retryable_commit_error(dialect, &err);
+
+        // Assert
+        assert_eq!(retryable, expected);
+    }
+
+    #[test]
+    fn test_is_retryable_commit_error_ignores_non_db_errors() {
+        // Arrange
+        #[cfg(feature = "sqlite")]
+        let dialect = db::Dialect::Sqlite;
+        #[cfg(all(not(feature = "sqlite"), feature = "postgres"))]
+        let dialect = db::Dialect::Postgres;
+        #[cfg(all(not(feature = "sqlite"), not(feature = "postgres"), feature = "mysql"))]
+        let dialect = db::Dialect::MySql;
+        let err = DucklakeError::Database(sqlx::Error::RowNotFound);
+
+        // Act
+        let retryable = is_retryable_commit_error(dialect, &err);
+
+        // Assert
+        assert!(!retryable);
     }
 }

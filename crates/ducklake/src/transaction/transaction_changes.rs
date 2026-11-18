@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use arrow_array::RecordBatch;
 use sea_query::{ColumnDef, Condition, Expr, ExprTrait, IntoIden, Table, Value};
@@ -25,21 +25,21 @@ pub(super) struct TransactionChanges {
     pub new_sort_expressions: Vec<DucklakeSortExpression>,
     pub new_tags: Vec<DucklakeTag>,
     pub new_column_tags: Vec<DucklakeColumnTag>,
-    pub dropped_schemas: HashSet<i64>,
-    pub dropped_tables: HashSet<i64>,
-    pub dropped_views: HashSet<i64>,
-    pub dropped_macros: HashSet<i64>,
-    pub detached_tables: HashSet<i64>,
-    pub renamed_tables: HashMap<i64, String>,
-    pub retired_partition_tables: HashSet<i64>,
-    pub retired_sort_tables: HashSet<i64>,
-    pub retired_columns: HashSet<(i64, i64)>,
-    pub table_tags: HashMap<i64, Vec<TagChange>>,
-    pub column_tags: HashMap<(i64, i64), Vec<TagChange>>,
+    pub dropped_schemas: BTreeSet<i64>,
+    pub dropped_tables: BTreeSet<i64>,
+    pub dropped_views: BTreeSet<i64>,
+    pub dropped_macros: BTreeSet<i64>,
+    pub detached_tables: BTreeSet<i64>,
+    pub renamed_tables: BTreeMap<i64, String>,
+    pub retired_partition_tables: BTreeSet<i64>,
+    pub retired_sort_tables: BTreeSet<i64>,
+    pub retired_columns: BTreeSet<(i64, i64)>,
+    pub table_tags: BTreeMap<i64, Vec<TagChange>>,
+    pub column_tags: BTreeMap<(i64, i64), Vec<TagChange>>,
     pub files: FileChanges,
-    pub inline_tables: HashMap<i64, crate::Schema>,
-    pub inline_data: HashMap<i64, Vec<RecordBatch>>,
-    pub written_columns: HashMap<i64, HashSet<i64>>,
+    pub inline_tables: BTreeMap<i64, crate::Schema>,
+    pub inline_data: BTreeMap<i64, Vec<RecordBatch>>,
+    pub written_columns: BTreeMap<i64, BTreeSet<i64>>,
 }
 
 /// Explicit tag edits retain their order because SQL determines key equality.
@@ -54,7 +54,7 @@ pub(super) struct FileChanges {
     pub partition_values: Vec<DucklakeFilePartitionValue>,
     pub column_stats: Vec<DucklakeFileColumnStats>,
     pub delete_files: Vec<DucklakeDeleteFile>,
-    pub inline_deletes: HashMap<i64, Vec<DucklakeInlinedDelete>>,
+    pub inline_deletes: BTreeMap<i64, Vec<DucklakeInlinedDelete>>,
 }
 
 impl TransactionChanges {
@@ -243,7 +243,7 @@ async fn retire_rows<C: IntoIden + Copy, const K: usize>(
 async fn persist_table_renames(
     tx: &mut db::Transaction<'_>,
     snapshot_id: i64,
-    renames: HashMap<i64, String>,
+    renames: BTreeMap<i64, String>,
 ) -> DucklakeResult<()> {
     use ducklake_table::Column;
 
@@ -265,13 +265,13 @@ async fn persist_table_renames(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn persist_tags<K: Clone, E: InsertableEntity, C: IntoIden + Copy, const N: usize>(
+async fn persist_tags<K: Clone + Ord, E: InsertableEntity, C: IntoIden + Copy, const N: usize>(
     tx: &mut db::Transaction<'_>,
     snapshot_id: i64,
     table: impl IntoIden,
     keys: [C; N],
     end_snapshot: C,
-    changes: HashMap<K, Vec<TagChange>>,
+    changes: BTreeMap<K, Vec<TagChange>>,
     key_values: impl Fn(&K, &str) -> [Value; N],
     entity: impl Fn(K, String, String) -> E,
 ) -> DucklakeResult<()> {
@@ -328,8 +328,8 @@ async fn persist_files(tx: &mut db::Transaction<'_>, files: FileChanges) -> Duck
 
 async fn persist_inline_data(
     tx: &mut db::Transaction<'_>,
-    tables: HashMap<i64, crate::Schema>,
-    data: HashMap<i64, Vec<arrow_array::RecordBatch>>,
+    tables: BTreeMap<i64, crate::Schema>,
+    data: BTreeMap<i64, Vec<arrow_array::RecordBatch>>,
     schema_version: i64,
 ) -> DucklakeResult<()> {
     #[cfg(feature = "mysql")]
@@ -340,7 +340,7 @@ async fn persist_inline_data(
         return Ok(());
     }
 
-    let mut names = HashMap::new();
+    let mut names = BTreeMap::new();
     let mut registrations = Vec::new();
     for (table_id, schema) in tables {
         let name = DucklakeInlinedData::table_name(table_id, schema_version);
@@ -380,7 +380,7 @@ async fn persist_inline_data(
         )
         .await?;
     // Fetching by key does not guarantee ordering; select the latest registration per table.
-    let mut latest: HashMap<i64, DucklakeInlinedDataTables> = HashMap::new();
+    let mut latest: BTreeMap<i64, DucklakeInlinedDataTables> = BTreeMap::new();
     for table in tables {
         if latest
             .get(&table.table_id)
@@ -403,7 +403,7 @@ async fn persist_inline_data(
 async fn persist_statistics(
     tx: &mut db::Transaction<'_>,
     state: &mut CommitState<'_>,
-    written_columns: HashMap<i64, HashSet<i64>>,
+    written_columns: BTreeMap<i64, BTreeSet<i64>>,
 ) -> DucklakeResult<()> {
     let mut new_tables = Vec::new();
     let mut updated_tables = Vec::new();
