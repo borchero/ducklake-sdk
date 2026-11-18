@@ -109,14 +109,26 @@ pub(crate) fn find_referenced_tables_in_schema(
     let mut visitor = RelationVisitor::default();
     let _ = statement.visit(&mut visitor);
 
-    let mut tables = HashSet::new();
+    let mut seen = HashSet::new();
+    let mut tables = Vec::new();
     for relation in visitor.relations {
         let Some(name) = QualifiedName::from_object_name(&relation, default_schema) else {
             continue;
         };
-        tables.insert(name);
+        if seen.insert(name.clone()) {
+            tables.push(name);
+        }
     }
-    Ok(tables.into_iter().collect())
+    tables.sort_by(|a, b| a.schema.cmp(&b.schema).then_with(|| a.name.cmp(&b.name)));
+    Ok(tables)
+}
+
+fn normalize_cte_ident(ident: &Ident) -> String {
+    if ident.quote_style.is_some() {
+        ident.value.clone()
+    } else {
+        ident.value.to_ascii_lowercase()
+    }
 }
 
 /// Parse a macro body as exactly one scalar expression.
@@ -435,7 +447,7 @@ impl Visitor for RelationVisitor {
             .with
             .iter()
             .flat_map(|with| &with.cte_tables)
-            .map(|cte| cte.alias.name.value.clone())
+            .map(|cte| normalize_cte_ident(&cte.alias.name))
             .collect::<VecDeque<_>>();
         if query.with.as_ref().is_some_and(|with| with.recursive) {
             visible_ctes.extend(pending_ctes.iter().cloned());
@@ -461,7 +473,7 @@ impl Visitor for RelationVisitor {
         if let [name] = relation.0.as_slice()
             && self.scopes.last().is_some_and(|scope| {
                 name.as_ident()
-                    .is_some_and(|name| scope.visible_ctes.contains(&name.value))
+                    .is_some_and(|ident| scope.visible_ctes.contains(&normalize_cte_ident(ident)))
             })
         {
             return ControlFlow::Continue(());
@@ -573,5 +585,54 @@ mod tests {
 
         // Assert
         assert_eq!(tables, vec!["main.events".try_into().unwrap()]);
+    }
+
+    #[test]
+    fn test_referenced_tables_normalizes_unquoted_ctes_case_insensitively() {
+        // Arrange
+        let sql = "WITH Recent AS (SELECT * FROM events) SELECT * FROM recent";
+
+        // Act
+        let tables = find_referenced_tables_in_schema(sql, "duckdb", "main").unwrap();
+
+        // Assert
+        assert_eq!(tables, vec!["main.events".try_into().unwrap()]);
+    }
+
+    #[test]
+    fn test_referenced_tables_preserves_quoted_cte_case() {
+        // Arrange
+        let sql = r#"WITH "Recent" AS (SELECT * FROM events) SELECT * FROM recent"#;
+
+        // Act
+        let tables = find_referenced_tables_in_schema(sql, "duckdb", "main").unwrap();
+
+        // Assert
+        assert_eq!(
+            tables,
+            vec![
+                "main.events".try_into().unwrap(),
+                "main.recent".try_into().unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_referenced_tables_are_sorted_deterministically() {
+        // Arrange
+        let sql = "SELECT * FROM z.b JOIN a.c ON true JOIN a.a ON true JOIN a.a AS dup ON true";
+
+        // Act
+        let tables = find_referenced_tables_in_schema(sql, "duckdb", "main").unwrap();
+
+        // Assert
+        assert_eq!(
+            tables,
+            vec![
+                "a.a".try_into().unwrap(),
+                "a.c".try_into().unwrap(),
+                "z.b".try_into().unwrap(),
+            ]
+        );
     }
 }

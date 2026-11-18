@@ -128,7 +128,7 @@ async fn delete_files(
     };
     let store = first
         .resolve()?
-        .object_store(Some(storage_options.to_vec()));
+        .object_store(Some(storage_options.to_vec()))?;
 
     let locations = paths
         .iter()
