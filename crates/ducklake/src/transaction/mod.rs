@@ -218,6 +218,27 @@ impl<'a> Transaction<'a> {
 impl<'a> Transaction<'a> {
     /// Commit the transaction, persisting all changes as a new snapshot in the catalog.
     pub async fn commit(self) -> DucklakeResult<()> {
+        self.commit_inner(Some(10)).await.map(|_| ())
+    }
+
+    /// The ID of the snapshot the transaction started from.
+    pub fn base_snapshot_id(&self) -> i64 {
+        self.snapshot.info().id
+    }
+
+    /// Commit the transaction strictly on top of the snapshot it started from and return the ID
+    /// of the created snapshot (`None` if there was nothing to commit).
+    ///
+    /// Unlike [`Self::commit`], this never rebases onto snapshots committed concurrently: if
+    /// another writer committed in the meantime, it fails immediately with
+    /// [`DucklakeError::TransactionConflict`]. The created snapshot therefore always has the ID
+    /// `base_snapshot_id() + 1`, allowing callers to record that snapshot ID in the payload they
+    /// commit.
+    pub async fn commit_exact(self) -> DucklakeResult<Option<i64>> {
+        self.commit_inner(None).await
+    }
+
+    async fn commit_inner(self, max_retries: Option<usize>) -> DucklakeResult<Option<i64>> {
         // First, we initialize a changeset type which allows us to de-duplicate changes and
         // provides high-level utilities.
         let change_set = ChangeSet::new(self.changes);
@@ -230,14 +251,14 @@ impl<'a> Transaction<'a> {
                 migration.insert(&mut tx, chrono::Utc::now()).await?;
                 tx.commit().await?;
             }
-            return Ok(());
+            return Ok(None);
         }
 
         // To remedy conflicts caused by high-concurrency writes, we retry committing the
-        // transaction. When retrying, we need to obtain the latest snapshot from the database.
-        // For the first commit, it is integral that we use the transaction snapshot though as,
-        // otherwise, the validation that happened against the catalog would be worthless.
-        let max_retry_count = 10;
+        // transaction when `max_retries` is `Some`. When retrying, we obtain the latest snapshot
+        // from the database. For the first commit, it is integral that we use the transaction
+        // snapshot so validation against the catalog remains sound.
+        let max_retry_count = max_retries.unwrap_or(0);
         let mut latest_snapshot = self.snapshot.clone();
         for i in 0..(max_retry_count + 1) {
             let table_stats = if change_set.requires_table_stats() {
@@ -264,30 +285,37 @@ impl<'a> Transaction<'a> {
 
             // Handle any errors
             match apply_result {
-                // If the commit succeeded, the transaction could be executed successfully. Last
-                // thing we want to do is update our local cache with the snapshot that we created.
-                // Otherwise, we will return erroneous information in metadata queries (e.g.
-                // table name, table schema, ...).
+                // If the commit succeeded, update our local cache with the snapshot that we
+                // created so subsequent metadata queries observe it immediately.
                 Ok(snapshot) => {
+                    let id = snapshot.id;
                     self.snapshot_cache.insert_snapshot(snapshot);
-                    return Ok(());
+                    return Ok(Some(id));
                 }
-                // If the commit failed, we retry if the error indicates a primary key violation.
-                // In this case, another snapshot has been committed in the meantime. We need to
-                // perform conflict resolution and, if there's no conflict, try committing again.
-                // The same can happen if we tried to create a new inline table that already
-                // existed ("table already exists error").
+                // If the commit failed due to a snapshot primary key violation, an inline table
+                // creation collision, or a PostgreSQL serialization/deadlock error, another
+                // snapshot was committed concurrently.
                 Err(ref err @ DucklakeError::Database(sqlx::Error::Database(ref db_err)))
                     if db_err.kind() == sqlx::error::ErrorKind::UniqueViolation
                         || self.pool.dialect().is_table_already_exists_error(err)
-                            && i < max_retry_count =>
+                        || matches!(db_err.code().as_deref(), Some("40001" | "40P01")) =>
                 {
-                    // We already assign the latest snapshot for the next iteration as, otherwise,
-                    // we'd possibly query a newer snapshot in the new iteration and miss changes.
+                    if max_retries.is_none() {
+                        return Err(DucklakeError::TransactionConflict(format!(
+                            "another snapshot was committed after snapshot {}",
+                            self.snapshot.info().id
+                        )));
+                    }
+                    if i >= max_retry_count {
+                        break;
+                    }
+
+                    // Assign the latest snapshot for the next iteration first so we do not query
+                    // an even newer snapshot later and miss intermediate changes.
                     latest_snapshot = self.snapshot_cache.get_latest().await?;
 
                     // Fetch all changes between the transaction snapshot and the new latest
-                    // snapshot.);
+                    // snapshot.
                     let changes_made = Self::get_snapshot_changes(
                         &self.pool,
                         self.snapshot.info().id,
@@ -295,18 +323,14 @@ impl<'a> Transaction<'a> {
                     )
                     .await?;
 
-                    // In case the changes could be applied and we only failed because of a primary
-                    // key violation, we can check whether we need to retry.
                     let tx_changes = change_set.applied_change_set(&mut state);
                     for snapshot_change in changes_made {
                         tx_changes.check_conflict(&snapshot_change, &self.catalog)?;
                     }
 
-                    // If the check does not yield an error, we can retry
                     continue;
                 }
-                // If any other error occurred, there's no point in retrying. We simply return the
-                // error.
+                // If any other error occurred, there's no point in retrying.
                 Err(err) => return Err(err),
             }
         }
@@ -454,5 +478,85 @@ impl<'a> Transaction<'a> {
             is_committed: false,
             tx: self,
         }
+    }
+}
+
+/* --------------------------------------------------------------------------------------------- */
+/*                                             TESTS                                             */
+/* --------------------------------------------------------------------------------------------- */
+
+#[cfg(all(test, feature = "sqlite"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use crate::{Column, CreateOptions, DataType, Ducklake, DucklakeError, IfExistsStrategy};
+
+    #[tokio::test]
+    async fn test_commit_exact_empty_returns_none() {
+        // Arrange
+        let lake = Ducklake::create(CreateOptions::new(
+            "sqlite://:memory:",
+            "file:///tmp/commit-exact-empty/",
+        ))
+        .await
+        .unwrap();
+        let tx = lake.transaction().await.unwrap();
+        assert_eq!(tx.base_snapshot_id(), 0);
+
+        // Act
+        let committed = tx.commit_exact().await.unwrap();
+
+        // Assert
+        assert_eq!(committed, None);
+        assert_eq!(lake.latest_snapshot().await.unwrap().id, 0);
+    }
+
+    #[tokio::test]
+    async fn test_commit_exact_returns_next_snapshot_and_rejects_concurrent_advance() {
+        // Arrange
+        let lake = Ducklake::create(CreateOptions::new(
+            "sqlite://:memory:",
+            "file:///tmp/commit-exact-conflict/",
+        ))
+        .await
+        .unwrap();
+
+        let mut tx1 = lake.transaction().await.unwrap();
+        let mut tx2 = lake.transaction().await.unwrap();
+        assert_eq!(tx1.base_snapshot_id(), 0);
+        assert_eq!(tx2.base_snapshot_id(), 0);
+
+        tx1.create_table(
+            "main.t1",
+            vec![Column::new("id".to_string(), DataType::Int64)],
+            None,
+            None,
+            None,
+            None,
+            IfExistsStrategy::Fail,
+        )
+        .unwrap();
+        tx2.create_table(
+            "main.t2",
+            vec![Column::new("id".to_string(), DataType::Int64)],
+            None,
+            None,
+            None,
+            None,
+            IfExistsStrategy::Fail,
+        )
+        .unwrap();
+
+        // Act: tx1 commits snapshot 1; tx2 targets a disjoint table (which normal `commit`
+        // would rebase) but `commit_exact` must reject because base snapshot 0 is stale.
+        let snap1 = tx1.commit_exact().await.unwrap();
+        let conflict = tx2.commit_exact().await;
+
+        // Assert
+        assert_eq!(snap1, Some(1));
+        assert!(matches!(
+            conflict,
+            Err(DucklakeError::TransactionConflict(_))
+        ));
+        assert!(!lake.table_exists("main.t2").await.unwrap());
     }
 }
