@@ -25,6 +25,9 @@ arrow = ["duckdb", "pyarrow"]
 polars = ["polars>=2.1"]
 sqlalchemy = ["sqlalchemy"]
 
+[project.scripts]
+ducklake = "ducklake.cli:main"
+
 [project.urls]
 Documentation = "https://ducklake-sdk.readthedocs.io/"
 Repository = "https://github.com/borchero/ducklake-sdk"

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .exceptions import MigrationError
+from .exceptions import MigrationError, ReadonlyDucklakeError
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -16,11 +16,6 @@ if TYPE_CHECKING:
 
     from .ducklake import Ducklake
     from .transaction import Transaction
-
-# NOTE: The maximum length matches the length of the column that stores the name in the catalog
-#  database.
-_MAX_NAME_LENGTH = 255
-_NAME_PATTERN = re.compile(r"\d{4}_\d{2}_\d{2}_\d{6}_[a-z0-9_]+")
 
 
 @dataclass(frozen=True)
@@ -56,7 +51,7 @@ class Migrator:
     #: The DuckLake to apply the migrations to.
     dl: Ducklake
     #: The directory containing the migration files.
-    path: str | Path
+    path: str | Path = "migrations"
 
     def pending(self) -> list[str]:
         """The names of all migrations which have not been applied yet, in the order of application.
@@ -64,6 +59,7 @@ class Migrator:
         This never modifies the catalog database.
 
         Raises:
+            FileNotFoundError: If the directory does not exist.
             MigrationError: If the directory contains a file with an invalid migration name.
         """
         applied = {name for name, _, _ in self.dl._pyducklake.applied_migrations()}
@@ -76,6 +72,7 @@ class Migrator:
         It never modifies the catalog database.
 
         Raises:
+            FileNotFoundError: If the directory does not exist.
             MigrationError: If the directory contains a file with an invalid migration name.
         """
         files = self._collect_migrations()
@@ -109,9 +106,13 @@ class Migrator:
 
         Raises:
             ReadonlyDucklakeError: If the DuckLake is read-only or time traveled.
+            FileNotFoundError: If the directory does not exist.
             MigrationError: If a migration cannot be loaded or applied. The message names the
                 migration and the original exception is available as the ``__cause__``.
         """
+        if self.dl._pyducklake.is_readonly():
+            raise ReadonlyDucklakeError("migrations cannot be applied to a read-only DuckLake")
+
         files = self._collect_migrations()
 
         self.dl._pyducklake.ensure_migrations_table()
@@ -124,13 +125,14 @@ class Migrator:
         }
         for name, migration in migrations.items():
             try:
-                tx = self.dl.transaction(
+                tx = self.dl._transaction_for_migration(
+                    name,
+                    batch,
                     author="ducklake-sdk",
                     message=name,
                     extra_info=json.dumps({"migration": name, "batch": batch}),
                 )
                 migration(tx)
-                tx._record_migration(name, batch)
                 tx.commit()
             except Exception as e:
                 raise MigrationError(f"migration '{name}' failed: {e}") from e
@@ -138,19 +140,29 @@ class Migrator:
 
     def _collect_migrations(self) -> dict[str, Path]:
         """Find all migration files, ordered by name."""
-        files = {}
+        files: dict[str, Path] = {}
         for file in sorted(Path(self.path).iterdir()):
             if file.suffix != ".py" or file.name.startswith("_") or not file.is_file():
                 continue
-            name = file.stem
-            if not _NAME_PATTERN.fullmatch(name) or len(name) > _MAX_NAME_LENGTH:
-                raise MigrationError(
-                    f"migration '{name}' has an invalid name: the name must have the form "
-                    f"YYYY_MM_DD_HHMMSS_<name> where <name> consists of lowercase letters, digits, "
-                    f"and underscores and the name must not exceed {_MAX_NAME_LENGTH} characters"
-                )
-            files[name] = file
+            _validate_name(file.stem)
+            files[file.stem] = file
         return files
+
+
+def _validate_name(name: str) -> None:
+    """Ensure that the name of a migration is valid.
+
+    Raises:
+        MigrationError: If the name is invalid.
+    """
+    # NOTE: The maximum length matches the length of the column that stores the name in the
+    #  catalog database.
+    if not re.fullmatch(r"\d{4}_\d{2}_\d{2}_\d{6}_[a-z0-9_]+", name) or len(name) > 255:
+        raise MigrationError(
+            f"migration '{name}' has an invalid name: the name must have the form "
+            "YYYY_MM_DD_HHMMSS_<name> where <name> consists of lowercase letters, digits, and "
+            "underscores, and it must not exceed 255 characters"
+        )
 
 
 def _load_up(name: str, file: Path) -> Callable[[Transaction], None]:

@@ -42,6 +42,12 @@ API Reference
 
         Group multiple operations into atomic transactions.
 
+    .. grid-item-card:: Migrations
+        :link: migrations/index
+        :link-type: doc
+
+        Apply user-defined migrations from a directory of Python files.
+
     .. grid-item-card:: Schemas & Data Types
         :link: types/index
         :link-type: doc
@@ -79,6 +85,7 @@ API Reference
 
     macro/index
     transaction/index
+    migrations/index
     types/index
     errors/index
     polars/index
