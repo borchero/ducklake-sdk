@@ -39,3 +39,21 @@ pub struct ScanDeleteFile {
     /// The size of the delete file's footer in bytes.
     pub footer_size_bytes: Option<usize>,
 }
+
+/// A committed data file of a table, as listed by
+/// [`crate::TransactionTable::data_files`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataFileInfo {
+    /// The path of the data file, in the same form as [`ScanDataFile::path`].
+    pub path: String,
+    /// The number of rows stored in the data file (before applying deletes).
+    pub num_rows: usize,
+    /// The number of rows deleted from the data file by delete files or inline deletes.
+    pub num_deletes: usize,
+    /// The size of the data file in bytes.
+    pub file_size_bytes: Option<usize>,
+    /// The file's partition values, one per partition column of the table's current
+    /// partitioning. `None` if the table is not partitioned or the file was written under an
+    /// earlier partitioning (or without partition values).
+    pub partition_values: Option<Vec<Option<String>>>,
+}

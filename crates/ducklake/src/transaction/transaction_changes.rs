@@ -54,6 +54,7 @@ pub(super) struct FileChanges {
     pub partition_values: Vec<DucklakeFilePartitionValue>,
     pub column_stats: Vec<DucklakeFileColumnStats>,
     pub delete_files: Vec<DucklakeDeleteFile>,
+    pub removed_data_files: HashSet<i64>,
     pub inline_deletes: HashMap<i64, Vec<DucklakeInlinedDelete>>,
 }
 
@@ -120,6 +121,16 @@ impl TransactionChanges {
         retire!(ducklake_column_tag, TableId, self.dropped_tables.iter());
         retire!(ducklake_data_file, TableId, self.dropped_tables.iter());
         retire!(ducklake_delete_file, TableId, self.dropped_tables.iter());
+        retire!(
+            ducklake_data_file,
+            DataFileId,
+            self.files.removed_data_files.iter()
+        );
+        retire!(
+            ducklake_delete_file,
+            DataFileId,
+            self.files.removed_data_files.iter()
+        );
         retire!(
             ducklake_partition_info,
             TableId,

@@ -7,7 +7,13 @@ use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Schema as Arr
 
 use crate::catalog::TableRef;
 use crate::spec::*;
-use crate::transaction::{CommitDataFile, CommitInlineData, CommitState, TransactionChanges};
+use crate::transaction::{
+    CommitDataFile,
+    CommitInlineData,
+    CommitState,
+    RemovedDataFile,
+    TransactionChanges,
+};
 use crate::{ArrayColumnStats, DucklakeResult, db, io};
 
 /* ------------------------------------------- FILES ------------------------------------------- */
@@ -121,6 +127,28 @@ pub(crate) async fn write_table_data(
         .or_default()
         .extend(all_column_ids);
 
+    Ok(())
+}
+
+/// Retire committed data files (and their delete files) of a table at the new snapshot.
+///
+/// The files stay visible to earlier snapshots until those are expired; table statistics no
+/// longer count their live rows and bytes. Column bounds are kept as valid conservative bounds.
+pub(crate) async fn remove_table_data_files(
+    changes: &mut TransactionChanges,
+    state: &mut CommitState<'_>,
+    table_ref: &TableRef,
+    files: &[RemovedDataFile],
+) -> DucklakeResult<()> {
+    let table_id = state.table_id(*table_ref);
+    for file in files {
+        let stats = state.table_stats(table_id).await?;
+        stats.add_record_count(-(file.live_rows as i64));
+        stats.add_file_size_bytes(file.file_size_bytes.map(|s| -(s as i64)));
+        changes.files.removed_data_files.insert(file.id);
+    }
+    // Ensure table statistics are persisted even if nothing new is written to the table.
+    changes.written_columns.entry(table_id).or_default();
     Ok(())
 }
 
