@@ -11,7 +11,7 @@ mod views;
 use arena::{Arena, ArenaIdx};
 pub(crate) use refs::{ColumnRef, MacroRef, SchemaRef, TableRef, ViewRef};
 use typedefs::*;
-pub(crate) use views::SchemaView;
+pub(crate) use views::{SchemaView, UnwrapInfallible};
 
 /// Point-in-time capture of the DuckLake schema. This includes all schemas, tables, their
 /// columns, etc.

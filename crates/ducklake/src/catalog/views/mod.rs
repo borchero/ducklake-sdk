@@ -21,10 +21,24 @@ pub(crate) trait TryIntoRef<Ref, Container = Catalog> {
 }
 
 impl<Ref: Copy, Container> TryIntoRef<Ref, Container> for Ref {
-    type Error = !;
+    type Error = std::convert::Infallible;
 
     fn try_into_ref(self, _container: &Container) -> Result<Ref, Self::Error> {
         Ok(self)
+    }
+}
+
+/// Stable replacement for the unstable `Result::into_ok` (feature `unwrap_infallible`).
+pub(crate) trait UnwrapInfallible<T> {
+    fn unwrap_infallible(self) -> T;
+}
+
+impl<T> UnwrapInfallible<T> for Result<T, std::convert::Infallible> {
+    fn unwrap_infallible(self) -> T {
+        match self {
+            Ok(value) => value,
+            Err(never) => match never {},
+        }
     }
 }
 

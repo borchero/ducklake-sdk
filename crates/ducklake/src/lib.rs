@@ -1,4 +1,3 @@
-#![feature(trait_alias)]
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 #[macro_use]

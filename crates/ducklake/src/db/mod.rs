@@ -560,42 +560,43 @@ fn normalized_path(path: &std::path::Path) -> std::path::PathBuf {
 
 /* ------------------------------------------ ROW TYPE ----------------------------------------- */
 
+// `RowType` bundles the row-decoding bounds required by every enabled database backend. It is
+// expressed as a supertrait with a blanket impl (rather than a `trait_alias`) so that the crate
+// builds on the stable toolchain.
+macro_rules! row_type {
+    ($($db:ty),* $(,)?) => {
+        pub(crate) trait RowType:
+            Send + Unpin $(+ for<'r> FromRow<'r, <$db as sqlx::Database>::Row>)*
+        {
+        }
+
+        impl<T> RowType for T where
+            T: Send + Unpin $(+ for<'r> FromRow<'r, <$db as sqlx::Database>::Row>)*
+        {
+        }
+    };
+}
+
 #[cfg(not(any(feature = "postgres", feature = "mysql", feature = "sqlite")))]
-pub(crate) trait RowType = Send + Unpin;
+row_type!();
 
 #[cfg(all(feature = "postgres", not(feature = "mysql"), not(feature = "sqlite")))]
-pub(crate) trait RowType =
-    Send + Unpin + for<'r> FromRow<'r, <sqlx::Postgres as sqlx::Database>::Row>;
+row_type!(sqlx::Postgres);
 
 #[cfg(all(not(feature = "postgres"), feature = "mysql", not(feature = "sqlite")))]
-pub(crate) trait RowType =
-    Send + Unpin + for<'r> FromRow<'r, <sqlx::MySql as sqlx::Database>::Row>;
+row_type!(sqlx::MySql);
 
 #[cfg(all(not(feature = "postgres"), not(feature = "mysql"), feature = "sqlite"))]
-pub(crate) trait RowType =
-    Send + Unpin + for<'r> FromRow<'r, <sqlx::Sqlite as sqlx::Database>::Row>;
+row_type!(sqlx::Sqlite);
 
 #[cfg(all(feature = "postgres", feature = "mysql", not(feature = "sqlite")))]
-pub(crate) trait RowType = Send
-    + Unpin
-    + for<'r> FromRow<'r, <sqlx::Postgres as sqlx::Database>::Row>
-    + for<'r> FromRow<'r, <sqlx::MySql as sqlx::Database>::Row>;
+row_type!(sqlx::Postgres, sqlx::MySql);
 
 #[cfg(all(feature = "postgres", not(feature = "mysql"), feature = "sqlite"))]
-pub(crate) trait RowType = Send
-    + Unpin
-    + for<'r> FromRow<'r, <sqlx::Postgres as sqlx::Database>::Row>
-    + for<'r> FromRow<'r, <sqlx::Sqlite as sqlx::Database>::Row>;
+row_type!(sqlx::Postgres, sqlx::Sqlite);
 
 #[cfg(all(not(feature = "postgres"), feature = "mysql", feature = "sqlite"))]
-pub(crate) trait RowType = Send
-    + Unpin
-    + for<'r> FromRow<'r, <sqlx::MySql as sqlx::Database>::Row>
-    + for<'r> FromRow<'r, <sqlx::Sqlite as sqlx::Database>::Row>;
+row_type!(sqlx::MySql, sqlx::Sqlite);
 
 #[cfg(all(feature = "postgres", feature = "mysql", feature = "sqlite"))]
-pub(crate) trait RowType = Send
-    + Unpin
-    + for<'r> FromRow<'r, <sqlx::Postgres as sqlx::Database>::Row>
-    + for<'r> FromRow<'r, <sqlx::MySql as sqlx::Database>::Row>
-    + for<'r> FromRow<'r, <sqlx::Sqlite as sqlx::Database>::Row>;
+row_type!(sqlx::Postgres, sqlx::MySql, sqlx::Sqlite);
