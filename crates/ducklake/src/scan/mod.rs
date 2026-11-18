@@ -12,6 +12,7 @@ use crate::{DucklakeResult, db, io};
 
 pub(crate) struct TableTransferScan {
     pub result: crate::ScanResult,
+    pub file_ids: Vec<i64>,
     pub partition_values: Vec<Option<Vec<Option<String>>>>,
 }
 
@@ -48,6 +49,7 @@ pub(crate) async fn scan_table_for_transfer(
                 .push(value);
             acc
         });
+    let file_ids = scan.file_partition_ids.iter().map(|(id, _)| *id).collect();
     let partition_values = scan
         .file_partition_ids
         .into_iter()
@@ -74,6 +76,7 @@ pub(crate) async fn scan_table_for_transfer(
 
     Ok(TableTransferScan {
         result: scan.result,
+        file_ids,
         partition_values,
     })
 }

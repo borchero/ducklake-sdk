@@ -8,6 +8,7 @@ use crate::transaction::{
     CommitDataFile,
     CommitInlineData,
     CommitState,
+    RemovedDataFile,
     TransactionChanges,
     executors,
 };
@@ -193,10 +194,11 @@ impl ChangeSet {
             executors::create_inlined_data_table(changes, state, &table_ref, dialect);
         }
 
-        // Finally, we need to check whether we wrote inline data without writing any data files.
-        // In this case, we need to bump the next file ID as table stats are cached by file ID
-        // (both in this SDK and the official DuckDB DuckLake extension).
-        if self.contains_inline_data_writes_and_no_file_writes() {
+        // Finally, check whether table statistics changed via inline data writes or data file
+        // removals without writing any new data files. In that case, bump `next_file_id` because
+        // table stats are cached by `(schema_version, next_file_id)` (both in this SDK and the
+        // official DuckDB DuckLake extension).
+        if self.modifies_table_stats_without_file_writes() {
             // Advance the file ID by generating and discarding a new one.
             let _ = state.file_id();
         }
@@ -204,15 +206,17 @@ impl ChangeSet {
         Ok(())
     }
 
-    /// Whether there is at least one inline data write in this change set but no file write.
-    fn contains_inline_data_writes_and_no_file_writes(&self) -> bool {
-        self.changes
+    /// Whether table stats are modified by inline writes or file removals without any file write.
+    fn modifies_table_stats_without_file_writes(&self) -> bool {
+        self.changes.iter().any(|c| {
+            matches!(
+                c,
+                Change::WriteTableInlineData { .. } | Change::RemoveTableDataFiles { .. }
+            )
+        }) && !self
+            .changes
             .iter()
-            .any(|c| matches!(c, Change::WriteTableInlineData { .. }))
-            && !self
-                .changes
-                .iter()
-                .any(|c| matches!(c, Change::WriteTableDataFiles { .. }))
+            .any(|c| matches!(c, Change::WriteTableDataFiles { .. }))
     }
 
     /// Whether any of the changes in this change set affects the schema of the DuckLake. This
@@ -276,6 +280,10 @@ pub(crate) enum Change {
     WriteTableDataFiles {
         table_ref: TableRef,
         data_files: Vec<CommitDataFile>,
+    },
+    RemoveTableDataFiles {
+        table_ref: TableRef,
+        files: Vec<RemovedDataFile>,
     },
     WriteTableInlineData {
         table_ref: TableRef,
@@ -416,6 +424,9 @@ impl Change {
             WriteTableDataFiles { table_ref, .. } => AppliedChange::InsertedIntoTable {
                 id: state.table_id(*table_ref),
             },
+            RemoveTableDataFiles { table_ref, .. } => AppliedChange::DeletedFromTable {
+                id: state.table_id(*table_ref),
+            },
             WriteTableInlineData { table_ref, .. } => AppliedChange::InlinedInsert {
                 id: state.table_id(*table_ref),
             },
@@ -468,6 +479,9 @@ impl Change {
                 table_ref,
                 data_files,
             } => executors::write_table_data(changes, state, table_ref, data_files).await,
+            RemoveTableDataFiles { table_ref, files } => {
+                executors::remove_table_data_files(changes, state, table_ref, files).await
+            }
             WriteTableInlineData { table_ref, data } => {
                 executors::write_table_inline_data(changes, state, table_ref, data).await
             }
@@ -591,7 +605,9 @@ impl Change {
             | RemoveTableColumn { .. }
             | AddTableColumnTag { .. }
             | RemoveTableColumnTag { .. } => true,
-            WriteTableDataFiles { .. } | WriteTableInlineData { .. } => false,
+            WriteTableDataFiles { .. }
+            | RemoveTableDataFiles { .. }
+            | WriteTableInlineData { .. } => false,
         }
     }
 
@@ -607,6 +623,7 @@ impl Change {
             | AddTableTag { table_ref, .. }
             | RemoveTableTag { table_ref, .. }
             | WriteTableDataFiles { table_ref, .. }
+            | RemoveTableDataFiles { table_ref, .. }
             | WriteTableInlineData { table_ref, .. } => Some(*table_ref),
             UpdateTableColumn { column_ref, .. }
             | RemoveTableColumn { column_ref, .. }
@@ -636,6 +653,7 @@ impl Change {
             CreateSchema { .. }
             | DeleteSchema { .. }
             | WriteTableDataFiles { .. }
+            | RemoveTableDataFiles { .. }
             | WriteTableInlineData { .. }
             // NOTE: As opposed to `changes_schema` where we have to consider ALL items that
             //  affect caching of the catalog, we do not want to consider changes that do not
@@ -656,9 +674,10 @@ impl Change {
     fn requires_table_stats(&self) -> bool {
         use Change::*;
         match self {
-            WriteTableDataFiles { .. } | WriteTableInlineData { .. } | AddTableColumn { .. } => {
-                true
-            }
+            WriteTableDataFiles { .. }
+            | RemoveTableDataFiles { .. }
+            | WriteTableInlineData { .. }
+            | AddTableColumn { .. } => true,
             CreateSchema { .. }
             | DeleteSchema { .. }
             | CreateTable { .. }
@@ -752,6 +771,10 @@ enum HashableChange {
         table_ref: TableRef,
         paths: Vec<io::DucklakePath>,
     },
+    RemoveTableDataFiles {
+        table_ref: TableRef,
+        ids: Vec<i64>,
+    },
     WriteTableInlineData {
         // Each write must be retained, even when its table and data match another write.
         index: usize,
@@ -826,6 +849,10 @@ impl HashableChange {
             } => WriteTableDataFiles {
                 table_ref: *table_ref,
                 paths: data_files.iter().map(|f| f.path.clone()).collect(),
+            },
+            Change::RemoveTableDataFiles { table_ref, files } => RemoveTableDataFiles {
+                table_ref: *table_ref,
+                ids: files.iter().map(|f| f.id).collect(),
             },
             Change::WriteTableInlineData { .. } => WriteTableInlineData { index },
         }

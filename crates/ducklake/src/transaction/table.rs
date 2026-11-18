@@ -305,6 +305,128 @@ impl<'tx, 'a> TransactionTable<'tx, 'a> {
     pub fn write_inline_data(&mut self, data: Vec<RecordBatch>) -> DucklakeResult<()> {
         self.tx.write_table_inline_data(&self.name, data)
     }
+
+    /// List the table's data files as of the snapshot the transaction started at.
+    ///
+    /// Files written or removed within this transaction are not reflected. Inlined data is not
+    /// stored in files and therefore not listed.
+    pub async fn data_files(&self) -> DucklakeResult<Vec<crate::DataFileInfo>> {
+        let files = self.tx.committed_data_files(&self.name).await?;
+        Ok(files.into_iter().map(|(_, info)| info).collect())
+    }
+
+    /// Remove committed data files from the table, identified by their paths as reported by
+    /// [`Self::data_files`] (or a scan).
+    ///
+    /// All rows of the files, along with their delete files, stop being part of the table at the
+    /// snapshot created by this transaction; earlier snapshots still see them until they are
+    /// expired. Fails if a path does not refer to a data file of the table at the transaction's
+    /// start snapshot, or if the file was already removed within this transaction. Concurrent
+    /// transactions that also delete from the table conflict with this one.
+    pub async fn remove_data_files(
+        &mut self,
+        paths: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> DucklakeResult<()> {
+        self.tx.remove_table_data_files(&self.name, paths).await
+    }
+}
+
+impl<'a> Transaction<'a> {
+    /// Committed data files of a table at the transaction's start snapshot, with their IDs.
+    async fn committed_data_files(
+        &self,
+        table_name: &QualifiedName,
+    ) -> DucklakeResult<Vec<(i64, crate::DataFileInfo)>> {
+        let table = self.catalog().table(table_name)?;
+        // Tables created within this transaction have no committed files.
+        let Some(table_id) = table.id() else {
+            return Ok(Vec::new());
+        };
+        let data_path = table.data_path(&self.metadata.data_path());
+        let scan = crate::scan::scan_table_for_transfer(
+            &self.pool,
+            table_id,
+            self.snapshot.clone(),
+            &self.snapshot_cache,
+            &data_path,
+        )
+        .await?;
+        let files = scan
+            .result
+            .data_files
+            .into_iter()
+            .zip(scan.file_ids)
+            .zip(scan.partition_values)
+            .map(|((file, id), partition_values)| {
+                let num_deletes = file
+                    .delete_files
+                    .iter()
+                    .map(|d| d.num_deletes)
+                    .sum::<usize>()
+                    + file.inline_deletes.as_ref().map_or(0, |d| d.len());
+                let info = crate::DataFileInfo {
+                    path: file.path,
+                    num_rows: file.statistics.num_rows,
+                    num_deletes,
+                    file_size_bytes: file.statistics.file_size_bytes,
+                    partition_values,
+                };
+                (id, info)
+            })
+            .collect();
+        Ok(files)
+    }
+
+    async fn remove_table_data_files(
+        &mut self,
+        table_name: &QualifiedName,
+        paths: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> DucklakeResult<()> {
+        let table_ref = self.catalog().table(table_name)?.ref_();
+        let mut committed: std::collections::HashMap<String, (i64, crate::DataFileInfo)> = self
+            .committed_data_files(table_name)
+            .await?
+            .into_iter()
+            .map(|(id, info)| (info.path.clone(), (id, info)))
+            .collect();
+        let already_removed: std::collections::HashSet<i64> = self
+            .changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::RemoveTableDataFiles {
+                    table_ref: r,
+                    files,
+                } if *r == table_ref => Some(files.iter().map(|f| f.id)),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+
+        let mut files = Vec::new();
+        for path in paths {
+            let path = path.as_ref();
+            let Some((id, info)) = committed.remove(path) else {
+                return Err(DucklakeError::InvalidChanges(format!(
+                    "{path} is not a data file of table {table_name} (or is listed twice)"
+                )));
+            };
+            if already_removed.contains(&id) {
+                return Err(DucklakeError::InvalidChanges(format!(
+                    "data file {path} was already removed in this transaction"
+                )));
+            }
+            files.push(super::RemovedDataFile {
+                id,
+                live_rows: info.num_rows.saturating_sub(info.num_deletes),
+                file_size_bytes: info.file_size_bytes,
+            });
+        }
+        if !files.is_empty() {
+            self.changes
+                .push(Change::RemoveTableDataFiles { table_ref, files });
+        }
+        Ok(())
+    }
 }
 
 impl<'a> Transaction<'a> {
@@ -1175,5 +1297,235 @@ impl<'a> Transaction<'a> {
         };
         self.changes.push(change);
         Ok(())
+    }
+}
+
+/* --------------------------------------------------------------------------------------------- */
+/*                                             TESTS                                             */
+/* --------------------------------------------------------------------------------------------- */
+
+#[cfg(all(test, feature = "sqlite"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::{
+        Column,
+        CreateOptions,
+        DataFileStatistics,
+        DataType,
+        Ducklake,
+        DucklakeError,
+        IfExistsStrategy,
+        WriteDataFile,
+    };
+
+    fn make_data_file(path: &str, num_rows: usize, file_size_bytes: usize) -> WriteDataFile {
+        WriteDataFile {
+            path: path.to_string(),
+            encryption_key: None,
+            statistics: Some(DataFileStatistics {
+                num_rows,
+                file_size_bytes: Some(file_size_bytes),
+                footer_size_bytes: Some(64),
+                column_stats: HashMap::new(),
+            }),
+            partition_values: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_data_files_and_remove_data_files_preserves_time_travel_and_updates_stats() {
+        // Arrange
+        let lake = Ducklake::create(CreateOptions::new(
+            "sqlite://:memory:",
+            "file:///tmp/remove-data-files/",
+        ))
+        .await
+        .unwrap();
+        let table = lake
+            .create_table(
+                "main.items",
+                vec![Column::new("id".to_string(), DataType::Int64)],
+                None,
+                None,
+                None,
+                None,
+                IfExistsStrategy::Fail,
+            )
+            .await
+            .unwrap();
+        let table_id = table.id;
+
+        let mut tx = lake.transaction().await.unwrap();
+        tx.table("main.items")
+            .unwrap()
+            .write_data_files(vec![
+                make_data_file("part-0.parquet", 10, 1000),
+                make_data_file("part-1.parquet", 25, 2500),
+            ])
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let snap_before_remove = lake.latest_snapshot().await.unwrap().id;
+
+        // Keep the previous snapshot alive and populate its TableStatsCache entry to ensure a
+        // subsequent remove-only commit advances `next_file_id` and invalidates stale cached stats.
+        let prev_snapshot = lake.conn.current_snapshot();
+        assert_eq!(
+            prev_snapshot
+                .table_stats()
+                .await
+                .unwrap()
+                .get(&table_id)
+                .and_then(|s| s.record_count()),
+            Some(35)
+        );
+
+        // Act: inspect committed files and retire the first one
+        let mut tx = lake.transaction().await.unwrap();
+        let mut tx_table = tx.table("main.items").unwrap();
+        let files = tx_table.data_files().await.unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].num_rows, 10);
+        assert_eq!(files[0].num_deletes, 0);
+        assert_eq!(files[0].file_size_bytes, Some(1000));
+        tx_table.remove_data_files([&files[0].path]).await.unwrap();
+        tx.commit().await.unwrap();
+
+        // Assert: current scan, aggregate stats, cached stats, and time-travel snapshot
+        let scan = lake
+            .table("main.items")
+            .await
+            .unwrap()
+            .scan()
+            .await
+            .unwrap();
+        assert_eq!(scan.data_files.len(), 1);
+        assert_eq!(scan.data_files[0].path, files[1].path);
+
+        let stats = lake.list_tables_with_statistics(None).await.unwrap();
+        assert_eq!(stats[0].1.num_rows, 25);
+        assert_eq!(stats[0].1.num_data_files, 1);
+        assert_eq!(stats[0].1.total_file_size_bytes, Some(2500));
+
+        let cached_after_first = lake.conn.current_snapshot();
+        assert_eq!(
+            cached_after_first
+                .table_stats()
+                .await
+                .unwrap()
+                .get(&table_id)
+                .and_then(|s| s.record_count()),
+            Some(25)
+        );
+
+        let historical = lake
+            .at_snapshot_id(snap_before_remove)
+            .await
+            .unwrap()
+            .table("main.items")
+            .await
+            .unwrap()
+            .scan()
+            .await
+            .unwrap();
+        assert_eq!(historical.data_files.len(), 2);
+
+        // Second remove-only commit should reach 0 rows / 0 bytes cleanly
+        let mut tx = lake.transaction().await.unwrap();
+        tx.table("main.items")
+            .unwrap()
+            .remove_data_files([&files[1].path])
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let stats = lake.list_tables_with_statistics(None).await.unwrap();
+        assert_eq!(stats[0].1.num_rows, 0);
+        assert_eq!(stats[0].1.num_data_files, 0);
+        assert_eq!(stats[0].1.total_file_size_bytes, Some(0));
+
+        let cached_after_second = lake.conn.current_snapshot();
+        let table_stats = cached_after_second.table_stats().await.unwrap();
+        let entry = table_stats.get(&table_id).unwrap();
+        assert_eq!(entry.record_count(), Some(0));
+        assert_eq!(entry.file_size_bytes(), Some(0));
+        assert_eq!(entry.next_row_id(), 35);
+    }
+
+    #[tokio::test]
+    async fn test_remove_data_files_rejects_unknown_duplicate_and_concurrent_deletes() {
+        // Arrange
+        let lake = Ducklake::create(CreateOptions::new(
+            "sqlite://:memory:",
+            "file:///tmp/remove-data-files-errors/",
+        ))
+        .await
+        .unwrap();
+        lake.create_table(
+            "main.items",
+            vec![Column::new("id".to_string(), DataType::Int64)],
+            None,
+            None,
+            None,
+            None,
+            IfExistsStrategy::Fail,
+        )
+        .await
+        .unwrap();
+
+        let mut tx = lake.transaction().await.unwrap();
+        tx.table("main.items")
+            .unwrap()
+            .write_data_files(vec![
+                make_data_file("part-0.parquet", 10, 1000),
+                make_data_file("part-1.parquet", 10, 1000),
+            ])
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        // Act & Assert: unknown path, duplicate path in one call, repeated removal in one tx
+        let mut tx = lake.transaction().await.unwrap();
+        let mut tx_table = tx.table("main.items").unwrap();
+        let files = tx_table.data_files().await.unwrap();
+
+        let unknown = tx_table.remove_data_files(["nonexistent.parquet"]).await;
+        assert!(matches!(unknown, Err(DucklakeError::InvalidChanges(_))));
+
+        let duplicate = tx_table
+            .remove_data_files([&files[0].path, &files[0].path])
+            .await;
+        assert!(matches!(duplicate, Err(DucklakeError::InvalidChanges(_))));
+
+        tx_table.remove_data_files([&files[0].path]).await.unwrap();
+        let already_removed = tx_table.remove_data_files([&files[0].path]).await;
+        assert!(matches!(
+            already_removed,
+            Err(DucklakeError::InvalidChanges(_))
+        ));
+        drop(tx);
+
+        // Concurrent deletes on the same table must conflict
+        let mut tx1 = lake.transaction().await.unwrap();
+        let mut tx2 = lake.transaction().await.unwrap();
+        tx1.table("main.items")
+            .unwrap()
+            .remove_data_files([&files[0].path])
+            .await
+            .unwrap();
+        tx2.table("main.items")
+            .unwrap()
+            .remove_data_files([&files[1].path])
+            .await
+            .unwrap();
+
+        tx1.commit().await.unwrap();
+        let conflict = tx2.commit().await;
+        assert!(matches!(
+            conflict,
+            Err(DucklakeError::TransactionConflict(_))
+        ));
     }
 }

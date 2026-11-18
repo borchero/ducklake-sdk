@@ -37,3 +37,10 @@ pub(super) struct CommitInlineData {
     pub record_batch: arrow_array::RecordBatch,
     pub column_stats: HashMap<ColumnRef, ArrayColumnStats>,
 }
+
+#[derive(Debug, Clone)]
+pub(super) struct RemovedDataFile {
+    pub id: i64,
+    pub live_rows: usize,
+    pub file_size_bytes: Option<usize>,
+}
