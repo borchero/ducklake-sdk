@@ -220,7 +220,7 @@ macro_rules! impl_sql_convertible_other {
     ($s:ident) => {
         impl SqlConvertible for $s {
             fn to_sql(&self, dialect: Dialect) -> (sqlx::SqlStr, SqlxValues) {
-                let sql = match dialect {
+                let sql: String = match dialect {
                     #[cfg(feature = "postgres")]
                     Dialect::Postgres => self.to_string(PostgresQueryBuilder),
                     #[cfg(feature = "mysql")]
@@ -243,6 +243,28 @@ impl_sql_convertible_other!(TableCreateStatement);
 impl_sql_convertible_other!(TableDropStatement);
 impl_sql_convertible_other!(TableAlterStatement);
 impl_sql_convertible_other!(TableRenameStatement);
+
+/// Drops a session-scoped temporary lookup table without triggering an implicit commit on MySQL.
+pub(crate) struct DropTemporaryTable(pub(crate) String);
+
+impl SqlConvertible for DropTemporaryTable {
+    fn to_sql(&self, dialect: Dialect) -> (sqlx::SqlStr, SqlxValues) {
+        let sql: String = match dialect {
+            #[cfg(feature = "postgres")]
+            Dialect::Postgres => sea_query::Table::drop()
+                .table(self.0.clone())
+                .to_string(PostgresQueryBuilder),
+            #[cfg(feature = "mysql")]
+            Dialect::MySql => format!("DROP TEMPORARY TABLE `{}`", self.0.replace('`', "``")),
+            #[cfg(feature = "sqlite")]
+            Dialect::Sqlite => sea_query::Table::drop()
+                .table(self.0.clone())
+                .to_string(SqliteQueryBuilder),
+        };
+        let values = SqlxValues(sea_query::Values(vec![]));
+        (sqlx::AssertSqlSafe(sql).into_sql_str(), values)
+    }
+}
 
 /* ------------------------------------------- ERRORS ------------------------------------------ */
 
