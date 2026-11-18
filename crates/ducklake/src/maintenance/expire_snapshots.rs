@@ -649,3 +649,90 @@ fn condition_not_exists_in_reference(
             .take(),
     )
 }
+
+/* --------------------------------------------------------------------------------------------- */
+/*                                             TESTS                                             */
+/* --------------------------------------------------------------------------------------------- */
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::*;
+    use crate::{Column, CreateOptions, DataType, IfExistsStrategy};
+
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn test_expire_snapshots_versions_dry_run_and_execute() {
+        // Arrange
+        let lake = Ducklake::create(CreateOptions::new(
+            "sqlite://:memory:",
+            "file:///tmp/expire-test/",
+        ))
+        .await
+        .unwrap();
+
+        let mut tx1 = lake.transaction().await.unwrap();
+        tx1.create_table(
+            "t1",
+            vec![Column::new("x".to_string(), DataType::Int64)],
+            None,
+            None,
+            None,
+            None,
+            IfExistsStrategy::Fail,
+        )
+        .unwrap();
+        tx1.commit().await.unwrap();
+        let snap1 = lake.latest_snapshot().await.unwrap().id;
+
+        let mut tx2 = lake.transaction().await.unwrap();
+        tx2.create_table(
+            "t2",
+            vec![Column::new("x".to_string(), DataType::Int64)],
+            None,
+            None,
+            None,
+            None,
+            IfExistsStrategy::Fail,
+        )
+        .unwrap();
+        tx2.commit().await.unwrap();
+        let snap2 = lake.latest_snapshot().await.unwrap().id;
+
+        // Act
+        let dry_run = lake
+            .expire_snapshots_versions(&[snap1, snap2], DryRun::Yes)
+            .await
+            .unwrap();
+        let after_dry_run: Vec<i64> = lake
+            .list_snapshots()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+
+        let expired = lake
+            .expire_snapshots_versions(&[snap1, snap2], DryRun::No)
+            .await
+            .unwrap();
+        let after_execute: Vec<i64> = lake
+            .list_snapshots()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+
+        // Assert
+        assert_eq!(dry_run.len(), 1);
+        assert_eq!(dry_run[0].id, snap1);
+        assert!(after_dry_run.contains(&snap1));
+        assert!(after_dry_run.contains(&snap2));
+
+        assert_eq!(expired.len(), 1);
+        assert_eq!(expired[0].id, snap1);
+        assert!(!after_execute.contains(&snap1));
+        assert!(after_execute.contains(&snap2));
+    }
+}

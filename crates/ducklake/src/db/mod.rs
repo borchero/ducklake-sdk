@@ -12,8 +12,8 @@ use std::sync::OnceLock;
 
 use arrow_array::RecordBatch;
 use arrow_schema::Schema;
-pub(crate) use dialects::Dialect;
 use dialects::SqlConvertible;
+pub(crate) use dialects::{Dialect, DropTemporaryTable};
 use sea_query::Expr;
 use sqlx::prelude::*;
 pub(crate) use types::chrono::UtcDateTime;

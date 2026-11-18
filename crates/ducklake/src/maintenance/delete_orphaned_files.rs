@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use futures::{StreamExt, stream};
 use object_store::ObjectStore;
 use object_store::path::Path as ObjectStorePath;
-use sea_query::{Query, UnionType};
+use sea_query::{Expr, ExprTrait, IntoIden, JoinType, Order, Query, UnionType};
 
 use super::DryRun;
 use crate::ducklake::SnapshotAccess;
@@ -59,15 +59,15 @@ impl Ducklake {
     ) -> DucklakeResult<Vec<String>> {
         let data_path = self.conn.metadata().data_path();
 
-        // 1) Collect all object store locations referenced by the catalog.
-        let referenced = self.collect_referenced_locations(&data_path).await?;
+        // 1) Collect all object store locations referenced by the catalog BEFORE listing.
+        let mut referenced = self.collect_referenced_locations(&data_path).await?;
 
-        // 2) List all files below the data path and find the orphaned ones.
+        // 2) List all files below the data path and find candidate orphans.
         let resolved_data_path = data_path.resolve()?;
         let store = resolved_data_path.object_store(Some(self.conn.storage_options().to_vec()));
         let prefix = resolved_data_path.path();
 
-        let mut orphans = Vec::new();
+        let mut candidates = Vec::new();
         let mut listing = store.list(Some(&prefix));
         while let Some(meta) = listing.next().await {
             let meta = meta?;
@@ -79,8 +79,20 @@ impl Ducklake {
             {
                 continue;
             }
-            orphans.push(meta.location);
+            candidates.push(meta.location);
         }
+
+        // Re-check referenced locations after listing so concurrent in-flight writers that
+        // uploaded objects before committing their snapshot transaction are never deleted.
+        let orphans = if candidates.is_empty() {
+            candidates
+        } else {
+            referenced = self.collect_referenced_locations(&data_path).await?;
+            candidates
+                .into_iter()
+                .filter(|loc| !referenced.contains(loc))
+                .collect()
+        };
 
         // 3) Delete the orphaned files unless this is a dry run.
         if matches!(dry_run, DryRun::No) {
@@ -137,15 +149,67 @@ impl Ducklake {
         let scheduled_files: Vec<(String, bool)> = pool.fetch_all(&scheduled_query).await?;
 
         // Resolve all referenced file paths to object store locations.
+        let mut table_paths: HashMap<i64, io::DucklakePath> = HashMap::new();
         let mut result = HashSet::new();
         for (table_id, path, path_is_relative) in table_files {
+            let table_data_path = match table_paths.get(&table_id) {
+                Some(path) => path.clone(),
+                None => {
+                    let resolved = match catalog.table(table_id) {
+                        Ok(table) => table.data_path(data_path),
+                        Err(_) => {
+                            let query = Query::select()
+                                .columns([
+                                    (
+                                        ducklake_schema::Table.into_iden(),
+                                        ducklake_schema::Column::Path.into_iden(),
+                                    ),
+                                    (
+                                        ducklake_schema::Table.into_iden(),
+                                        ducklake_schema::Column::PathIsRelative.into_iden(),
+                                    ),
+                                    (
+                                        ducklake_table::Table.into_iden(),
+                                        ducklake_table::Column::Path.into_iden(),
+                                    ),
+                                    (
+                                        ducklake_table::Table.into_iden(),
+                                        ducklake_table::Column::PathIsRelative.into_iden(),
+                                    ),
+                                ])
+                                .from(ducklake_table::Table)
+                                .join(
+                                    JoinType::InnerJoin,
+                                    ducklake_schema::Table,
+                                    Expr::col((
+                                        ducklake_schema::Table,
+                                        ducklake_schema::Column::SchemaId,
+                                    ))
+                                    .eq(Expr::col((
+                                        ducklake_table::Table,
+                                        ducklake_table::Column::SchemaId,
+                                    ))),
+                                )
+                                .and_where(ducklake_table::Column::TableId.col().eq(table_id))
+                                .order_by(
+                                    (ducklake_table::Table, ducklake_table::Column::BeginSnapshot),
+                                    Order::Desc,
+                                )
+                                .limit(1)
+                                .take();
+                            let row: (String, bool, String, bool) = pool.fetch_one(&query).await?;
+                            let schema_path = io::DucklakePath::new(&row.0, row.1);
+                            let table_path = io::DucklakePath::new(&row.2, row.3);
+                            data_path.join(&schema_path).join(&table_path)
+                        }
+                    };
+                    table_paths.insert(table_id, resolved.clone());
+                    resolved
+                }
+            };
             let file_path = io::DucklakePath::new(&path, path_is_relative);
-            let path = catalog
-                .table(table_id)
-                .unwrap()
-                .data_path(data_path)
-                .join(&file_path);
-            result.insert(path.resolve()?.path());
+            let full_path = table_data_path.join(&file_path);
+            result.insert(full_path.resolve()?.path());
         }
 
         // Files scheduled for deletion store paths relative to the catalog's data path.
@@ -156,5 +220,103 @@ impl Ducklake {
         }
 
         Ok(result)
+    }
+}
+
+/* --------------------------------------------------------------------------------------------- */
+/*                                             TESTS                                             */
+/* --------------------------------------------------------------------------------------------- */
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::{
+        Column,
+        CreateOptions,
+        DataFileStatistics,
+        DataType,
+        IfExistsStrategy,
+        WriteDataFile,
+    };
+
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn test_delete_orphaned_files_handles_dropped_table_and_preserves_referenced() {
+        // Arrange
+        let temp_dir =
+            std::env::temp_dir().join(format!("ducklake-orphan-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        #[cfg(unix)]
+        let temp_dir = std::fs::canonicalize(&temp_dir).unwrap();
+        let data_url = url::Url::from_directory_path(&temp_dir)
+            .unwrap()
+            .to_string();
+        let lake = Ducklake::create(CreateOptions::new("sqlite://:memory:", &data_url))
+            .await
+            .unwrap();
+
+        let mut tx = lake.transaction().await.unwrap();
+        let mut table = tx
+            .create_table(
+                "events",
+                vec![Column::new("id".to_string(), DataType::Int64)],
+                None,
+                None,
+                None,
+                None,
+                IfExistsStrategy::Fail,
+            )
+            .unwrap();
+        let (_, generator, _, _) = table.get_write_info().unwrap();
+        let file_name = generator.generate_relative(&Default::default());
+        let file_dir = url::Url::parse(generator.base_path())
+            .unwrap()
+            .to_file_path()
+            .unwrap();
+        std::fs::create_dir_all(&file_dir).unwrap();
+        let committed_file = file_dir.join(&file_name);
+        std::fs::write(&committed_file, b"PAR1").unwrap();
+        table
+            .write_data_files(vec![WriteDataFile {
+                path: file_name,
+                encryption_key: None,
+                statistics: Some(DataFileStatistics {
+                    num_rows: 1,
+                    file_size_bytes: Some(4),
+                    footer_size_bytes: None,
+                    column_stats: HashMap::new(),
+                }),
+                partition_values: None,
+            }])
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let mut drop_tx = lake.transaction().await.unwrap();
+        drop_tx
+            .table("events")
+            .unwrap()
+            .rename("events_old")
+            .unwrap();
+        drop_tx
+            .delete_table("events_old", IfExistsStrategy::Fail)
+            .unwrap();
+        drop_tx.commit().await.unwrap();
+
+        let orphan_file = temp_dir.join("orphan.parquet");
+        std::fs::write(&orphan_file, b"ORPHAN").unwrap();
+
+        // Act
+        let deleted = lake.delete_all_orphaned_files(DryRun::No).await.unwrap();
+
+        // Assert
+        assert_eq!(deleted, vec![orphan_file.to_string_lossy().to_string()]);
+        assert!(!orphan_file.exists());
+        assert!(committed_file.exists());
+
+        std::fs::remove_dir_all(&temp_dir).unwrap();
     }
 }

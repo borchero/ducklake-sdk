@@ -1,8 +1,12 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use sea_query::{ColumnDef, Condition, Expr, ExprTrait, Query, Table};
 
 use crate::{DucklakeResult, db};
 
-/// Handle to a table that can be used for `IS IN` queries targeting IDs.
+static TEMP_LOOKUP_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Handle to a session-scoped temporary table that can be used for `IS IN` queries targeting IDs.
 ///
 /// This is useful as `IS IN` with a list of values might run into limitations wrt. the parameter
 /// count when the number of values exceeds the dialect's maximum number of parameters.
@@ -13,12 +17,14 @@ pub(super) struct LookupTableHandle {
 impl LookupTableHandle {
     pub(super) async fn new(
         tx: &mut db::Transaction<'_>,
-        name: &str,
+        prefix: &str,
         ids: &[i64],
     ) -> DucklakeResult<Self> {
-        // Create the table
+        let seq = TEMP_LOOKUP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let name = format!("{prefix}_{seq}");
         let query = Table::create()
-            .table(name.to_string())
+            .table(name.clone())
+            .temporary()
             .col(ColumnDef::new_with_type(
                 "id",
                 tx.dialect().column_type_i64(),
@@ -28,12 +34,10 @@ impl LookupTableHandle {
 
         // Insert the IDs
         let rows = ids.iter().map(|id| vec![(*id).into()]).collect();
-        tx.insert_rows(name, &["id"], rows).await?;
+        tx.insert_rows(&name, &["id"], rows).await?;
 
         // Return the handle
-        Ok(Self {
-            name: name.to_string(),
-        })
+        Ok(Self { name })
     }
 
     pub(super) fn condition_is_in(&self, expr: Expr) -> Condition {
@@ -42,8 +46,6 @@ impl LookupTableHandle {
     }
 
     pub(super) async fn drop(self, tx: &mut db::Transaction<'_>) -> DucklakeResult<()> {
-        let query = Table::drop().table(self.name).take();
-        tx.execute(&query).await?;
-        Ok(())
+        tx.execute(&db::DropTemporaryTable(self.name)).await
     }
 }
