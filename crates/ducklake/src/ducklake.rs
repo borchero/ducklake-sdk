@@ -10,6 +10,11 @@ use crate::spec::*;
 use crate::*;
 
 /// Client for interacting with a DuckLake.
+///
+/// Cloning is cheap: clones share the underlying connection pool and caches, so a single client
+/// can be handed to several tasks (e.g. query engine table providers). Disconnecting any clone
+/// closes the shared pool for all of them.
+#[derive(Clone)]
 pub struct Ducklake {
     pub(crate) conn: DucklakeConnection,
 }
@@ -290,11 +295,30 @@ impl Ducklake {
 /* -------------------------------------- SNAPSHOT QUERIES ------------------------------------- */
 
 /// Metadata for a snapshot in the catalog.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SnapshotMetadata {
     /// The unique identifier of the snapshot.
     pub id: i64,
     /// The time at which the snapshot was committed.
     pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+/// The changes recorded for a snapshot, together with the author information that was attached
+/// to the transaction that created it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SnapshotChanges {
+    /// The snapshot that the changes belong to.
+    pub snapshot: SnapshotMetadata,
+    /// The changes made in the snapshot, encoded as specified by the DuckLake specification
+    /// (e.g. `created_table:"main"."orders",inserted_into_table:1`). This is empty if the catalog
+    /// does not record any changes for the snapshot.
+    pub changes_made: String,
+    /// The author of the transaction that created the snapshot.
+    pub author: Option<String>,
+    /// The commit message of the transaction that created the snapshot.
+    pub commit_message: Option<String>,
+    /// Additional information attached to the snapshot.
+    pub commit_extra_info: Option<String>,
 }
 
 impl Ducklake {
@@ -320,6 +344,37 @@ impl Ducklake {
         } else {
             list_snapshots(self.conn.pool()).await
         }
+    }
+
+    /// List all snapshots in the catalog together with the changes they made and the author
+    /// information attached to them, ordered from newest to oldest. When time-traveling, this
+    /// returns only the snapshot that was travelled to.
+    pub async fn list_snapshot_changes(&self) -> DucklakeResult<Vec<SnapshotChanges>> {
+        let snapshots = self.list_snapshots().await?;
+        let only = match &self.conn.0.mode {
+            ConnectionMode::TimeTravel(travel_snapshot) => Some(travel_snapshot.info().id),
+            _ => None,
+        };
+        let mut changes = list_snapshot_changes(self.conn.pool(), only).await?;
+        Ok(snapshots
+            .into_iter()
+            .map(|snapshot| match changes.remove(&snapshot.id) {
+                Some(c) => SnapshotChanges {
+                    snapshot,
+                    changes_made: c.changes_made,
+                    author: c.author,
+                    commit_message: c.commit_message,
+                    commit_extra_info: c.commit_extra_info,
+                },
+                None => SnapshotChanges {
+                    snapshot,
+                    changes_made: String::new(),
+                    author: None,
+                    commit_message: None,
+                    commit_extra_info: None,
+                },
+            })
+            .collect())
     }
 }
 
@@ -907,4 +962,100 @@ async fn list_snapshots(pool: &db::Pool) -> DucklakeResult<Vec<SnapshotMetadata>
             timestamp: snapshot.snapshot_time.0,
         })
         .collect())
+}
+
+async fn list_snapshot_changes(
+    pool: &db::Pool,
+    only: Option<i64>,
+) -> DucklakeResult<std::collections::HashMap<i64, DucklakeSnapshotChanges>> {
+    let mut query = Query::select()
+        .column(Asterisk)
+        .from(ducklake_snapshot_changes::Table)
+        .to_owned();
+    if let Some(snapshot_id) = only {
+        query.and_where(
+            ducklake_snapshot_changes::Column::SnapshotId
+                .col()
+                .eq(snapshot_id),
+        );
+    }
+    let changes: Vec<DucklakeSnapshotChanges> = pool.fetch_all(&query).await?;
+    Ok(changes
+        .into_iter()
+        .map(|change| (change.snapshot_id, change))
+        .collect())
+}
+
+/* --------------------------------------------------------------------------------------------- */
+/*                                             TESTS                                             */
+/* --------------------------------------------------------------------------------------------- */
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn test_clone_table_id_and_list_snapshot_changes() {
+        // Arrange
+        let lake = Ducklake::create(CreateOptions::new(
+            "sqlite://:memory:",
+            "file:///tmp/snapshot-changes/",
+        ))
+        .await
+        .unwrap();
+        let cloned = lake.clone();
+
+        // Act: commit via original, observe via clone, rename table and check id stability
+        let mut tx = lake
+            .transaction_with_author(AuthorInfo {
+                author: Some("alice".to_string()),
+                message: Some("create orders".to_string()),
+                extra_info: Some("{\"ticket\":42}".to_string()),
+            })
+            .await
+            .unwrap();
+        tx.create_table(
+            "main.orders",
+            vec![Column::new("id".to_string(), DataType::Int64)],
+            None,
+            None,
+            None,
+            None,
+            IfExistsStrategy::Fail,
+        )
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let table = cloned.table("main.orders").await.unwrap();
+        let original_id = table.id();
+        let create_snapshot_id = cloned.latest_snapshot().await.unwrap().id;
+
+        table.rename("orders_v2").await.unwrap();
+        let renamed = lake.table("main.orders_v2").await.unwrap();
+
+        // Assert
+        assert_eq!(renamed.id(), original_id);
+
+        let all_changes = cloned.list_snapshot_changes().await.unwrap();
+        assert_eq!(all_changes.len(), 3);
+        assert!(all_changes[0].changes_made.contains("orders_v2"));
+        assert_eq!(all_changes[1].snapshot.id, create_snapshot_id);
+        assert!(all_changes[1].changes_made.contains("created_table"));
+        assert_eq!(all_changes[1].author.as_deref(), Some("alice"));
+        assert_eq!(
+            all_changes[1].commit_message.as_deref(),
+            Some("create orders")
+        );
+        assert_eq!(
+            all_changes[1].commit_extra_info.as_deref(),
+            Some("{\"ticket\":42}")
+        );
+
+        let pinned = cloned.at_snapshot_id(create_snapshot_id).await.unwrap();
+        let pinned_changes = pinned.list_snapshot_changes().await.unwrap();
+        assert_eq!(pinned_changes.len(), 1);
+        assert_eq!(pinned_changes[0], all_changes[1]);
+    }
 }

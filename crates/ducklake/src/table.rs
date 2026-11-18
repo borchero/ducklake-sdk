@@ -37,6 +37,14 @@ impl Table {
         }
     }
 
+    /// Get the catalog-internal identifier of the table.
+    ///
+    /// This ID remains stable across renames and matches table references in
+    /// [`crate::SnapshotChanges::changes_made`].
+    pub fn id(&self) -> i64 {
+        self.id
+    }
+
     /// Get the name of the table.
     pub async fn name(&self) -> DucklakeResult<crate::QualifiedName> {
         let snapshot = self.conn.current_snapshot();
