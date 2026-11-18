@@ -23,8 +23,15 @@ pub(in crate::db) trait EncodableArguments: Default {
     type Encoder: TypeEncoder<Arguments = Self> + 'static;
 }
 
-pub(in crate::db) trait Bindable<DB: sqlx::Database> =
-    sqlx::Encode<'static, DB> + sqlx::Type<DB> + Send + 'static;
+pub(in crate::db) trait Bindable<DB: sqlx::Database>:
+    sqlx::Encode<'static, DB> + sqlx::Type<DB> + Send + 'static
+{
+}
+
+impl<DB: sqlx::Database, T> Bindable<DB> for T where
+    T: sqlx::Encode<'static, DB> + sqlx::Type<DB> + Send + 'static
+{
+}
 
 pub(in crate::db) trait TypeEncoder: Send + Sync + 'static {
     type Arguments: sqlx::Arguments<Database = Self::Database> + Default;
