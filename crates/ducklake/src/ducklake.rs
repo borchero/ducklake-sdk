@@ -86,6 +86,7 @@ impl Ducklake {
     pub async fn create(options: CreateOptions) -> DucklakeResult<Self> {
         // Initialize the database pool and create the catalog schema if it doesn't exist
         let pool = db::Pool::new(&options.url, &options.database_options).await?;
+        pool.ensure_pg_schema().await?;
         if pool
             .table_exists(&spec::ducklake_metadata::Table.to_string())
             .await?
@@ -907,4 +908,31 @@ async fn list_snapshots(pool: &db::Pool) -> DucklakeResult<Vec<SnapshotMetadata>
             timestamp: snapshot.snapshot_time.0,
         })
         .collect())
+}
+
+/* --------------------------------------------------------------------------------------------- */
+/*                                             TESTS                                             */
+/* --------------------------------------------------------------------------------------------- */
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn test_sqlite_rejects_postgres_schema_isolation() {
+        // Arrange
+        let options = CreateOptions::new("sqlite://:memory:", "file:///tmp/schema-test/")
+            .with_database_options(DatabaseOptions::default().with_schema("analytics"));
+
+        // Act
+        let result = Ducklake::create(options).await;
+
+        // Assert
+        assert!(matches!(
+            result,
+            Err(DucklakeError::InvalidDatabaseOptions(_))
+        ));
+    }
 }

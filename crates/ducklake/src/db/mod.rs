@@ -57,7 +57,10 @@ mod batch;
 
 /// Connection pool to a dynamic database backend (Postgres, MySQL, SQLite).
 #[derive(Clone)]
-pub(crate) struct Pool(AnyPool);
+pub(crate) struct Pool(
+    AnyPool,
+    #[cfg_attr(not(feature = "postgres"), allow(dead_code))] Option<String>,
+);
 
 #[derive(Clone)]
 enum AnyPool {
@@ -85,11 +88,11 @@ impl Pool {
     pub(crate) fn is_same_catalog(&self, other: &Self) -> bool {
         match (&self.0, &other.0) {
             #[cfg(feature = "postgres")]
-            (AnyPool::Postgres(this), AnyPool::Postgres(other)) => {
-                let this = this.connect_options();
-                let other = other.connect_options();
-                ServerCatalogKey::from_postgres(this.as_ref())
-                    == ServerCatalogKey::from_postgres(other.as_ref())
+            (AnyPool::Postgres(this_pool), AnyPool::Postgres(other_pool)) => {
+                let this = this_pool.connect_options();
+                let other_opts = other_pool.connect_options();
+                ServerCatalogKey::from_postgres(this.as_ref(), self.1.as_deref())
+                    == ServerCatalogKey::from_postgres(other_opts.as_ref(), other.1.as_deref())
             }
             #[cfg(feature = "mysql")]
             (AnyPool::MySql(this), AnyPool::MySql(other)) => {
@@ -109,26 +112,56 @@ impl Pool {
     }
 
     pub(crate) async fn new(url: &str, options: &DatabaseOptions) -> DucklakeResult<Self> {
+        #[cfg_attr(not(feature = "postgres"), allow(unused_mut))]
+        let mut pg_schema: Option<String> = None;
         let pool = if url.starts_with("postgresql://") || url.starts_with("postgres://") {
             #[cfg(feature = "postgres")]
             {
-                let pool = options
-                    .pool_options::<sqlx::Postgres>(4)?
-                    .connect(url)
-                    .await?;
+                let mut pool_opts = options.pool_options::<sqlx::Postgres>(4)?;
+                if let Some(schema) = &options.schema {
+                    let valid = options::validate_pg_schema(schema)?.to_string();
+                    pg_schema = Some(valid.clone());
+                    pool_opts = pool_opts.after_connect(move |conn, _meta| {
+                        let schema_name = valid.clone();
+                        Box::pin(async move {
+                            let stmt = format!("SET search_path = \"{schema_name}\", pg_catalog");
+                            sqlx::query(sqlx::AssertSqlSafe(stmt))
+                                .execute(&mut *conn)
+                                .await?;
+                            Ok(())
+                        })
+                    });
+                }
+                let pool = pool_opts.connect(url).await?;
                 AnyPool::Postgres(pool)
             }
             #[cfg(not(feature = "postgres"))]
-            panic!("Postgres support is not enabled. Enable the 'postgres' feature.");
+            return Err(DucklakeError::UnsupportedDatabase(format!(
+                "{url} (postgres feature is disabled)"
+            )));
         } else if url.starts_with("mysql://") {
+            if options.schema.is_some() {
+                return Err(DucklakeError::InvalidDatabaseOptions(
+                    "database schema isolation is only supported for PostgreSQL catalogs"
+                        .to_string(),
+                ));
+            }
             #[cfg(feature = "mysql")]
             {
                 let pool = options.pool_options::<sqlx::MySql>(4)?.connect(url).await?;
                 AnyPool::MySql(pool)
             }
             #[cfg(not(feature = "mysql"))]
-            panic!("MySQL support is not enabled. Enable the 'mysql' feature.");
+            return Err(DucklakeError::UnsupportedDatabase(format!(
+                "{url} (mysql feature is disabled)"
+            )));
         } else if url.starts_with("sqlite://") {
+            if options.schema.is_some() {
+                return Err(DucklakeError::InvalidDatabaseOptions(
+                    "database schema isolation is only supported for PostgreSQL catalogs"
+                        .to_string(),
+                ));
+            }
             #[cfg(feature = "sqlite")]
             {
                 use sqlx::sqlite::SqliteConnectOptions;
@@ -141,11 +174,33 @@ impl Pool {
                 AnyPool::Sqlite(pool)
             }
             #[cfg(not(feature = "sqlite"))]
-            panic!("SQLite support is not enabled. Enable the 'sqlite' feature.");
+            return Err(DucklakeError::UnsupportedDatabase(format!(
+                "{url} (sqlite feature is disabled)"
+            )));
         } else {
             return Err(DucklakeError::UnsupportedDatabase(url.to_string()));
         };
-        Ok(Pool(pool))
+        Ok(Pool(pool, pg_schema))
+    }
+
+    pub(crate) async fn ensure_pg_schema(&self) -> DucklakeResult<()> {
+        #[cfg(feature = "postgres")]
+        if let (AnyPool::Postgres(pool), Some(schema)) = (&self.0, &self.1) {
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
+            )
+            .bind(schema)
+            .fetch_one(pool)
+            .await?;
+            if !exists {
+                let valid = options::validate_pg_schema(schema)?;
+                let create_stmt = format!("CREATE SCHEMA IF NOT EXISTS \"{valid}\"");
+                sqlx::query(sqlx::AssertSqlSafe(create_stmt))
+                    .execute(pool)
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     pub(crate) async fn close(&self) {
@@ -502,6 +557,7 @@ struct ServerCatalogKey<'a> {
     endpoint: ServerEndpoint,
     port: u16,
     database: Option<&'a str>,
+    schema: Option<&'a str>,
 }
 
 #[cfg(any(feature = "postgres", feature = "mysql"))]
@@ -518,6 +574,7 @@ impl<'a> ServerCatalogKey<'a> {
         port: u16,
         socket: Option<&std::path::PathBuf>,
         database: Option<&'a str>,
+        schema: Option<&'a str>,
     ) -> Self {
         let socket = socket
             .map(std::path::PathBuf::as_path)
@@ -530,16 +587,21 @@ impl<'a> ServerCatalogKey<'a> {
             endpoint,
             port,
             database,
+            schema,
         }
     }
 
     #[cfg(feature = "postgres")]
-    fn from_postgres(options: &'a sqlx::postgres::PgConnectOptions) -> Self {
+    fn from_postgres(
+        options: &'a sqlx::postgres::PgConnectOptions,
+        schema: Option<&'a str>,
+    ) -> Self {
         Self::new(
             options.get_host(),
             options.get_port(),
             options.get_socket(),
             options.get_database().or(Some(options.get_username())),
+            schema,
         )
     }
 
@@ -550,6 +612,7 @@ impl<'a> ServerCatalogKey<'a> {
             options.get_port(),
             options.get_socket(),
             options.get_database(),
+            None,
         )
     }
 }

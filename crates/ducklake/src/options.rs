@@ -190,6 +190,9 @@ pub struct DatabaseOptions {
     /// Maximum connection lifetime before recycling. Defaults to 30 minutes. `None` disables
     /// recycling. Connections in use are not interrupted.
     pub max_lifetime: Option<Duration>,
+    /// Optional PostgreSQL schema (`SET search_path = <schema>, pg_catalog`) isolating this
+    /// DuckLake catalog within a shared logical database.
+    pub schema: Option<String>,
 }
 
 impl Default for DatabaseOptions {
@@ -201,6 +204,15 @@ impl Default for DatabaseOptions {
             test_before_acquire: true,
             idle_timeout: Some(Duration::from_secs(10 * 60)),
             max_lifetime: Some(Duration::from_secs(30 * 60)),
+            schema: None,
         }
+    }
+}
+
+impl DatabaseOptions {
+    /// Isolate PostgreSQL catalog tables inside a dedicated schema via `search_path`.
+    pub fn with_schema(mut self, schema: impl Into<String>) -> Self {
+        self.schema = Some(schema.into());
+        self
     }
 }
