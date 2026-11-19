@@ -14,6 +14,7 @@ Errors
     InvalidNullabilityChangeError
     InvalidNullValueError
     MigrationConflictError
+    MigrationError
     NotFoundError
     NotInitializedError
     OutdatedVersionError

@@ -47,6 +47,7 @@ All language SDKs are built on the same Rust core, which bundles the implementat
 pip install ducklake-sdk            # core
 pip install "ducklake-sdk[polars]"  # Polars integration
 pip install "ducklake-sdk[arrow]"   # Arrow + DuckDB integration
+pip install "ducklake-sdk[cli]"     # Command line interface
 ```
 
 **Rust** <!-- rumdl-disable-line -->
