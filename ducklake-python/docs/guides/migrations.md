@@ -48,7 +48,8 @@ other Python file in the directory must follow the naming scheme above.
 
 ## Using the Command Line
 
-The `ducklake` command is installed together with the SDK. It can also be run via `python -m ducklake`.
+The `ducklake` command is part of the `cli` extra, i.e., install it via `pip install 'ducklake-sdk[cli]'`. It can also
+be run via `python -m ducklake`.
 
 To create a new migration, run:
 

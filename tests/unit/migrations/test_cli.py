@@ -5,65 +5,75 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 import ducklake as dl
-from ducklake.cli import main
+from ducklake.cli import app
+
+
+@pytest.fixture()
+def runner() -> CliRunner:
+    return CliRunner()
 
 
 @pytest.mark.parametrize(
     "name",
     ["create_events_table", "CreateEventsTable", "create-events-table", "create events table"],
 )
-def test_migrate_new(tmp_path: Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
+def test_migrate_new(runner: CliRunner, tmp_path: Path, name: str) -> None:
     # Arrange
     path = tmp_path / "migrations"
 
     # Act
-    exit_code = main(["migrate", "new", name, "--path", str(path)])
+    result = runner.invoke(app, ["migrate", "new", name, "--path", str(path)])
 
     # Assert
-    assert exit_code == 0
+    assert result.exit_code == 0
     (file,) = path.iterdir()
     assert re.fullmatch(r"\d{4}_\d{2}_\d{2}_\d{6}_create_events_table\.py", file.name)
     assert "def up(tx: dl.Transaction) -> None:" in file.read_text()
-    assert capsys.readouterr().out == f"Created migration: {file}\n"
+    assert result.stdout == f"Created migration: {file}\n"
 
 
-def test_migrate_new_rejects_empty_name(
-    migrations_dir: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # Act
-    exit_code = main(["migrate", "new", "!!!", "--path", str(migrations_dir)])
-
-    # Assert
-    assert exit_code == 1
-    assert "at least one letter or digit" in capsys.readouterr().err
-    assert list(migrations_dir.iterdir()) == []
-
-
-def test_migrate_new_rejects_duplicate_name(
-    migrations_dir: Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("name", "existing", "message"),
+    [
+        pytest.param("!!!", [], "at least one letter or digit", id="empty"),
+        pytest.param(
+            "create_events",
+            ["2026_01_01_000000_create_events.py"],
+            "already exists",
+            id="duplicate",
+        ),
+    ],
+)
+def test_migrate_new_rejects_invalid_name(
+    runner: CliRunner,
+    migrations_dir: Path,
+    name: str,
+    existing: list[str],
+    message: str,
 ) -> None:
     # Arrange
-    (migrations_dir / "2026_01_01_000000_create_events.py").touch()
+    for file in existing:
+        (migrations_dir / file).touch()
 
     # Act
-    exit_code = main(["migrate", "new", "create_events", "--path", str(migrations_dir)])
+    result = runner.invoke(app, ["migrate", "new", name, "--path", str(migrations_dir)])
 
     # Assert
-    assert exit_code == 1
-    assert "already exists" in capsys.readouterr().err
-    assert len(list(migrations_dir.iterdir())) == 1
+    assert result.exit_code == 1
+    assert message in result.stderr
+    assert sorted(file.name for file in migrations_dir.iterdir()) == existing
 
 
 @pytest.mark.parametrize("use_env", [False, True])
 def test_migrate_up_and_status(
+    runner: CliRunner,
     ducklake: dl.Ducklake,
     catalog_url: str,
     migrations_dir: Path,
     write_migration: Callable[[str, str], Path],
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
     use_env: bool,
 ) -> None:
     # Arrange
@@ -75,31 +85,30 @@ def test_migrate_up_and_status(
         """,
     )
     args = ["--path", str(migrations_dir)]
+    env = {}
     if use_env:
-        monkeypatch.setenv("DUCKLAKE_CATALOG_URL", catalog_url)
+        env["DUCKLAKE_CATALOG_URL"] = catalog_url
     else:
         args += ["--catalog-url", catalog_url]
 
     # Act
-    up_exit_code = main(["migrate", "up", *args])
-    up_output = capsys.readouterr().out
-    status_exit_code = main(["migrate", "status", *args])
-    status_output = capsys.readouterr().out
+    up = runner.invoke(app, ["migrate", "up", *args], env=env)
+    status = runner.invoke(app, ["migrate", "status", *args], env=env)
 
     # Assert
-    assert up_exit_code == 0
-    assert up_output == "Applied 2026_01_01_000000_create_events\n"
-    assert status_exit_code == 0
-    assert status_output == "2026_01_01_000000_create_events  batch 1\n"
+    assert up.exit_code == 0
+    assert up.stdout == "Applied 2026_01_01_000000_create_events\n"
+    assert status.exit_code == 0
+    assert status.stdout == "2026_01_01_000000_create_events  batch 1\n"
     assert ducklake.has_table("events")
 
 
 def test_migrate_up_failing_migration(
+    runner: CliRunner,
     ducklake: dl.Ducklake,
     catalog_url: str,
     migrations_dir: Path,
     write_migration: Callable[[str, str], Path],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Arrange
     write_migration(
@@ -111,24 +120,22 @@ def test_migrate_up_failing_migration(
     )
 
     # Act
-    exit_code = main(
-        ["migrate", "up", "--path", str(migrations_dir), "--catalog-url", catalog_url]
+    result = runner.invoke(
+        app, ["migrate", "up", "--path", str(migrations_dir), "--catalog-url", catalog_url]
     )
 
     # Assert
-    assert exit_code == 1
-    assert "migration '2026_01_01_000000_fail' failed: boom" in capsys.readouterr().err
+    assert result.exit_code == 1
+    assert "migration '2026_01_01_000000_fail' failed: boom" in result.stderr
 
 
 @pytest.mark.parametrize("command", ["up", "status"])
-def test_migrate_requires_catalog_url(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
-    # Arrange
-    monkeypatch.delenv("DUCKLAKE_CATALOG_URL", raising=False)
+def test_migrate_requires_catalog_url(runner: CliRunner, command: str) -> None:
+    # Act
+    result = runner.invoke(app, ["migrate", command], env={"DUCKLAKE_CATALOG_URL": None})
 
-    # Act & Assert
-    with pytest.raises(SystemExit) as exc_info:
-        main(["migrate", command])
-    assert exc_info.value.code == 2
+    # Assert
+    assert result.exit_code == 2
 
 
 def test_module_entry_point() -> None:

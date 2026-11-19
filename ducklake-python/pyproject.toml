@@ -22,11 +22,12 @@ version = "0.0.0"
 
 [project.optional-dependencies]
 arrow = ["duckdb", "pyarrow"]
+cli = ["typer"]
 polars = ["polars>=2.1"]
 sqlalchemy = ["sqlalchemy"]
 
 [project.scripts]
-ducklake = "ducklake.cli:main"
+ducklake = "ducklake.cli:app"
 
 [project.urls]
 Documentation = "https://ducklake-sdk.readthedocs.io/"

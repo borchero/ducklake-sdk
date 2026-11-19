@@ -1,3 +1,3 @@
-from .cli import main
+from .cli import app
 
-raise SystemExit(main())
+app(prog_name="ducklake")
